@@ -72,8 +72,8 @@ def register(mcp: FastMCP) -> None:
         sf, entry = session_factory(project)
         root = Path(entry.path).expanduser().resolve()
         # commit=not dry_run — вторая линия к явному `dry_run` сервиса, а не
-        # замена ему: `hash_calc.update_hashes` пишет MASTER.md на диск, и
-        # откатить это транзакция не может.
+        # замена ему: незаведённый документом MASTER.md пересчёт пишет в
+        # файл, и откатить это транзакция не может.
         with transactional(sf, commit=not dry_run) as session:
             project_id = require_project_id(session, project)
             result = repair_service.apply(
@@ -108,15 +108,19 @@ def register(mcp: FastMCP) -> None:
         "warnings": [...], "dry_run": bool}``.
         """
         sf, entry = session_factory(project)
-        root = Path(entry.path).expanduser().resolve()
-        master = root / "MASTER.md"
+        # Путь реестра — из записи проекта (`master_md`), а не жёстко
+        # `<root>/MASTER.md`: проект вправе держать его глубже.
+        root = entry.root
+        master = entry.master_path
         with transactional(sf, commit=not dry_run) as session:
             project_id = require_project_id(session, project)
             in_db = hash_service.registry_in_db(session, project_id, master, root)
             stale = hash_service.stale_refs(session, project_id, master, root)
             updated = 0
             warnings: list[str] = []
-            if not dry_run:
+            if not in_db and not master.exists():
+                warnings.append(f"реестра нет: {master} не заведён и не существует")
+            elif not dry_run:
                 updated, warnings = hash_service.update_master_hashes(
                     session, project_id, master, author=author, root_path=root
                 )

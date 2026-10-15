@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from cod_doc.core.hash_calc import recompute_hashes, stale_refs_in, update_hashes
-from cod_doc.services import activity_service, doc_service
+from cod_doc.services import activity_service, doc_service, search_service
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -124,24 +124,33 @@ def _update_in_db(
         return 0, warnings
 
     reason = "hash update (DEBT-009)"
-    if new_texts[0] != doc.preamble:
-        doc_service.update_metadata(
-            session,
-            project_id=doc.project_id,
-            document_id=doc.row_id,
-            author=author,
-            preamble=new_texts[0],
-            reason=reason,
-        )
-    for section, new_body in zip(sections, new_texts[1:], strict=True):
-        if new_body != section.body:
-            doc_service.patch_section(
+    # Атомарно: реестр — одно целое (строка таблицы и блок её документа могут
+    # стоять в разных секциях). Падение на k-й секции откатывает и преамбулу,
+    # и секции 0…k-1, а не оставляет реестр наполовину переписанным в
+    # транзакции вызывающего (repair коммитит остальные действия).
+    with session.begin_nested():
+        if new_texts[0] != doc.preamble:
+            doc_service.update_metadata(
                 session,
                 project_id=doc.project_id,
                 document_id=doc.row_id,
-                anchor=section.anchor,
-                new_body=new_body,
                 author=author,
+                preamble=new_texts[0],
                 reason=reason,
+                reindex=False,
             )
+        for section, new_body in zip(sections, new_texts[1:], strict=True):
+            if new_body != section.body:
+                doc_service.patch_section(
+                    session,
+                    project_id=doc.project_id,
+                    document_id=doc.row_id,
+                    anchor=section.anchor,
+                    new_body=new_body,
+                    author=author,
+                    reason=reason,
+                    reindex=False,
+                )
+        # Один пересчёт индекса на документ, а не по разу на секцию.
+        search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     return updated, warnings

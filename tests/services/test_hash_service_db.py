@@ -6,6 +6,7 @@ import hashlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import select
 
@@ -136,6 +137,8 @@ def test_mcp_tool_dry_run_then_apply(engine_with_schema, tmp_path, monkeypatch) 
 
     class _Entry:
         path = str(tmp_path)
+        root = tmp_path
+        master_path = tmp_path / "MASTER.md"
 
     monkeypatch.setattr(repair_tools, "session_factory", lambda project: (factory, _Entry()))
     monkeypatch.setattr(repair_tools, "require_project_id", lambda session, project: pid)
@@ -152,3 +155,54 @@ def test_mcp_tool_dry_run_then_apply(engine_with_schema, tmp_path, monkeypatch) 
     assert applied["updated"] == 2
     with transactional(factory) as s:
         assert WRONG not in _master_body(s, pid)
+
+
+def test_db_rewrite_is_atomic(engine_with_schema, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Падение на второй секции откатывает и первую: реестр не остаётся наполовину новым."""
+    factory = make_session_factory(engine_with_schema)
+    real_patch = docs.patch_section
+    calls = {"n": 0}
+
+    def _flaky(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_patch(*args, **kwargs)
+
+    with transactional(factory) as s:
+        pid = _seed(s, tmp_path, tracked=True)
+    monkeypatch.setattr(docs, "patch_section", _flaky)
+    with transactional(factory) as s:
+        with pytest.raises(RuntimeError, match="boom"):
+            hash_service.update_master_hashes(
+                s, pid, tmp_path / "MASTER.md", author="t", root_path=tmp_path
+            )
+        assert _registry(WRONG) in _master_body(s, pid)
+        assert _table(WRONG) in _master_body(s, pid)
+
+
+def test_mcp_tool_without_registry_reports_instead_of_crashing(  # type: ignore[no-untyped-def]
+    engine_with_schema, tmp_path, monkeypatch
+) -> None:
+    from cod_doc.mcp.tools import repair_tools
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        proj = ProjectModel(slug="p", title="P", root_path=str(tmp_path), config_json={})
+        proj.created = proj.updated = datetime.now(UTC)
+        s.add(proj)
+        s.flush()
+        pid = proj.row_id
+
+    class _Entry:
+        path = str(tmp_path)
+        root = tmp_path
+        master_path = tmp_path / "MASTER.md"
+
+    monkeypatch.setattr(repair_tools, "session_factory", lambda project: (factory, _Entry()))
+    monkeypatch.setattr(repair_tools, "require_project_id", lambda session, project: pid)
+    mcp = FastMCP("test")
+    repair_tools.register(mcp)
+    out = mcp._tool_manager._tools["master_hash_update"].fn(project="p", dry_run=False)
+    assert out["updated"] == 0
+    assert out["warnings"]

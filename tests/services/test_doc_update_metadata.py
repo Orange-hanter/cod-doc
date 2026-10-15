@@ -288,3 +288,24 @@ def test_mcp_cannot_lower_sensitivity(engine_with_schema, monkeypatch) -> None: 
     tool = _mcp_tool(monkeypatch, factory, pid)
     with pytest.raises(ValueError, match="only a human"):
         tool(project="p", doc_key="arch/overview", sensitivity="public")
+
+
+def test_preamble_edit_ignores_preexisting_frontmatter_debt(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ACTIVE без owner (заведён до гейта) — правка преамбулы не падает на FM-002."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        pid = _add_project(s)
+        doc = _new_doc(s, pid, status=DocumentStatus.DRAFT)
+        assert doc.row_id is not None
+        docs.update_metadata(s, project_id=pid, document_id=doc.row_id, author="t", owner="")
+        docs.update_status(
+            s,
+            project_id=pid,
+            document_id=doc.row_id,
+            new_status=DocumentStatus.ACTIVE,
+            author="t",
+        )
+        result = docs.update_metadata(
+            s, project_id=pid, document_id=doc.row_id, author="t", preamble="New."
+        )
+        assert result.document.preamble == "New."

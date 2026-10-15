@@ -44,7 +44,13 @@ def hash_calc(file_path: str) -> None:
     help="Слаг проекта; по умолчанию — зарегистрированный проект, в корне которого лежит файл",
 )
 @click.option("--author", default="cli", show_default=True)
-def hash_update(master_path: str, project: str | None, author: str) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Показать протухшие записи реестра, ничего не записывая (зеркало MCP master_hash_update)",
+)
+def hash_update(master_path: str, project: str | None, author: str, dry_run: bool) -> None:
     """Обновить все хэши в MASTER.md.
 
     Пересчёт — запись в проект, поэтому он оставляет activity-событие
@@ -66,6 +72,10 @@ def hash_update(master_path: str, project: str | None, author: str) -> None:
     if project and entry is None:
         console.print(f"[red]Проект '{project}' не зарегистрирован.[/red]")
         sys.exit(1)
+
+    if dry_run:
+        _print_stale(path, entry)
+        return
 
     if entry is None:
         n, warns = update_hashes(path)
@@ -98,3 +108,30 @@ def _entry_owning(cfg: Config, path: Path) -> ProjectEntry | None:
     """Зарегистрированный проект с самым глубоким корнем, внутри которого лежит ``path``."""
     owners = [e for e in cfg.list_projects() if path.is_relative_to(e.root)]
     return max(owners, key=lambda e: len(e.root.parts), default=None)
+
+
+def _print_stale(path: Path, entry: ProjectEntry | None) -> None:
+    """``--dry-run``: находки реестра — из БД, если ``MASTER.md`` заведён документом."""
+    from cod_doc.core.hash_calc import stale_refs_in
+
+    if entry is None:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        findings = stale_refs_in(text, path.parent)
+    else:
+        from cod_doc.infra.db import db_for_entry, transactional
+        from cod_doc.infra.repositories import ProjectRepository
+        from cod_doc.services import hash_service
+
+        factory, engine = db_for_entry(entry)
+        try:
+            with transactional(factory, commit=False) as session:
+                row = ProjectRepository(session).get_by_slug(entry.name)
+                if row is None or row.row_id is None:
+                    console.print(f"[red]Проект '{entry.name}' не заведён в БД.[/red]")
+                    sys.exit(1)
+                findings = hash_service.stale_refs(session, row.row_id, path, entry.root)
+        finally:
+            engine.dispose()
+    for f in findings:
+        click.echo(f"{f['status']}: {f['path']} {f.get('expected', '')}→{f.get('actual', '?')}")
+    click.echo(f"Протухших записей: {len(findings)} (dry run — ничего не записано)")

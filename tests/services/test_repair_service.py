@@ -764,3 +764,19 @@ def test_tree_seed_can_be_skipped(project) -> None:
     assert seeds[0].skipped
     assert not seeds[0].applied
     assert _node_count(factory) == 0
+
+
+def test_hand_edited_master_gets_a_recompute_after_its_import(project) -> None:
+    """Запись, добавленная в MASTER.md руками, видна только после импорта — пересчёт планируется."""
+    factory, root = project
+    (root / "beta.md").write_text(_BETA, encoding="utf-8")
+    _import_docs()
+    with (root / "MASTER.md").open("a", encoding="utf-8") as fh:
+        fh.write(f"\n- **Ссылка:** 📁 /beta.md | 🗃️ doc:beta_md | 🔑 sha:{_WRONG_HASH}\n")
+
+    with transactional(factory, commit=False) as session:
+        kinds = [(a.kind, a.ref) for a in _diagnose(session, root).actions]
+
+    assert kinds.index((repair_service.KIND_DOC_IMPORT, "MASTER.md")) < kinds.index(
+        (repair_service.KIND_HASH_UPDATE, "MASTER.md")
+    )

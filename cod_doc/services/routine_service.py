@@ -8,7 +8,7 @@ concern) periodically calls :func:`run_due` to execute the next batch.
 For now we ship four built-in checks that wrap the existing
 maintenance utilities:
 
-- ``stale_refs``     — wraps ``check_stale_refs``
+- ``stale_refs``     — wraps ``hash_service.stale_refs``
 - ``link_integrity`` — wraps ``link.verify``
 - ``doc_drift``      — wraps ``doc.drift``
 - ``task_stale``     — wraps ``task.stale``
@@ -221,10 +221,9 @@ def _check_curator_sweep(
 def _check_stale_refs(session: Session, project_id: int, **_: Any) -> dict[str, Any]:
     """PCA-920: Scan MASTER.md hybrid references; report stale/missing files.
 
-    CUR-016: сама проверка переехала в публичную
-    :func:`cod_doc.core.hash_calc.check_stale_refs` — её же зовёт doc card
-    куратора (``curator_service.next``). Здесь остались резолв корня проекта
-    и форма ответа routine.
+    Проверка — :func:`hash_service.stale_refs` (DEBT-009: реестр из БД, если
+    ``MASTER.md`` — документ проекта), её же зовёт doc card куратора. Здесь
+    остались резолв корня проекта и форма ответа routine.
     """
     from cod_doc.services import hash_service
 

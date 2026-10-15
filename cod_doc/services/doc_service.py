@@ -1103,12 +1103,16 @@ def update_metadata(
         assert unchanged is not None
         return MetadataUpdate(unchanged, {})
 
-    _gate_frontmatter(
-        type=type or DocumentType(doc.type),
-        status=DocumentStatus(doc.status),
-        owner=wanted.get("owner", doc.owner),
-        frontmatter=doc.frontmatter_json,
-    )
+    # FM-гейт смотрит на type/owner (при неизменных status и frontmatter):
+    # правка одной преамбулы или заголовка не вправе упасть на чужом долге
+    # документа — ACTIVE без owner завели до гейта (ai-review/code-review #209).
+    if changes.keys() & {"type", "owner"}:
+        _gate_frontmatter(
+            type=type or DocumentType(doc.type),
+            status=DocumentStatus(doc.status),
+            owner=wanted.get("owner", doc.owner),
+            frontmatter=doc.frontmatter_json,
+        )
     for field, change in changes.items():
         setattr(doc, field, change["to"])
     doc.last_updated = datetime.now(UTC)

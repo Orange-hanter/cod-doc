@@ -1914,6 +1914,7 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Слаг проекта; по умолчанию — зарегистрированный проект, в корне кот…]:project:_cod_doc_projects' \
     '(--author)--author=:author' \
+    '(--dry-run)--dry-run[Показать протухшие записи реестра, ничего не записывая (зеркало MCP…]' \
     '(- *)--help[Show this message and exit.]' \
     '1::master-path:_files' && ret=0
   return ret

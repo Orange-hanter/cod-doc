@@ -9,7 +9,7 @@
 
 ===================  =========================================================
 ``edited_in_place``  файл правлен на диске, БД отстала → ``import_document``
-hash ``STALE``       реестр ``MASTER.md`` разошёлся с файлом → ``update_hashes``
+hash ``STALE``       реестр ``MASTER.md`` разошёлся с файлами → ``hash_service``
 битые ссылки         derived-таблица ``link`` протухла → sync + resolve секций
 протухшие замки      ``checked_out_at`` старше TTL → ``release_stale``
 дерева нет           проект старше ADO-116, ``doc_node`` пуст → ``init_tree``
@@ -46,11 +46,11 @@ hash ``STALE``       реестр ``MASTER.md`` разошёлся с файло
 .. warning::
 
    ``dry_run`` **не** покрывается одним ``commit=False``.
-   ``hash_calc.update_hashes`` пишет ``MASTER.md`` на диск безусловно и
-   dry-run не имеет. Поэтому :func:`apply` принимает ``dry_run`` явно и при
-   нём не зовёт ``update_hashes`` вовсе: план строится из
-   ``check_stale_refs``, который уже возвращает ``path/expected/actual`` —
-   это и есть diff.
+   ``MASTER.md``, не заведённый документом, ``hash_service`` переписывает в
+   файле — это транзакция не откатит. Поэтому :func:`apply` принимает
+   ``dry_run`` явно и при нём не зовёт пересчёт вовсе: план строится из
+   ``hash_service.stale_refs``, который уже возвращает
+   ``path/expected/actual`` — это и есть diff.
 """
 
 from __future__ import annotations
@@ -68,7 +68,6 @@ from cod_doc.services import (
     activity_service,
     checkout_service,
     curator_service,
-    doc_service,
     doc_tree_service,
     hash_service,
 )
@@ -270,7 +269,7 @@ def _relative(path: Path, root: Path) -> str:
 def _registry_paths(session: Session, ctx: _Context) -> set[str]:
     """Пути из реестра гибридных ссылок ``MASTER.md``.
 
-    Принадлежность реестру решает, нужен ли после импорта ``update_hashes``:
+    Принадлежность реестру решает, нужен ли после импорта пересчёт:
     правка файла на диске меняет его sha, а реестр об этом не знает. Ссылка
     без хэша (DEBT-001) реестру хэшей не принадлежит: пересчитывать в ней
     нечего.
@@ -312,15 +311,6 @@ def _stale_hash_detail(entries: Sequence[dict[str, str]]) -> str:
     )
 
 
-def _master_is_document(session: Session, project_id: int, master_rel: str) -> bool:
-    """Зарегистрирован ли сам ``MASTER.md`` документом проекта.
-
-    Если нет — правку файла импортировать некуда: такой реестр живёт только
-    в файле, и пересчёт пишет его туда же.
-    """
-    return any(doc.path == master_rel for doc in doc_service.list_for_project(session, project_id))
-
-
 def _build_actions(
     session: Session,
     card: dict[str, Any],
@@ -346,7 +336,10 @@ def _build_actions(
         for issue in edited
         if issue["path"] != ctx.master_rel
     ]
-    if master_edited and _master_is_document(session, ctx.project_id, ctx.master_rel):
+    master_in_db = hash_service.registry_in_db(
+        session, ctx.project_id, ctx.master_path, ctx.root_path
+    )
+    if master_edited and master_in_db:
         actions.append(
             RepairAction(
                 kind=KIND_DOC_IMPORT,
@@ -358,7 +351,14 @@ def _build_actions(
     # Шаг 2: реестр пересчитывается ПОСЛЕ импорта правленых файлов — их sha
     # поменялся. Документ MASTER.md пересчёт пишет прямо в БД, импортировать
     # после него нечего.
-    touches_registry = bool(stale_refs) or any(i["path"] in registry for i in edited)
+    # Импортированный MASTER.md мог принести новые или протухшие записи,
+    # которых в реестре БД ещё нет: план строился до импорта, так что
+    # пересчёт после него нужен безусловно.
+    touches_registry = (
+        bool(stale_refs)
+        or any(i["path"] in registry for i in edited)
+        or (master_edited and master_in_db)
+    )
     if touches_registry:
         actions.append(
             RepairAction(
@@ -686,8 +686,8 @@ def apply(
         not_collected=plan.not_collected,
     )
     if dry_run:
-        # Ни одного вызова чинилок: `update_hashes` пишет MASTER.md на диск
-        # безусловно, и откатить его `commit=False` не может.
+        # Ни одного вызова чинилок: незаведённый MASTER.md пересчёт пишет в
+        # файл, и откатить это `commit=False` не может.
         return result
 
     for action in plan.actions:

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from cod_doc.agent.tool_defs import TOOL_DEFINITIONS
 from cod_doc.core.context import get_context
 from cod_doc.core.embeddings import EmbeddingSettings
-from cod_doc.core.hash_calc import calc_hash, make_ref, update_hashes
+from cod_doc.core.hash_calc import calc_hash, make_ref
 from cod_doc.core.project import Project, Task, TaskStatus
 from cod_doc.core.reindex import reindex_project
 from cod_doc.core.reindex import search_documents as _search_docs
@@ -122,11 +122,28 @@ class ToolExecutor:
         return get_context(ref, self.root, depth=depth)
 
     def _tool_update_master_hashes(self) -> dict[str, Any]:
-        master = self.project.entry.master_path
-        if not master.exists():
-            return {"error": "MASTER.md не найден"}
-        n, warns = update_hashes(master)
-        return {"updated": n, "warnings": warns}
+        # DEBT-009: через hash_service — реестр, заведённый документом, живёт в
+        # БД; прямой update_hashes переписал бы файл, а БД (её читают куратор,
+        # routine и repair) осталась бы с протухшими хэшами.
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import hash_service
+        from cod_doc.services.project_lookup import require_project_id
+
+        entry = self.project.entry
+        sf = self._make_db_session()
+        with transactional(sf) as session:
+            project_id = require_project_id(session, entry.name)
+            in_db = hash_service.registry_in_db(session, project_id, entry.master_path, entry.root)
+            if not in_db and not entry.master_path.exists():
+                return {"error": "MASTER.md не найден"}
+            n, warns = hash_service.update_master_hashes(
+                session,
+                project_id,
+                entry.master_path,
+                author="agent:orchestrator",
+                root_path=entry.root,
+            )
+        return {"updated": n, "warnings": warns, "target": "db" if in_db else "file"}
 
     def _tool_make_ref(self, path: str) -> dict[str, Any]:
         p = self._resolve(path)
