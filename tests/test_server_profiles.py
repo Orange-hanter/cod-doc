@@ -240,3 +240,14 @@ def test_run_mcp_server_applies_profile_before_serve(monkeypatch: pytest.MonkeyP
     mcp_server.run_mcp_server(transport="stdio", host="127.0.0.1", port=8001, profile="agent")
     assert mcp_server.get_active_profile() == "agent"
     assert _registered_names() == AGENT_TOOLS
+
+
+def test_doc_delete_only_on_standard_and_full() -> None:
+    """DEBT-006: удаление документа необратимо — его нет в allowlist'ах agent/minimal."""
+    assert keep_tool("doc_delete", "full") is True
+    assert keep_tool("doc_delete", "standard") is True
+    assert keep_tool("doc_delete", "agent") is False
+    assert keep_tool("doc_delete", "minimal") is False
+
+    mcp_server.apply_profile("standard")
+    assert "doc_delete" in _registered_names()
