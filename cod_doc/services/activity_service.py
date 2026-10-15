@@ -56,6 +56,7 @@ from sqlalchemy import func, select
 
 from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.infra.models import ActivityEventModel
+from cod_doc.infra.sync_capture import set_author
 from cod_doc.services import revision_service as rev
 from cod_doc.services.run_context import get_current_run_id
 
@@ -117,6 +118,10 @@ def emit(
     не открывается, поэтому колонка остаётся NULL — это ожидаемое
     состояние, а не пропущенная запись (ADR-012).
     """
+    if actor_id:
+        # RFC 29 §10.3 (CLO-006): каждый write-путь проходит здесь (ADO-040) —
+        # отсюда захват берёт автора операций ``sync_op``.
+        set_author(session, actor_id)
     event = ActivityEventModel(
         id=_make_id(),
         project_id=project_id,

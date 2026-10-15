@@ -30,6 +30,7 @@ from alembic.config import Config as AlembicConfig
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import db_for_entry, db_url_for_entry, sqlite_file_path, transactional
+from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.repositories import ProjectRepository
 
 if TYPE_CHECKING:
@@ -224,6 +225,9 @@ def init_project(entry: ProjectEntry) -> InitResult:
         # PCA-914: bootstrap default approval_stale routine (every 15 min).
         # Idempotent — uses unique (project_id, name) constraint.
         if project_id is not None:
+            # CLO-005 (RFC 29 §10.1): своя реплика проекта — ровно одна
+            # ``is_self = 1``; повторный init возвращает существующую.
+            self_replica(session, project_id)
             _bootstrap_default_routines(session, project_id)
             _bootstrap_doc_tree(session, project_id)
     engine.dispose()
