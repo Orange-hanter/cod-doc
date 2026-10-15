@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-27
+last_updated: 2026-10-15
 ---
 
 # COD-DOC — Data Model
@@ -587,9 +587,182 @@ CREATE TABLE scenario_link (
 | Findings | `finding`, `finding_source_run` (+ `miss_streak`, 0036) | `0028_findings` |
 | Structure platform | `code_structure_snapshot`, `code_entity`, `code_edge`, `code_boundary`, `code_contract`, `doc_code_claim`, `structure_*` | `0031_structure_platform` |
 | Дерево документации | `doc_node`, `doc_node_suggestion`, `document.node_id` | `0035_doc_nodes` |
+| Репликация (RFC 29, секция A) | `uid` в authored-таблицах, `rank`/`node_rank`, `replica`, `sync_op`, `changeset`, `sync_ref`, `sync_lease`, `entity_alias` — см. §3.18 | `0049_sync_identity`, `0050_sync_rank` |
 
 Таблицы `agent_definition` и `actor` из capability-доков в схеме **нет** — это
 целевые спеки (ARCHITECTURE §12.2, agents-and-skills §1.1).
+
+### 3.18 Репликация: `uid`, `rank` и служебные таблицы sync
+
+> Миграции `0049_sync_identity` и `0050_sync_rank` (2026-10-15, план
+> `cloud-remote-2026-10`, секция A; RFC
+> [29](../../proposals/29-cloud-remote-sync.md) §3.2–§3.4, §10.1). Класс каждой
+> таблицы и колонки (authored / journal / derived / local) задаёт реестр
+> [`cod_doc/infra/sync_registry.py`](../../cod_doc/infra/sync_registry.py);
+> полноту сверяет `tests/infra/test_sync_registry_complete.py`.
+
+#### 3.18.1 Колонка `uid` — глобальная идентичность строки
+
+```sql
+-- во всех 39 authored-таблицах с row_id-PK
+-- (sync_registry.UID_TABLES = authored − COMPOSITE_PK_TABLES):
+ALTER TABLE <t> ADD COLUMN uid TEXT;          -- бэкфилл, затем:
+CREATE UNIQUE INDEX uq_<t>_uid ON <t>(uid);
+```
+
+- **Где есть.** Каждая authored-таблица (`project`, `document`, `section`,
+  `task`, `plan`, `plan_section`, `doc_node`, `adr*`, `scenario*`,
+  `user_story`, `story_*`, `open_question*`, `finding`, `approval*`, `module*`,
+  `tag`, `routine`, `external_ref`, `task_document`, `structure_waiver`, рёбра
+  ниже). **Нет** у тег-таблиц с составным PK — `document_tag`, `task_tag`,
+  `story_tag`: их uid вычисляется при захвате той же формулой, что у рёбер.
+  Нет и у journal (`revision`, `activity_event`), derived и local-таблиц.
+- **Значение.** Обычная строка — случайный `uuid7`. Ребро (`dependency`,
+  `affected_file`, `commit_link`, `adr_relation`, `adr_supersedes`,
+  `adr_task`, `module_dependency`, `story_link`, `scenario_link`,
+  `open_question_link`) — `uuid5(EDGE_UID_NAMESPACE, json([таблица, *ключ]))`,
+  где FK ключа заменены на uid концов (`sync_registry.edge_uid`). uid ребра
+  детерминирован относительно uid концов, но не между двумя независимо
+  мигрированными БД: концы у них получили разные uuid7.
+- **NOT NULL — инвариант кода, не ограничение.** `ADD COLUMN NOT NULL` без
+  `DEFAULT` на SQLite невозможен, а пересоздавать `document` нельзя (CASCADE
+  унёс бы секции и ссылки). uid новой строке назначает хук захвата в
+  `before_flush`; строка, вставленная мимо `Session`, осталась бы без uid —
+  такие записи запрещает AST-гейт `tests/infra/test_sync_capture_no_bulk_authored.py`.
+- **`row_id` остаётся локальным.** Ссылки между таблицами по-прежнему по
+  `row_id`; uid нужен там, где строка покидает БД: в `sync_op.fields` FK
+  записан uid конца.
+
+#### 3.18.2 `rank` / `node_rank` — синхронизируемый порядок
+
+```sql
+-- 0050_sync_rank, 11 мест порядка (RFC 29 §3.2, Q-009):
+ALTER TABLE <t> ADD COLUMN rank TEXT;         -- 10 таблиц
+ALTER TABLE document ADD COLUMN node_rank TEXT;  -- порядок документа в разделе дерева
+```
+
+| Таблица | Колонка | Родитель | Тай-брейк бэкфилла |
+|---|---|---|---|
+| `section` | `rank` | `document_id` | `position, row_id` |
+| `plan_section` | `rank` | `plan_id` | `position, row_id` |
+| `doc_node` | `rank` | `project_id` | `position, node_key, row_id` |
+| `scenario` | `rank` | `project_id, group_key` | `position, scenario_id, row_id` |
+| `scenario_step` | `rank` | `scenario_row_id` | `position, row_id` |
+| `story_section` | `rank` | `project_id` | `position, key, row_id` |
+| `story_acceptance` | `rank` | `story_id` | `position, row_id` |
+| `adr_diagram` | `rank` | `adr_id` | `position, row_id` |
+| `adr_topic` | `rank` | `project_id` | `position, row_id` |
+| `open_question_option` | `rank` | `question_row_id` | `position, row_id` |
+| `document` | `node_rank` | `node_id` (только `node_id IS NOT NULL`) | `node_position NULLS LAST, doc_key, row_id` |
+
+- **Порядок показа — `(rank, uid, row_id)`** (`cod_doc/infra/ordering.py`).
+  Ранг — дробная строка base-36 без заглавных букв (`cod_doc/infra/rank.py`):
+  сортировка совпадает в SQLite `BINARY`, Python и PostgreSQL. Вставка между
+  соседями пишет один ранг, остальные строки не трогаются.
+- **`position` стал local.** Он не уезжает и после слияния реплик может
+  повториться. У `section`, `plan_section`, `scenario_step`, `adr_topic` это
+  индекс, пересчитываемый из ранга (`ordering.renumber`). У `story_acceptance`
+  (`<story_id>#<position>` в ссылках сценариев), `open_question_option` и
+  `adr_diagram` это адрес — append-счётчик, не пересчитывается. У `doc_node` и
+  `story_section` — advisory-число из CLI/MCP. SQL-представление
+  `document_body` (§4.3a) по-прежнему сортирует по `position`: его держат
+  согласованным с рангом.
+- **Снятые UNIQUE.** `uq_scenario_step_position`,
+  `uq_story_acceptance_position`, `uq_adr_diagram_position`,
+  `uq_open_question_option_position` заменены обычными индексами
+  `ix_<t>_position` на тех же колонках: две строки после слияния законно делят
+  позицию до пересчёта.
+
+#### 3.18.3 Служебные таблицы синхронизации
+
+Шесть таблиц — класс `local`: это состояние реплики, а не проекта, они не
+уезжают. После секции A пишутся только `replica` и `sync_op`; остальные ждут
+секций B–C.
+
+```sql
+CREATE TABLE replica (
+  uid         TEXT PRIMARY KEY,               -- uuid7
+  project_id  INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  is_self     BOOLEAN NOT NULL DEFAULT 0,     -- своя реплика проекта
+  label       TEXT,                           -- 'dakh@macbook'
+  created     DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX uq_replica_self ON replica(project_id) WHERE is_self = 1;
+-- своя реплика заводится при init_project или первым коммитом с операцией
+-- (cod_doc/infra/hlc.py::self_replica)
+
+CREATE TABLE sync_op (                        -- журнал операций над authored-данными
+  op_id        TEXT PRIMARY KEY,              -- ULID
+  project_id   INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  replica_uid  TEXT NOT NULL,
+  hlc          TEXT NOT NULL,                 -- '<ms:013d>.<counter:04d>.<replica_uid>'
+  entity_kind  TEXT NOT NULL,                 -- имя таблицы из реестра
+  entity_uid   TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('upsert','delete')),
+  fields       TEXT NOT NULL,                 -- JSON {колонка: новое}; только SHIPPED_COLUMNS, FK как uid конца
+  base         TEXT NOT NULL,                 -- JSON {колонка: прежнее}
+  author       TEXT NOT NULL,                 -- '<kind>:<id>' (ADR-012); нет автора — 'system:unknown'
+  changeset    TEXT                           -- sha256 или NULL = неупакована
+);
+CREATE INDEX ix_sync_op_pending ON sync_op(project_id) WHERE changeset IS NULL;
+CREATE INDEX ix_sync_op_entity  ON sync_op(entity_kind, entity_uid);
+
+CREATE TABLE changeset (                      -- локальный индекс известных changeset'ов
+  sha          TEXT PRIMARY KEY,
+  project_id   INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  parents      TEXT NOT NULL,                 -- JSON-массив sha
+  replica_uid  TEXT NOT NULL,
+  actor        TEXT NOT NULL,
+  epoch        TEXT NOT NULL,                 -- голова миграций эпохи
+  hlc_max      TEXT NOT NULL,
+  digest       TEXT NOT NULL,                 -- дайджест после применения
+  applied_at   DATETIME                       -- NULL = известен, не применён
+);
+
+CREATE TABLE sync_ref (                       -- что реплика знает о remote
+  project_id   INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  remote       TEXT NOT NULL,                 -- 'origin'
+  name         TEXT NOT NULL,                 -- 'main'
+  sha          TEXT,                          -- последняя виденная голова
+  etag         TEXT,                          -- для CAS
+  fetched_at   DATETIME,
+  PRIMARY KEY (project_id, remote, name)
+);
+
+CREATE TABLE sync_lease (                     -- арендованный остаток человекочитаемых номеров
+  project_id   INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  prefix       TEXT NOT NULL,                 -- 'ADO', 'ADR', 'US', 'SCN', 'Q'
+  next_number  INTEGER NOT NULL,
+  end_number   INTEGER NOT NULL,              -- включительно
+  leased_at    DATETIME NOT NULL,
+  PRIMARY KEY (project_id, prefix)
+);
+
+CREATE TABLE entity_alias (                   -- провизорный ID или склеенный uid → живой uid
+  project_id   INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  entity_kind  TEXT NOT NULL,
+  alias        TEXT NOT NULL,
+  uid          TEXT NOT NULL,
+  reason       TEXT NOT NULL CHECK (reason IN ('pinned','merged')),
+  created      DATETIME NOT NULL,
+  PRIMARY KEY (project_id, entity_kind, alias)
+);
+```
+
+- **Кто пишет `sync_op`.** Хук `cod_doc/infra/sync_capture.py`, который
+  `infra/db.py::make_session_factory` вешает на каждую фабрику сессий; bulk-
+  запись, которую хук не видит, обязана звать `sync_capture.record` (так
+  пишет `finding_service.ingest_findings`). Операции копятся до
+  `before_commit` корневой транзакции, откат SAVEPOINT выбрасывает свои.
+  Пишется всегда, даже без настроенного remote: хвост с `changeset IS NULL` —
+  то, что уедет `push`.
+- **Чего в `fields` нет.** Local-колонок (`position`, `projection_hash`,
+  `run_id`, …), `uid` (совпадает с `entity_uid`), колонок, придержанных
+  реестром (`withheld_columns`: ссылки на restricted-документ). Строка класса
+  local — restricted-документ и его потомки, машинный абсолютный `path`,
+  routine-находка — операции не даёт вовсе.
+- **Каскад внутри БД** (`ON DELETE CASCADE` без ORM-каскада) операций детей не
+  даёт: на другой реплике каскад сработает от удаления родителя.
 
 ## 4. Вычисляемые представления
 
