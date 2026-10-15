@@ -71,7 +71,7 @@ def test_adr_status_check_constraint(engine_with_schema) -> None:  # type: ignor
         session.add(ADRModel(project_id=pid, adr_id="ADR-010", title="X", status="weird"))
 
 
-def test_adr_diagram_unique_position(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_adr_diagram_position_no_longer_unique(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid = _seed_project(session)
@@ -85,7 +85,8 @@ def test_adr_diagram_unique_position(engine_with_schema) -> None:  # type: ignor
             ADRDiagramModel(adr_id=adr.row_id, position=1, title="flow", mermaid="graph LR;X-->Y")
         )
         session.flush()
-    with pytest.raises(IntegrityError), transactional(factory) as session:
+    # CLO-003 (0050): UNIQUE (adr_id, position) снят — порядок держит rank.
+    with transactional(factory) as session:
         adr = session.execute(select(ADRModel).where(ADRModel.adr_id == "ADR-020")).scalar_one()
         session.add(ADRDiagramModel(adr_id=adr.row_id, position=0, title="dup", mermaid="x"))
 

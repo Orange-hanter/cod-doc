@@ -20,7 +20,9 @@ from cod_doc.domain.entities import (
     ScenarioProvenance,
     ScenarioStatus,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import ScenarioModel, ScenarioStepModel
+from cod_doc.infra.rank import initial
 from cod_doc.infra.repositories import ScenarioRepository
 from cod_doc.services import activity_service, validation
 
@@ -98,6 +100,10 @@ def create(
             status=status,
             provenance=provenance,
             position=repo.next_position(project_id, resolved_group),
+            # CLO-004: в конец группы — ранг после последнего, соседи не трогаются.
+            rank=ordering.insert_rank(
+                session, ScenarioModel, project_id=project_id, group_key=resolved_group
+            ),
             document_id=document_id,
             doc_key=doc_key,
             section_anchor=section_anchor,
@@ -109,8 +115,13 @@ def create(
     )
     assert scenario.row_id is not None
 
-    for i, text in enumerate(steps or []):
-        session.add(ScenarioStepModel(scenario_row_id=scenario.row_id, position=i, text=text))
+    step_texts = steps or []
+    for i, (text, step_rank) in enumerate(zip(step_texts, initial(len(step_texts)), strict=True)):
+        session.add(
+            ScenarioStepModel(
+                scenario_row_id=scenario.row_id, position=i, text=text, rank=step_rank
+            )
+        )
     session.flush()
 
     activity_service.write_revision_and_emit_event(

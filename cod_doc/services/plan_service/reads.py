@@ -210,7 +210,7 @@ def section_progress_for_project(
             "JOIN section_totals st ON st.section_id = s.row_id "
             "JOIN plan p ON p.row_id = s.plan_id "
             "WHERE p.project_id = :pid "
-            "ORDER BY s.plan_id, s.position, s.row_id"
+            "ORDER BY s.plan_id, s.rank, s.uid, s.row_id"
         ),
         {"pid": project_id},
     ).all()
@@ -400,7 +400,7 @@ def recalc(session: Session, plan_id: int, *, project_id: int) -> PlanProgress:
             "FROM plan_section s "
             "JOIN section_totals st ON st.section_id = s.row_id "
             "WHERE s.plan_id = :pid "
-            "ORDER BY s.position"
+            "ORDER BY s.rank, s.uid, s.row_id"
         ),
         {"pid": plan_id},
     ).all()

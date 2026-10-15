@@ -44,6 +44,7 @@ from cod_doc.domain.entities import (
     QuestionRelation,
     QuestionStatus,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     DocumentModel,
     OpenQuestionModel,
@@ -229,7 +230,7 @@ def _load(
         for row in session.execute(
             select(SectionModel)
             .where(SectionModel.document_id == doc.row_id)
-            .order_by(SectionModel.position)
+            .order_by(*ordering.order_by(SectionModel))
         ).scalars()
     ]
     return doc, sections

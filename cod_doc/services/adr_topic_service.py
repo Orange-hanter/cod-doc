@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import func, select
 
 from cod_doc.domain.entities import EntityKind
+from cod_doc.infra import ordering
 from cod_doc.infra.models import ADRModel, ADRTopicModel
 from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
@@ -77,7 +78,7 @@ def list_for_project(session: Session, project_id: int) -> list[ADRTopicModel]:
         session.execute(
             select(ADRTopicModel)
             .where(ADRTopicModel.project_id == project_id)
-            .order_by(ADRTopicModel.position, ADRTopicModel.row_id)
+            .order_by(*ordering.order_by(ADRTopicModel))
         ).scalars()
     )
 
@@ -150,7 +151,7 @@ def names(session: Session, project_id: int) -> list[str]:
         session.execute(
             select(ADRTopicModel.name)
             .where(ADRTopicModel.project_id == project_id)
-            .order_by(ADRTopicModel.position, ADRTopicModel.row_id)
+            .order_by(*ordering.order_by(ADRTopicModel))
         ).scalars()
     )
 
@@ -251,6 +252,8 @@ def create(
         includes=_clean_scope("includes", includes),
         excludes=_clean_scope("excludes", excludes),
         position=0 if last is None else int(last) + 1,
+        # CLO-004: ранг после последней полки, остальные не трогаются.
+        rank=ordering.insert_rank(session, ADRTopicModel, project_id=project_id),
         created=now,
         last_updated=now,
     )
@@ -341,10 +344,10 @@ def move(
     if new == old and topic.position == old:
         return topic
     before = {t.name: t.position for t in topics}
-    topics.pop(old)
-    topics.insert(new, topic)
-    for i, t in enumerate(topics):
-        t.position = i
+    if new != old:
+        # CLO-004: новый ранг только у перемещаемой полки.
+        topics = ordering.place(topics, topic, new)
+    ordering.renumber(topics)
     topic.last_updated = datetime.now(UTC)
     session.flush()
     _write(

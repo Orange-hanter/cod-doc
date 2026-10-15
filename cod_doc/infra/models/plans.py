@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
 class PlanModel(SyncUidMixin, Base):
@@ -49,7 +49,7 @@ class PlanModel(SyncUidMixin, Base):
     sections: Mapped[list[PlanSectionModel]] = relationship(
         back_populates="plan",
         cascade="all, delete-orphan",
-        order_by="PlanSectionModel.position",
+        order_by="[PlanSectionModel.rank, PlanSectionModel.uid, PlanSectionModel.row_id]",
     )
     tasks: Mapped[list[TaskModel]] = relationship(
         back_populates="plan",
@@ -57,7 +57,7 @@ class PlanModel(SyncUidMixin, Base):
     )
 
 
-class PlanSectionModel(SyncUidMixin, Base):
+class PlanSectionModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "plan_section"
     __table_args__ = (UniqueConstraint("plan_id", "letter", name="uq_plan_section_plan_letter"),)
 

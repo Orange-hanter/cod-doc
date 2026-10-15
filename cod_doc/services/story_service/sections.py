@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from cod_doc.domain.entities import EntityKind, StorySection
+from cod_doc.infra import ordering
+from cod_doc.infra.models import StorySectionModel
 from cod_doc.infra.repositories import StorySectionRepository
 from cod_doc.services import activity_service, validation
 from cod_doc.services import revision_service as rev
@@ -50,12 +52,21 @@ def create_section(
     if repo.get_by_key(project_id, key) is not None:
         raise SectionAlreadyExistsError(key)
 
+    claimed = position if position is not None else repo.next_position(project_id)
     section = repo.add(
         StorySection(
             project_id=project_id,
             key=key,
             title=title,
-            position=position if position is not None else repo.next_position(project_id),
+            position=claimed,
+            # CLO-004: один ранг между соседями; position — advisory-число.
+            rank=ordering.insert_rank(
+                session,
+                StorySectionModel,
+                position=claimed,
+                tie=("key", key),
+                project_id=project_id,
+            ),
         )
     )
     session.flush()

@@ -319,12 +319,10 @@ def test_plan_parent_doc_id_set_null_on_doc_delete(engine_with_schema) -> None: 
         assert p.parent_doc_id is None
 
 
-# --------------------------- LO-7: story_acceptance UNIQUE -------------------
+# ------------- LO-7: story_acceptance UNIQUE — снят в CLO-003 (0050) ---------
 
 
-def test_story_acceptance_position_unique_within_story(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError
-
+def test_story_acceptance_position_no_longer_unique(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     now = datetime.now(UTC)
 
@@ -345,5 +343,10 @@ def test_story_acceptance_position_unique_within_story(engine_with_schema) -> No
         session.add(StoryAcceptanceModel(story_id=story.row_id, position=0, criterion="A"))
         s_id = story.row_id
 
-    with pytest.raises(IntegrityError), transactional(factory) as session:
+    # CLO-003 (миграция 0050) сняла UNIQUE: после слияния двух реплик два
+    # критерия законно делят позицию до пересчёта, порядок держит rank.
+    with transactional(factory) as session:
         session.add(StoryAcceptanceModel(story_id=s_id, position=0, criterion="A2"))
+    with transactional(factory) as session:
+        rows = session.query(StoryAcceptanceModel).filter_by(story_id=s_id).all()
+        assert sorted(r.criterion for r in rows if r.position == 0) == ["A", "A2"]

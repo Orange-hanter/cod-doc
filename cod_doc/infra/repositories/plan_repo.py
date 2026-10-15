@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 
 from cod_doc.domain.entities import Plan, PlanSection
+from cod_doc.infra import ordering
 from cod_doc.infra.models import PlanModel, PlanSectionModel
 from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id, require_key
 
@@ -80,6 +81,7 @@ class PlanSectionRepository(BaseRepository[PlanSection, PlanSectionModel]):
             title=model.title,
             slug=model.slug,
             position=model.position,
+            rank=model.rank,
             doc_id=model.doc_id,
         )
 
@@ -90,6 +92,7 @@ class PlanSectionRepository(BaseRepository[PlanSection, PlanSectionModel]):
             "title": entity.title,
             "slug": entity.slug,
             "position": entity.position,
+            "rank": entity.rank,
             "doc_id": entity.doc_id,
         }
         if entity.row_id is not None:
@@ -100,6 +103,6 @@ class PlanSectionRepository(BaseRepository[PlanSection, PlanSectionModel]):
         stmt = (
             select(PlanSectionModel)
             .where(PlanSectionModel.plan_id == plan_id)
-            .order_by(PlanSectionModel.position)
+            .order_by(*ordering.order_by(PlanSectionModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]

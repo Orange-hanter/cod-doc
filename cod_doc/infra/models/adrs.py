@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
 class ADRModel(SyncUidMixin, Base):
@@ -57,7 +57,7 @@ class ADRModel(SyncUidMixin, Base):
     diagrams: Mapped[list[ADRDiagramModel]] = relationship(
         back_populates="adr",
         cascade="all, delete-orphan",
-        order_by="ADRDiagramModel.position",
+        order_by="[ADRDiagramModel.rank, ADRDiagramModel.uid, ADRDiagramModel.row_id]",
     )
     task_links: Mapped[list[ADRTaskModel]] = relationship(
         back_populates="adr",
@@ -65,10 +65,10 @@ class ADRModel(SyncUidMixin, Base):
     )
 
 
-class ADRDiagramModel(SyncUidMixin, Base):
+class ADRDiagramModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "adr_diagram"
     __table_args__ = (
-        UniqueConstraint("adr_id", "position", name="uq_adr_diagram_position"),
+        Index("ix_adr_diagram_position", "adr_id", "position"),
         Index("ix_adr_diagram_adr", "adr_id"),
     )
 
@@ -143,7 +143,7 @@ class ADRRelationModel(SyncUidMixin, Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
-class ADRTopicModel(SyncUidMixin, Base):
+class ADRTopicModel(RankMixin, SyncUidMixin, Base):
     """ARG-008 (RFC 34 §3.4): полка реестра ADR — тема, о чём решение.
 
     ``includes`` / ``excludes`` — состав полки: агент выбирает полку по ним,

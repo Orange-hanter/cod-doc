@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -15,10 +16,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
-class StorySectionModel(SyncUidMixin, Base):
+class StorySectionModel(RankMixin, SyncUidMixin, Base):
     """Продуктовый модуль, в который сложены истории (ADO-143).
 
     Аналог ``plan_section`` для планов: даёт человеческое название, явный
@@ -69,7 +70,7 @@ class UserStoryModel(SyncUidMixin, Base):
     acceptance: Mapped[list[StoryAcceptanceModel]] = relationship(
         back_populates="story",
         cascade="all, delete-orphan",
-        order_by="StoryAcceptanceModel.position",
+        order_by="[StoryAcceptanceModel.rank, StoryAcceptanceModel.uid, StoryAcceptanceModel.row_id]",
     )
     links: Mapped[list[StoryLinkModel]] = relationship(
         back_populates="story",
@@ -77,11 +78,9 @@ class UserStoryModel(SyncUidMixin, Base):
     )
 
 
-class StoryAcceptanceModel(SyncUidMixin, Base):
+class StoryAcceptanceModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "story_acceptance"
-    __table_args__ = (
-        UniqueConstraint("story_id", "position", name="uq_story_acceptance_position"),
-    )
+    __table_args__ = (Index("ix_story_acceptance_position", "story_id", "position"),)
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     story_id: Mapped[int] = mapped_column(

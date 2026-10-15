@@ -24,7 +24,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, NamedTuple
 
+from sqlalchemy import select
+
 from cod_doc.domain.entities import DocNode, DocumentType, EntityKind
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocNodeModel, DocumentModel
 from cod_doc.infra.repositories import DocNodeRepository, DocumentRepository
 from cod_doc.services import activity_service, doc_taxonomy, validation
@@ -203,6 +206,7 @@ def create_node(
             raise NodeNotFoundError(parent_key)
         parent_id = parent.row_id
 
+    claimed = position if position is not None else repo.next_position(project_id)
     node = repo.add(
         DocNode(
             project_id=project_id,
@@ -210,10 +214,19 @@ def create_node(
             parent_id=parent_id,
             title=title,
             intent=intent,
-            position=position if position is not None else repo.next_position(project_id),
+            position=claimed,
             expected_types=list(expected_types or []),
             min_docs=min_docs,
             is_inbox=is_inbox,
+            # CLO-004: один ранг между соседями. ``position`` раздела —
+            # advisory-число из CLI/MCP и хранится как задано; порядок держит ранг.
+            rank=ordering.insert_rank(
+                session,
+                DocNodeModel,
+                position=claimed,
+                tie=("node_key", node_key),
+                project_id=project_id,
+            ),
         )
     )
     session.flush()
@@ -273,6 +286,14 @@ def update_node(
         model.intent = intent
     if position is not None and position != model.position:
         changes["position"] = {"from": model.position, "to": position}
+        model.rank = ordering.insert_rank(
+            session,
+            DocNodeModel,
+            position=position,
+            tie=("node_key", model.node_key),
+            exclude=model,
+            project_id=project_id,
+        )
         model.position = position
     if min_docs is not None and min_docs != model.min_docs:
         changes["min_docs"] = {"from": model.min_docs, "to": min_docs}
@@ -347,9 +368,11 @@ def delete_node(
         target_id = None if target.is_inbox else target.row_id
 
     moved = len(docs)
+    docs.sort(key=lambda d: (d.node_rank or "", d.uid or "", d.row_id))
     for doc in docs:
         # ``last_updated`` не трогаем по той же причине, что в ``assign``:
         # перенос между разделами не правит содержимое документа.
+        doc.node_rank = _node_rank(session, doc, target_id, None)
         doc.node_id = target_id
 
     session.delete(model)
@@ -466,6 +489,7 @@ def assign(
         previous = repo.get(old_id)
         old_key = previous.node_key if previous is not None else None
 
+    doc.node_rank = _node_rank(session, doc, new_id, position)
     doc.node_id = new_id
     if position is not None:
         doc.node_position = position
@@ -548,6 +572,43 @@ def classify_project(
                 reason=reason or f"classify: {placement.reason}",
             )
     return report
+
+
+def _node_rank(
+    session: Session, doc: DocumentModel, node_id: int | None, position: int | None
+) -> str | None:
+    """``node_rank`` документа, кладущегося в раздел ``node_id`` (CLO-004).
+
+    Один ранг между соседями по разделу, их ранги не трогаются. ``position``
+    — заявленный ``node_position``: документ встаёт после соседей с
+    позицией не больше (NULL — в конец, как в бэкфилле 0050); ``None`` —
+    в конец раздела. Инбокс не упорядочен — ``None``.
+    """
+    if node_id is None:
+        return None
+    rows = [
+        r
+        for r in session.execute(
+            select(DocumentModel)
+            .where(DocumentModel.node_id == node_id, DocumentModel.row_id != doc.row_id)
+            .where(DocumentModel.node_rank.is_not(None))
+            .order_by(DocumentModel.node_rank, DocumentModel.uid, DocumentModel.row_id)
+        ).scalars()
+    ]
+    index = len(rows)
+    if position is not None:
+        claim = (position, doc.doc_key)
+        index = next(
+            (
+                i
+                for i, r in enumerate(rows)
+                if r.node_position is None or (r.node_position, r.doc_key) > claim
+            ),
+            len(rows),
+        )
+    left = rows[index - 1].node_rank if index > 0 else None
+    right = rows[index].node_rank if index < len(rows) else None
+    return ordering.rank_between(left, right)
 
 
 def _require_node_model(session: Session, project_id: int, node_key: str) -> DocNodeModel:

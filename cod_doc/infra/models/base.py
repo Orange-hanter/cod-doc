@@ -24,5 +24,17 @@ class SyncUidMixin:
     uid: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class RankMixin:
+    """Синхронизируемый порядок строки внутри родителя (RFC 29 §3.2, Q-009, CLO-003).
+
+    Дробный ранг из ``cod_doc.infra.rank``; колонку создаёт миграция 0050.
+    Порядок чтения — ``(rank, uid, row_id)`` (``infra/ordering.py``), а целый
+    ``position`` рядом — local-производная, пересчитываемая из ранга. Nullable
+    по той же причине, что ``uid``: ранг ставит ``ordering``, а не ограничение.
+    """
+
+    rank: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC)
