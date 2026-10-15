@@ -280,3 +280,29 @@ def test_export_emits_activity_event(engine_with_schema, tmp_path) -> None:  # t
             ).scalars()
         ]
     assert kinds == ["scenario.exported"]
+
+
+def test_set_steps_diff_exports_same_markdown_as_fresh_list(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """CLO-007: ORM-дифф шагов не меняет проекцию — файл тот же, что у сценария,
+    созданного сразу с этим списком."""
+    final = ["new", "a", "B", "c", "d"]
+    factory = make_session_factory(engine_with_schema)
+    texts = []
+    for name, steps in (("diffed", ["a", "b", "c"]), ("fresh", final)):
+        root = tmp_path / name
+        root.mkdir()
+        with transactional(factory) as session:
+            pid = _seed(session, root)
+            session.get(ProjectModel, pid).slug = name
+            s = _create(session, pid, steps=steps)
+            if steps != final:
+                scenario_service.set_steps(
+                    session,
+                    project_id=pid,
+                    scenario_id=s.scenario_id,
+                    steps=final,
+                    author="human:test",
+                )
+            _export(session, pid, root)
+        texts.append(_target(root).read_text(encoding="utf-8"))
+    assert texts[0] == texts[1]

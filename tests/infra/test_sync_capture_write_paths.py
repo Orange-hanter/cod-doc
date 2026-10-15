@@ -18,9 +18,10 @@ ORM-запись: так проверяется сам хук, а таблица
 ``NO_WRITE_PATH``. ``test_every_captured_table_has_a_case`` требует случай
 на каждую захватываемую таблицу.
 
-Три пути пишут bulk-запросом мимо хука (RFC §3.4) — их переписывает CLO-007;
-до тех пор их случаи — ``xfail(strict=True)``: починка перевернёт их в
-красное, и маркер придётся снять.
+Три пути, писавшие bulk-запросом мимо хука (RFC §3.4), переписаны в CLO-007:
+шаги сценария и решение по подсказке — ORM, upsert находок — SQL с
+``sync_capture.record`` рядом. Новый такой путь не пропустит AST-гейт
+``test_sync_capture_no_bulk_authored.py`` (CLO-008).
 """
 
 from __future__ import annotations
@@ -1217,7 +1218,8 @@ def _(w: World) -> Expect:
     scenario_service.set_steps(
         w.session, project_id=w.pid, scenario_id="SCN-001", steps=["uno"], author=AUTHOR
     )
-    # Удаление старых шагов — bulk delete мимо хука (RFC §3.4, CLO-007).
+    # ORM-дифф (CLO-007): «one» переписан в «uno» — та же строка, тот же uid;
+    # «two» удалён.
     return [("scenario_step", w.later(ScenarioStepModel, text="uno")), ("scenario_step", old)]
 
 
@@ -1350,7 +1352,7 @@ def _external_finding(w: World) -> None:
 @case("finding_service.ingest_findings")
 def _(w: World) -> Expect:
     _external_finding(w)
-    # Upsert находок — bulk insert мимо хука (RFC §3.4, CLO-007: record рядом).
+    # Upsert находок — SQL мимо хука, операцию пишет sync_capture.record (CLO-007).
     return [("finding", w.later(FindingModel, fingerprint="fp-1"))]
 
 
@@ -1415,9 +1417,20 @@ def _(w: World) -> Expect:
     row = _suggestion(w)
     w.commit()
     section = w.session.scalars(select(SectionModel).where(SectionModel.anchor == "intro")).one()
-    semantic.update_suggestion_state(w.session, row.row_id, "rejected", project_id=w.pid)
+    semantic.update_suggestion_state(
+        w.session, row.row_id, "rejected", project_id=w.pid, author=AUTHOR
+    )
     key = {"from_section_id": section.uid, "to_doc_key": "spec-a", "to_section_id": None}
-    # Решение по подсказке — bulk update мимо хука (Q-017, CLO-007).
+    return [("link_suggestion", lambda: reg.edge_uid("link_suggestion", key))]
+
+
+@case("link_service._auto_accept_above")
+def _(w: World) -> Expect:
+    row = _suggestion(w)
+    w.commit()
+    section = w.session.scalars(select(SectionModel).where(SectionModel.anchor == "intro")).one()
+    semantic._auto_accept_above(w.session, row.from_section_id, 0.5)
+    key = {"from_section_id": section.uid, "to_doc_key": "spec-a", "to_section_id": None}
     return [("link_suggestion", lambda: reg.edge_uid("link_suggestion", key))]
 
 
@@ -1435,14 +1448,6 @@ def _(w: World) -> Expect:
     entry = ProjectEntry(name="second", path=str(root), db_url=w.db_url)
     project_service.init_project(entry)
     return [("project", w.later(ProjectModel, slug="second"))]
-
-
-#: Захват bulk-путей чинит CLO-007 (RFC §3.4); до него случаи падают.
-BULK_UNTIL_CLO_007: dict[str, str] = {
-    "scenario_service.set_steps": "delete(ScenarioStepModel) — шаги удаляются мимо хука",
-    "finding_service.ingest_findings": "sqlite_insert(FindingModel) — upsert мимо хука",
-    "link_service.update_suggestion_state": "update(LinkSuggestionModel) — решение мимо хука",
-}
 
 
 # таблицы без пути записи в коде: проверяется сам хук на прямой ORM-записи -------------
@@ -1551,12 +1556,7 @@ def _(w: World) -> Expect:
 def _params() -> list[Any]:
     out = []
     for name in sorted(CASES):
-        marks = []
-        if name in BULK_UNTIL_CLO_007:
-            marks.append(
-                pytest.mark.xfail(strict=True, reason=f"CLO-007: {BULK_UNTIL_CLO_007[name]}")
-            )
-        out.append(pytest.param(name, marks=marks, id=name))
+        out.append(pytest.param(name, id=name))
     return out
 
 
@@ -1658,3 +1658,43 @@ def test_no_write_path_list_is_current() -> None:
         assert re.search(rf"\b{re.escape(ctor)}", services) is None, (
             f"{table}: появился путь записи — убери из NO_WRITE_PATH и добавь случай сервиса"
         )
+
+
+def test_repeat_ingest_records_only_counters(world: World) -> None:
+    """CLO-007: повтор находки — операция с ``last_seen_at``/``times_seen`` и их ``base``.
+
+    Upsert идёт SQL мимо хука; ``record`` пишет операцию на тот же uid, что у
+    первой вставки, с прежними значениями счётчиков в ``base``.
+    """
+    session = world.session
+    _external_finding(world)
+    world.commit()
+    first = session.scalars(select(FindingModel)).one()
+    uid, seen_at = first.uid, first.last_seen_at
+    before = set(session.scalars(select(SyncOpModel.op_id)))
+
+    _external_finding(world)
+    session.commit()
+    ops = [op for op in _fresh_ops(session, before) if op.entity_kind == "finding"]
+
+    assert [(op.entity_uid, op.kind) for op in ops] == [(uid, "upsert")]
+    fields, base = json.loads(ops[0].fields), json.loads(ops[0].base)
+    assert set(fields) == set(base) == {"last_seen_at", "times_seen"}
+    assert (fields["times_seen"], base["times_seen"]) == (2, 1)
+    stamp = seen_at if seen_at.tzinfo is not None else seen_at.replace(tzinfo=UTC)
+    assert base["last_seen_at"] == stamp.astimezone(UTC).isoformat()
+    assert ops[0].author == "system:ingest:ai_review"
+
+
+def test_routine_finding_records_nothing(world: World) -> None:
+    """Routine-находка — derived (``row_is_local``): upsert операции не даёт."""
+    session = world.session
+    before = set(session.scalars(select(SyncOpModel.op_id)))
+    finding_service.ingest_findings(
+        session,
+        project_id=world.pid,
+        source_run_id="routine-run",
+        seeds=[FindingSeed(fingerprint="fp-r", source="routine", title="R", severity="minor")],
+    )
+    session.commit()
+    assert [op for op in _fresh_ops(session, before) if op.entity_kind == "finding"] == []

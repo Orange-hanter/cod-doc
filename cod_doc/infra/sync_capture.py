@@ -83,7 +83,7 @@ from cod_doc.infra.hlc import clock_for, self_replica
 from cod_doc.infra.models import Base, SyncOpModel
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterable, Iterator, Mapping
 
     from sqlalchemy import Connection, Table
     from sqlalchemy.orm import InstanceState, SessionTransaction, sessionmaker
@@ -999,6 +999,35 @@ def record(
     )
     _pending(session).append(op)
     return op.op_id
+
+
+def shipped_fields(
+    session: Session,
+    table: str,
+    row: Mapping[str, object],
+    columns: Iterable[str] | None = None,
+) -> dict[str, object] | None:
+    """Поля строки для ``record`` — ровно как их сериализует хук.
+
+    ``row`` — строка целиком, со ссылками в виде ``row_id`` (как в БД). FK
+    становятся uid конца, колонки, которые реестр придерживает для этой
+    строки (``withheld_columns``), выброшены. ``columns`` — подмножество
+    (``None`` — все уезжающие). ``None`` вместо словаря — строка не уезжает
+    (``row_is_local``, решение 2 реестра): ``record`` для неё звать не нужно.
+    Конец ссылки без uid — ``SyncCaptureError``, как в хуке.
+    """
+    mapper = _mapper_for(table)
+    info = table_info(mapper) if mapper is not None else None
+    if info is None:
+        msg = f"sync_capture.shipped_fields: {table!r} не захватывается"
+        raise ValueError(msg)
+    lookup = _Lookup(session)
+    project_id = lookup.project_id(table, row)
+    gate = gating_row(lookup, table, row, project_id)
+    if not _ships(table, gate):
+        return None
+    wanted = info.shipped if columns is None else info.shipped & frozenset(columns)
+    return _columns_payload(info, wanted - reg.withheld_columns(table, gate), row, lookup)
 
 
 @contextmanager

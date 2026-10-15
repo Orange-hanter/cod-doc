@@ -1079,7 +1079,9 @@ def suggestion_accept(
         author="human:web",
         reason=f"accept suggestion #{row_id}",
     )
-    semantic.update_suggestion_state(session, row_id, "accepted", project_id=project_db_id)
+    semantic.update_suggestion_state(
+        session, row_id, "accepted", project_id=project_db_id, author="human:web"
+    )
     session.commit()
     return JSONResponse({"accepted": True, "row_id": row_id})
 
@@ -1095,7 +1097,9 @@ def suggestion_reject(
     from cod_doc.services.link_service import semantic
 
     session, project_db_id = db
-    if not semantic.update_suggestion_state(session, row_id, "rejected", project_id=project_db_id):
+    if not semantic.update_suggestion_state(
+        session, row_id, "rejected", project_id=project_db_id, author="human:web"
+    ):
         raise HTTPException(404, "Suggestion not found")
     session.commit()
     return JSONResponse({"rejected": True, "row_id": row_id})

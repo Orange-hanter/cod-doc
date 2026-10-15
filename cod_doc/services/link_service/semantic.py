@@ -36,6 +36,8 @@ log = logging.getLogger("cod_doc.services.link_service.semantic")
 DEFAULT_THRESHOLD = 0.78
 DEFAULT_K = 20  # candidates from ChromaDB
 DEFAULT_TOP_N = 5  # suggestions stored per section
+#: Автор автопринятия ``apply_above``: решение принимает порог, а не человек.
+AUTO_ACCEPT_AUTHOR = "system:link-suggest"
 
 
 @dataclass
@@ -85,7 +87,7 @@ def _upsert_suggestion(
     evidence: dict[str, Any],
 ) -> bool:
     """Insert or update a suggestion row.  Returns True if created, False if updated."""
-    from sqlalchemy import select, update
+    from sqlalchemy import select
 
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
@@ -98,14 +100,12 @@ def _upsert_suggestion(
     existing = session.execute(stmt).scalar_one_or_none()
     if existing is not None:
         # Only update if score improved; never overwrite accepted/rejected state.
+        # ORM, а не bulk update: решение (state) — authored-колонка, и гейт
+        # CLO-008 запрещает bulk-запись в таблицу с authored-колонками.
         if existing.state == "pending" and score > existing.score:
-            session.execute(
-                update(LinkSuggestionModel)
-                .where(LinkSuggestionModel.row_id == existing.row_id)
-                .values(
-                    score=score, evidence=json.dumps(evidence, ensure_ascii=False), updated_at=now
-                )
-            )
+            existing.score = score
+            existing.evidence = json.dumps(evidence, ensure_ascii=False)
+            existing.updated_at = now
         return False  # not a new row
 
     session.add(
@@ -315,20 +315,30 @@ def backfill_project(
 
 
 def _auto_accept_above(session: Session, from_section_id: int, threshold: float) -> None:
-    """Accept pending suggestions with score > threshold for a section."""
-    from sqlalchemy import update
+    """Accept pending suggestions with score > threshold for a section.
 
+    ORM-присваивание, а не bulk ``update``: принятая подсказка — authored
+    решение (Q-017), и операцию в ``sync_op`` пишет хук захвата (CLO-007).
+    """
+    from sqlalchemy import select
+
+    from cod_doc.infra import sync_capture
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
-    session.execute(
-        update(LinkSuggestionModel)
-        .where(
+    rows = session.scalars(
+        select(LinkSuggestionModel).where(
             LinkSuggestionModel.from_section_id == from_section_id,
             LinkSuggestionModel.state == "pending",
             LinkSuggestionModel.score > threshold,
         )
-        .values(state="accepted", updated_at=datetime.now(UTC))
-    )
+    ).all()
+    if not rows:
+        return
+    sync_capture.set_author(session, AUTO_ACCEPT_AUTHOR)
+    now = datetime.now(UTC)
+    for row in rows:
+        row.state = "accepted"
+        row.updated_at = now
 
 
 def _in_project(project_id: int) -> ColumnElement[bool]:
@@ -475,27 +485,34 @@ def update_suggestion_state(
     new_state: str,
     *,
     project_id: int,
+    author: str,
 ) -> bool:
     """Change state of a suggestion (pending → accepted | rejected).  Returns True if found.
 
     Предложение чужого проекта — False, как несуществующее (AFT-024): иначе
     отклонить или принять его можно было бы перебором ``row_id``.
+
+    Решение — authored (Q-017): пишется ORM-присваиванием, операцию в
+    ``sync_op`` от имени ``author`` оставляет хук захвата (CLO-007).
     """
-    from sqlalchemy import update
+    from sqlalchemy import select
+
+    from cod_doc.infra import sync_capture
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
     if new_state not in ("accepted", "rejected", "pending"):
         raise ValueError(f"Invalid state: {new_state!r}")
 
-    if get_suggestion(session, row_id, project_id=project_id) is None:
+    # Скоуп — в том же запросе, что находит строку: меняем ровно ту, что
+    # принадлежит проекту.
+    row = session.scalars(
+        select(LinkSuggestionModel).where(
+            LinkSuggestionModel.row_id == row_id, _in_project(project_id)
+        )
+    ).one_or_none()
+    if row is None:
         return False
-
-    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
-
-    # Скоуп и в самом UPDATE, не только в проверке выше: строка, которую
-    # меняем, — ровно та, что принадлежит проекту.
-    session.execute(
-        update(LinkSuggestionModel)
-        .where(LinkSuggestionModel.row_id == row_id, _in_project(project_id))
-        .values(state=new_state, updated_at=datetime.now(UTC))
-    )
+    sync_capture.set_author(session, author)
+    row.state = new_state
+    row.updated_at = datetime.now(UTC)
     return True

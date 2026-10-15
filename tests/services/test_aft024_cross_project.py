@@ -342,7 +342,7 @@ def test_link_suggestion_of_another_project_cannot_be_read_or_resolved(engine_wi
         )
         for state in ("rejected", "accepted"):
             assert not semantic.update_suggestion_state(
-                session, sugg_id, state, project_id=b.project
+                session, sugg_id, state, project_id=b.project, author="human:test"
             )
         # Генерация по секции соседа отказывает до обращения к индексу
         # эмбеддингов — конфиг не нужен, и ничего не пишется.
@@ -366,7 +366,9 @@ def test_link_suggestion_of_another_project_cannot_be_read_or_resolved(engine_wi
         assert [s["row_id"] for s in semantic.list_suggestions(session, project_id=a.project)] == [
             sugg_id
         ]
-        assert semantic.update_suggestion_state(session, sugg_id, "rejected", project_id=a.project)
+        assert semantic.update_suggestion_state(
+            session, sugg_id, "rejected", project_id=a.project, author="human:test"
+        )
 
 
 # --------------------------------------------------------------------------- #
