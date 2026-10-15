@@ -25,10 +25,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class RoutineModel(Base):
+class RoutineModel(SyncUidMixin, Base):
     """A scheduled or manually-triggered check.
 
     Triggers: 'cron' | 'manual' | 'event'.

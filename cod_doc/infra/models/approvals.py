@@ -14,10 +14,10 @@ from typing import Any
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class ApprovalModel(Base):
+class ApprovalModel(SyncUidMixin, Base):
     """A pending or resolved decision gate.
 
     Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual' | 'doc_patch'
@@ -62,7 +62,7 @@ class ApprovalModel(Base):
     run_id: Mapped[str | None] = mapped_column(String(36))
 
 
-class ApprovalTaskLinkModel(Base):
+class ApprovalTaskLinkModel(SyncUidMixin, Base):
     """M:N link between an approval and the tasks it gates."""
 
     __tablename__ = "approval_task_link"
@@ -80,7 +80,7 @@ class ApprovalTaskLinkModel(Base):
     task_ref: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
-class ApprovalDocRevisionLinkModel(Base):
+class ApprovalDocRevisionLinkModel(SyncUidMixin, Base):
     """Doc revision IDs referenced by an approval (e.g. 'approve plan@rev-abc')."""
 
     __tablename__ = "approval_doc_revision_link"

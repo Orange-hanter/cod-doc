@@ -19,10 +19,10 @@ from datetime import datetime  # noqa: TC003 — runtime use by Mapped[datetime]
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class DocCommentModel(Base):
+class DocCommentModel(SyncUidMixin, Base):
     __tablename__ = "doc_comment"
     __table_args__ = (
         Index("ix_doc_comment_document", "document_id"),

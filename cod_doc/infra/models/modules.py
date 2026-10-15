@@ -12,10 +12,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base
+from .base import Base, SyncUidMixin
 
 
-class ModuleModel(Base):
+class ModuleModel(SyncUidMixin, Base):
     __tablename__ = "module"
     # STO-024: module_id уникален в пределах проекта, а не всей БД (миграция 0047).
     __table_args__ = (
@@ -47,7 +47,7 @@ class ModuleModel(Base):
     )
 
 
-class ModuleDependencyModel(Base):
+class ModuleDependencyModel(SyncUidMixin, Base):
     __tablename__ = "module_dependency"
     __table_args__ = (
         UniqueConstraint("from_module", "to_module", name="uq_module_dependency_edge"),
@@ -70,7 +70,7 @@ class ModuleDependencyModel(Base):
     to_module_rel: Mapped[ModuleModel] = relationship(foreign_keys=[to_module])
 
 
-class ModuleCodeModel(Base):
+class ModuleCodeModel(SyncUidMixin, Base):
     __tablename__ = "module_code"
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)

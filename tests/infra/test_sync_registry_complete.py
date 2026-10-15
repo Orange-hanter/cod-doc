@@ -225,6 +225,13 @@ def test_registry_classifies_tables_per_rfc() -> None:
         "trace_call",
         "task_metrics",
         "finding_source_run",
+        # служебные таблицы синхронизации (0049, CLO-002): состояние реплики
+        "replica",
+        "sync_op",
+        "changeset",
+        "sync_ref",
+        "sync_lease",
+        "entity_alias",
     }
     assert {"link", "link_suggestion", "doc_node_suggestion", "doc_code_claim"} <= by_cls[
         SyncClass.DERIVED
@@ -663,6 +670,45 @@ def test_shipped_columns_match_schema() -> None:
         n for n, s in REGISTRY.items() if s.cls in {SyncClass.AUTHORED, SyncClass.JOURNAL}
     }
     assert problems == []
+
+
+def test_uid_column_on_every_authored_table() -> None:
+    """CLO-002: ``uid`` есть у каждой authored-таблицы, кроме тег-таблиц с составным PK.
+
+    Новая authored-таблица без ``uid`` не адресуема операцией; колонка ``uid``
+    вне authored — признак ошибки класса (решение 18).
+    """
+    tables = _all_model_tables()
+    with_uid = {
+        name
+        for name, table in tables.items()
+        if "uid" in table.columns and spec_for(name).cls is SyncClass.AUTHORED
+    }
+    authored = {spec.table for spec in authored_tables()}
+    assert with_uid == authored - reg.COMPOSITE_PK_TABLES == reg.UID_TABLES
+    assert authored >= reg.COMPOSITE_PK_TABLES
+    for name in reg.COMPOSITE_PK_TABLES:
+        assert "row_id" not in tables[name].columns, name
+        assert spec_for(name).deterministic_uid, name
+    for name in reg.UID_TABLES:
+        assert "uid" in reg.SHIPPED_COLUMNS[name], name
+        assert any(i.unique and i.name == f"uq_{name}_uid" for i in tables[name].indexes), name
+
+
+def test_edge_uid_is_deterministic_over_endpoint_uids() -> None:
+    row = {"from_task_id": "u-a", "to_task_id": "u-b", "kind": "blocks"}
+    assert reg.edge_uid("dependency", row) == reg.edge_uid("dependency", dict(row))
+    assert reg.edge_uid("dependency", row) != reg.edge_uid("dependency", {**row, "kind": "relates"})
+    # таблица входит в ключ: одинаковые значения разных рёбер не сливаются
+    assert reg.edge_uid("task_tag", {"task_id": "x", "tag_id": "y"}) != reg.edge_uid(
+        "story_tag", {"story_id": "x", "tag_id": "y"}
+    )
+    # разделитель внутри значения не склеивает соседние колонки
+    assert reg.edge_uid("affected_file", {"task_id": "a,b", "path": "c"}) != reg.edge_uid(
+        "affected_file", {"task_id": "a", "path": "b,c"}
+    )
+    with pytest.raises(KeyError):
+        reg.edge_uid("task", {})
 
 
 def test_owned_rows_point_to_document() -> None:

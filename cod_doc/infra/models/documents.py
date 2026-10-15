@@ -20,13 +20,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 if TYPE_CHECKING:
     from .project import ProjectModel
 
 
-class DocNodeModel(Base):
+class DocNodeModel(SyncUidMixin, Base):
     """Раздел дерева документации (ADO-116).
 
     Аналог ``plan_section`` для планов и ``story_section`` для историй:
@@ -103,7 +103,7 @@ class DocNodeSuggestionModel(Base):
     )
 
 
-class DocumentModel(Base):
+class DocumentModel(SyncUidMixin, Base):
     __tablename__ = "document"
     __table_args__ = (
         UniqueConstraint("project_id", "doc_key", name="uq_document_project_key"),
@@ -167,7 +167,7 @@ class DocumentModel(Base):
     )
 
 
-class SectionModel(Base):
+class SectionModel(SyncUidMixin, Base):
     __tablename__ = "section"
     __table_args__ = (
         UniqueConstraint("document_id", "anchor", name="uq_section_document_anchor"),

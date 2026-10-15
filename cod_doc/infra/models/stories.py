@@ -15,10 +15,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class StorySectionModel(Base):
+class StorySectionModel(SyncUidMixin, Base):
     """Продуктовый модуль, в который сложены истории (ADO-143).
 
     Аналог ``plan_section`` для планов: даёт человеческое название, явный
@@ -38,7 +38,7 @@ class StorySectionModel(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
-class UserStoryModel(Base):
+class UserStoryModel(SyncUidMixin, Base):
     __tablename__ = "user_story"
     # STO-018: story_id уникален в пределах проекта, а не всей БД (миграция 0047).
     __table_args__ = (
@@ -77,7 +77,7 @@ class UserStoryModel(Base):
     )
 
 
-class StoryAcceptanceModel(Base):
+class StoryAcceptanceModel(SyncUidMixin, Base):
     __tablename__ = "story_acceptance"
     __table_args__ = (
         UniqueConstraint("story_id", "position", name="uq_story_acceptance_position"),
@@ -94,7 +94,7 @@ class StoryAcceptanceModel(Base):
     story: Mapped[UserStoryModel] = relationship(back_populates="acceptance")
 
 
-class StoryLinkModel(Base):
+class StoryLinkModel(SyncUidMixin, Base):
     __tablename__ = "story_link"
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)

@@ -41,15 +41,22 @@ def _seed_projects(db_url: str) -> tuple[int, int]:
 
     try:
         with transactional(factory) as session:
-            proj_a = ProjectModel(slug="a", title="A", root_path="/tmp/a", config_json={})
-            proj_b = ProjectModel(slug="b", title="B", root_path="/tmp/b", config_json={})
-            proj_a.created = now
-            proj_a.updated = now
-            proj_b.created = now
-            proj_b.updated = now
-            session.add_all([proj_a, proj_b])
-            session.flush()
-            return proj_a.row_id, proj_b.row_id
+            # Сырым SQL: ORM-модель вставила бы колонки поздних ревизий
+            # (``uid`` из 0049) как NULL, а в схеме 0027 их ещё нет.
+            proj_a, proj_b = (
+                int(
+                    session.execute(
+                        text(
+                            "INSERT INTO project (slug, title, root_path, config_json,"
+                            " created, updated) VALUES (:slug, :title, :root, '{}', :now, :now)"
+                            " RETURNING row_id"
+                        ),
+                        {"slug": slug, "title": slug.upper(), "root": f"/tmp/{slug}", "now": now},
+                    ).scalar_one()
+                )
+                for slug in ("a", "b")
+            )
+            return proj_a, proj_b
     finally:
         engine.dispose()
 
