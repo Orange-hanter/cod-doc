@@ -89,6 +89,8 @@ def doc_update(
                 sensitivity=Sensitivity(sensitivity) if sensitivity is not None else None,
                 preamble=preamble,
                 reason=reason,
+                # Человек в терминале вправе понизить гриф; MCP-тул — нет.
+                allow_declassify=True,
             )
     except ValidationError as exc:
         console.print(f"[red]Validation error: {exc}[/red]")
