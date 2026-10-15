@@ -7,10 +7,9 @@ scenario's revision history rather than in a namespace of its own.
 
 from __future__ import annotations
 
+import difflib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-
-from sqlalchemy import delete, func, select
 
 from cod_doc.domain.entities import EntityKind, ScenarioStep
 from cod_doc.infra import ordering
@@ -38,30 +37,31 @@ def set_steps(
     author: str,
     reason: str | None = None,
 ) -> list[ScenarioStep]:
-    """Replace every step of the scenario, renumbering positions from zero."""
+    """Replace the scenario's step list, renumbering positions from zero.
+
+    ORM-дифф старого списка с новым (CLO-007), а не удаление и вставка всех
+    шагов: строка — а с ней ``uid`` и ``rank`` — остаётся у каждого шага,
+    который пережил правку, и хук захвата пишет операции только о том, что
+    изменилось (см. :func:`_diff_steps`).
+    """
     model = _require_scenario(session, project_id, scenario_id)
     validation.validate_scenario_body(
         preconditions=model.preconditions, expected=model.expected, steps=steps
     )
 
-    old_count = (
-        session.execute(
-            select(func.count())
-            .select_from(ScenarioStepModel)
-            .where(ScenarioStepModel.scenario_row_id == model.row_id)
-        ).scalar_one()
-        or 0
-    )
-    session.execute(
-        delete(ScenarioStepModel).where(ScenarioStepModel.scenario_row_id == model.row_id)
-    )
-    # Замена целиком — новые строки, новые ранги: равномерно, с запасом под вставки.
-    for i, (text, step_rank) in enumerate(zip(steps, initial(len(steps)), strict=True)):
-        session.add(
-            ScenarioStepModel(scenario_row_id=model.row_id, position=i, text=text, rank=step_rank)
-        )
+    rows = ordering.siblings(session, ScenarioStepModel, scenario_row_id=model.row_id)
+    old_count = len(rows)
+    ordered, removed = _diff_steps(rows, steps, scenario_row_id=model.row_id)
+    for row in removed:
+        session.delete(row)
+    for row in ordered:
+        if row not in rows:
+            session.add(row)
+    ordering.renumber(ordered)
     model.last_updated = datetime.now(UTC)
     session.flush()
+    # Шаги менялись мимо коллекции ``model.steps``; загруженная — устарела.
+    session.expire(model, ["steps"])
 
     activity_service.write_revision_and_emit_event(
         session,
@@ -78,6 +78,51 @@ def set_steps(
         activity_summary=f"Scenario {scenario_id}: {len(steps)} step(s) set",
     )
     return ScenarioStepRepository(session).list_for_scenario(model.row_id)
+
+
+def _diff_steps(
+    rows: list[ScenarioStepModel], steps: list[str], *, scenario_row_id: int
+) -> tuple[list[ScenarioStepModel], list[ScenarioStepModel]]:
+    """Сопоставить шаги старого списка новому: (новый порядок строк, удалённые).
+
+    Сопоставление — по тексту, через наибольшую общую подпоследовательность
+    (``difflib.SequenceMatcher``): шаг с тем же текстом остаётся своей
+    строкой, где бы ни вставили или удалили соседей. По позиции сопоставлять
+    нельзя: вставка шага в начало сдвинула бы все остальные, и каждый получил
+    бы «правку текста» — на другой реплике это конфликт на каждом шаге.
+
+    Внутри изменённого куска (``replace``) старые и новые шаги парятся по
+    порядку: переформулированный шаг — тот же шаг, ``uid`` у него остаётся,
+    уезжает правка ``text``. Лишние старые — удаление, лишние новые — вставка.
+
+    Ранги — ``ordering.conform``: сохранённые шаги идут в прежнем порядке,
+    их ранги не трогаются, новые получают ранг между соседями. Если не
+    сохранился ни один шаг, ранги — ``rank.initial``: равномерно, с запасом
+    под вставки, как раньше при замене целиком.
+    """
+    matcher = difflib.SequenceMatcher(a=[r.text for r in rows], b=steps, autojunk=False)
+    ordered: list[ScenarioStepModel] = []
+    removed: list[ScenarioStepModel] = []
+    fresh: list[ScenarioStepModel] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old, new = rows[i1:i2], steps[j1:j2]
+        if tag == "equal":
+            ordered.extend(old)
+            continue
+        for row, text in zip(old, new, strict=False):
+            row.text = text
+            ordered.append(row)
+        removed.extend(old[len(new) :])
+        for text in new[len(old) :]:
+            step = ScenarioStepModel(scenario_row_id=scenario_row_id, position=0, text=text)
+            ordered.append(step)
+            fresh.append(step)
+    if len(fresh) == len(ordered):
+        for step, step_rank in zip(ordered, initial(len(ordered)), strict=True):
+            step.rank = step_rank
+    else:
+        ordering.conform(ordered)
+    return ordered, removed
 
 
 def add_step(

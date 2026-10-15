@@ -277,6 +277,64 @@ def test_set_steps_replaces_and_renumbers(engine_with_schema) -> None:  # type: 
     assert [st.position for st in steps] == [0]
 
 
+def _step_rows(session, scenario_row_id: int) -> list[ScenarioStepModel]:  # type: ignore[no-untyped-def]
+    return list(
+        session.scalars(
+            select(ScenarioStepModel)
+            .where(ScenarioStepModel.scenario_row_id == scenario_row_id)
+            .order_by(ScenarioStepModel.position)
+        )
+    )
+
+
+def test_set_steps_keeps_rows_of_surviving_steps(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """CLO-007: дифф, а не замена — у сохранённого шага тот же uid и ранг.
+
+    До CLO-007 ``set_steps`` удалял все шаги и вставлял новые: uid менялся у
+    каждого, и реплики конфликтовали бы на каждом шаге.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        s = _create(session, pid, steps=["a", "b", "c"])
+        before = {r.text: (r.row_id, r.uid, r.rank) for r in _step_rows(session, s.row_id)}
+        scenario_service.set_steps(
+            session,
+            project_id=pid,
+            scenario_id=s.scenario_id,
+            steps=["new", "a", "B", "c", "d"],
+            author="human:test",
+        )
+        after = _step_rows(session, s.row_id)
+
+        assert [r.text for r in after] == ["new", "a", "B", "c", "d"]
+        assert [r.position for r in after] == [0, 1, 2, 3, 4]
+        by_text = {r.text: (r.row_id, r.uid, r.rank) for r in after}
+        # Неизменённые шаги — те же строки, uid и ранги.
+        assert by_text["a"] == before["a"]
+        assert by_text["c"] == before["c"]
+        # Переписанный на месте шаг — та же строка: правка текста, не замена.
+        assert by_text["B"][:3] == before["b"]
+        # Вставленные — новые строки; порядок рангов совпадает с порядком шагов.
+        assert {by_text["new"][1], by_text["d"][1]}.isdisjoint({v[1] for v in before.values()})
+        ranks = [r.rank for r in after]
+        assert ranks == sorted(ranks) and len(set(ranks)) == len(ranks)
+
+
+def test_set_steps_removes_only_dropped_steps(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        s = _create(session, pid, steps=["a", "b", "c"])
+        before = {r.text: r.uid for r in _step_rows(session, s.row_id)}
+        steps = scenario_service.set_steps(
+            session, project_id=pid, scenario_id=s.scenario_id, steps=["a", "c"], author="h:t"
+        )
+        after = _step_rows(session, s.row_id)
+    assert [st.text for st in steps] == ["a", "c"]
+    assert [r.uid for r in after] == [before["a"], before["c"]]
+
+
 def test_add_step_appends(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
