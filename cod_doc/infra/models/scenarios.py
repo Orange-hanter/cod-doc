@@ -21,10 +21,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
-class ScenarioModel(SyncUidMixin, Base):
+class ScenarioModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "scenario"
     __table_args__ = (
         UniqueConstraint("project_id", "scenario_id", name="uq_scenario_project_sid"),
@@ -82,10 +82,10 @@ class ScenarioModel(SyncUidMixin, Base):
     )
 
 
-class ScenarioStepModel(SyncUidMixin, Base):
+class ScenarioStepModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "scenario_step"
     __table_args__ = (
-        UniqueConstraint("scenario_row_id", "position", name="uq_scenario_step_position"),
+        Index("ix_scenario_step_position", "scenario_row_id", "position"),
         Index("ix_scenario_step_scenario", "scenario_row_id"),
     )
 

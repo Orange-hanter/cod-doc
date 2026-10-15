@@ -128,6 +128,8 @@ def _declared_columns(spec: TableSpec) -> set[str]:
     for key in spec.natural_keys:
         cols |= set(key.columns)
     cols |= set(spec.deterministic_uid or ())
+    if spec.rank_column:
+        cols.add(spec.rank_column)
     return cols
 
 
@@ -143,10 +145,7 @@ def test_every_unconstrained_fk_is_covered() -> None:
 
 
 def test_declared_columns_exist() -> None:
-    """Опечатка или переименование колонки не проходит молча.
-
-    ``rank_column`` не сверяется: колонки ``rank`` появятся в CLO-003.
-    """
+    """Опечатка или переименование колонки не проходит молча (с CLO-003 — и ``rank_column``)."""
     tables = _all_model_tables()
     problems = [
         f"{spec.table}.{col}"
@@ -255,6 +254,21 @@ def test_order_places_have_rank_and_local_position() -> None:
         assert len(positions) == 1, (spec.table, positions)
         (position,) = positions
         assert position in tables[spec.table].columns, (spec.table, position)
+        assert spec.rank_column not in spec.local_columns, spec.table  # ранг уезжает
+
+
+def test_order_places_have_no_position_unique() -> None:
+    """UNIQUE на позиции упал бы на слиянии двух вставок в одно место (CLO-003, RFC §4)."""
+    tables = _all_model_tables()
+    problems = [
+        f"{spec.table}{tuple(c.name for c in constraint.columns)}"
+        for spec in REGISTRY.values()
+        if spec.rank_column
+        for constraint in tables[spec.table].constraints
+        if isinstance(constraint, UniqueConstraint)
+        and {c.name for c in constraint.columns} & _POSITION_COLUMNS
+    ]
+    assert problems == []
 
 
 def test_document_working_tree_hashes_are_local() -> None:

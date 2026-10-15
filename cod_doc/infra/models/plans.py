@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
 class PlanModel(SyncUidMixin, Base):
@@ -57,7 +57,7 @@ class PlanModel(SyncUidMixin, Base):
     )
 
 
-class PlanSectionModel(SyncUidMixin, Base):
+class PlanSectionModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "plan_section"
     __table_args__ = (UniqueConstraint("plan_id", "letter", name="uq_plan_section_plan_letter"),)
 
