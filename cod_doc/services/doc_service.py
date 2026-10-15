@@ -27,6 +27,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -812,6 +813,10 @@ def move_section(
     return SectionMove(moved, from_position, position, [r.anchor for r in rows])
 
 
+#: Алфавит якоря секции — тот же, что оставляет ``import_service._slugify``.
+_ANCHOR_RE = re.compile(r"[\w-]+", re.UNICODE)
+
+
 class SectionRename(NamedTuple):
     """Result of :func:`rename_section`. ``rewritten`` — ``doc_key#anchor`` of
     every section whose body was rewritten to follow the new anchor."""
@@ -847,7 +852,8 @@ def rename_section(
     its own SECTION revision. The rename itself is a DOCUMENT revision
     ``op="rename_section"``, by the precedent of :func:`delete_section`.
 
-    Empty heading → ``ValidationError("DM-001")``; a ``new_anchor`` already
+    Empty heading → ``ValidationError("DM-001")``; an anchor outside
+    letters, digits, ``_`` and ``-`` → ``ValidationError("DM-004")``; a ``new_anchor`` already
     taken in the document → `SectionAlreadyExistsError`; unknown ``anchor`` →
     `SectionNotFoundError`. Same heading and anchor — no-op.
     """
@@ -866,6 +872,16 @@ def rename_section(
         raise SectionNotFoundError(f"section {doc.doc_key}#{anchor}")
 
     target_anchor = new_anchor or _slugify(heading)
+    # ai-review #208: якорь уходит в тела ЧУЖИХ документов как фрагмент ссылки
+    # (`[[doc:K#a]]`, `[x](p.md#a)`). `]`, `)`, `#`, пробел или перевод строки
+    # в нём — инъекция разметки в эти тела. Допустим ровно алфавит слага
+    # импорта; пустой слаг (заголовок из одних символов) — та же ошибка.
+    if not _ANCHOR_RE.fullmatch(target_anchor):
+        raise validation.ValidationError(
+            "DM-004",
+            f"anchor {target_anchor!r} must be non-empty letters, digits, '_' or '-'",
+            anchor=target_anchor,
+        )
     old_heading = sec.heading
     if old_heading == heading and anchor == target_anchor:
         unchanged = SectionRepository(session).get(sec.row_id)

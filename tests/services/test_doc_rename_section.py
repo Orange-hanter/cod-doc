@@ -239,3 +239,33 @@ def test_cli_rename_section_json(tmp_path: Path) -> None:
     assert json.loads(result.output)["to"]["anchor"] == "schema"
     with transactional(factory) as s:
         assert "[[doc:arch/target#schema]]" in _body(s, pid, "arch/source", "refs")
+
+
+@pytest.mark.parametrize(
+    ("heading", "new_anchor"),
+    [
+        ("Ok", "a]] [[doc:other#b"),
+        ("Ok", "a) <img src=x>"),
+        ("Ok", "two words"),
+        ("Ok", "line\n## Pwned"),
+    ],
+)
+def test_anchor_outside_slug_alphabet_is_refused(  # type: ignore[no-untyped-def]
+    engine_with_schema, heading: str, new_anchor: str | None
+) -> None:
+    """ai-review #208: якорь уходит фрагментом в тела чужих документов — только [\\w-]+."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        pid, target = _seed(s)
+        with pytest.raises(ValidationError) as exc:
+            docs.rename_section(
+                s,
+                project_id=pid,
+                document_id=target,
+                anchor="data-model",
+                heading=heading,
+                new_anchor=new_anchor,
+                author="t",
+            )
+        assert exc.value.code == "DM-004"
+        assert _body(s, pid, "arch/source", "refs") == SOURCE_BODY

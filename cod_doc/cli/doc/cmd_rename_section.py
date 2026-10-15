@@ -78,7 +78,8 @@ def doc_rename_section(
         console.print(f"[red]Section '{anchor}' not found in document '{doc_key}'.[/red]")
         sys.exit(1)
     except (SectionAlreadyExistsError, ValidationError) as exc:
-        console.print(f"[red]{exc}[/red]")
+        # click.echo: текст ошибки несёт якорь пользователя — rich принял бы его за разметку.
+        click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
     to_anchor = result.section.anchor
