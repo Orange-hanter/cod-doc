@@ -54,7 +54,8 @@ _UNIQUE_EXEMPT: dict[tuple[str, tuple[str, ...]], str] = {
     ("finding", ("finding_uid",)): "uuid — глобален по построению",
 }
 
-_ORDER_PLACES = 11  # RFC 29 §3.2, Q-009
+_ORDER_PLACES = 11  # RFC 29 §3.2, Q-009: число из RFC — контракт CLO-003, не из схемы
+_POSITION_COLUMNS = frozenset({"position", "node_position"})
 
 
 def _all_model_tables() -> Mapping[str, Table]:
@@ -88,8 +89,13 @@ def missing_entries(tables: Mapping[str, Table], registry: Mapping[str, TableSpe
 
 
 def _shipped(spec: TableSpec) -> bool:
-    """Строки таблицы уезжают с uid-ссылками: authored, journal, authored-колонки."""
-    return spec.cls in {SyncClass.AUTHORED, SyncClass.JOURNAL} or bool(spec.authored_columns)
+    """Строки таблицы уезжают с uid-ссылками: та же развилка, что у ``column_class``.
+
+    Набор классов берётся из реестра (``_SHIPPED_CLASSES``), а не дублируется.
+    По ``SHIPPED_COLUMNS`` не выводится намеренно: забытая там запись иначе
+    выключила бы для таблицы и этот гейт — две ошибки погасили бы друг друга.
+    """
+    return spec.cls in reg._SHIPPED_CLASSES or bool(spec.authored_columns)
 
 
 def uncovered_fks(
@@ -194,6 +200,20 @@ def test_authored_uniques_are_declared() -> None:
     assert problems == []
 
 
+def test_unique_exemptions_still_exist() -> None:
+    """Исключение из сверки UNIQUE без самого ограничения — мёртвая запись."""
+    tables = _all_model_tables()
+    stale = [
+        (table, cols)
+        for table, cols in _UNIQUE_EXEMPT
+        if not any(
+            isinstance(c, UniqueConstraint) and tuple(col.name for col in c.columns) == cols
+            for c in tables[table].constraints
+        )
+    ]
+    assert stale == []
+
+
 def test_registry_classifies_tables_per_rfc() -> None:
     by_cls: dict[SyncClass, set[str]] = {c: set() for c in SyncClass}
     for spec in REGISTRY.values():
@@ -219,11 +239,15 @@ def test_registry_classifies_tables_per_rfc() -> None:
 
 
 def test_order_places_have_rank_and_local_position() -> None:
+    """У каждого места порядка ровно одна local-колонка позиции, и она есть в схеме."""
+    tables = _all_model_tables()
     ordered = [spec for spec in REGISTRY.values() if spec.rank_column]
-    assert len(ordered) == _ORDER_PLACES
+    assert len(ordered) == _ORDER_PLACES, sorted(s.table for s in ordered)
     for spec in ordered:
-        position = "node_position" if spec.table == "document" else "position"
-        assert position in spec.local_columns, spec.table
+        positions = spec.local_columns & _POSITION_COLUMNS
+        assert len(positions) == 1, (spec.table, positions)
+        (position,) = positions
+        assert position in tables[spec.table].columns, (spec.table, position)
 
 
 def test_document_working_tree_hashes_are_local() -> None:
@@ -383,7 +407,12 @@ def _doc_reference_columns(tables: Mapping[str, Table]) -> set[tuple[str, str]]:
     """
     found: set[tuple[str, str]] = set()
     for name, table in tables.items():
-        spec = REGISTRY[name]
+        spec = REGISTRY.get(name)
+        if spec is None:
+            # без записи класс неизвестен: в выдачу как непокрытая ссылка, с
+            # тем же диагнозом, что у missing_entries, а не голым KeyError
+            found.add((name, "<нет записи в sync_registry>"))
+            continue
         if not _shipped(spec) or name == "document":
             continue
         for column in table.columns:
@@ -444,6 +473,8 @@ def test_reference_to_restricted_document_never_ships(table: str, column: str) -
             assert {column, *ref.withheld} <= withheld_columns(table, row), label
     cleared = {**base, sensitivity_key(column): "internal"}
     assert withheld_columns(table, cleared) == frozenset()
+    # и обратное: разрешённая метка не душит легитимную строку
+    assert row_class(table, cleared) is not SyncClass.LOCAL
 
 
 def test_null_reference_needs_no_label() -> None:
@@ -473,13 +504,44 @@ def test_unknown_polymorphic_kind_is_treated_as_document() -> None:
         ("document", "row_id"),
         ("document", "no_such_column"),
         ("task", "brand_new_column"),
-        ("link_suggestion", "score"),
         ("trace_call", "model"),
     ],
 )
 def test_sensitive_and_unknown_columns_are_local(table: str, column: str) -> None:
-    assert reg.column_class(table, column) is not SyncClass.AUTHORED
-    assert reg.column_class(table, column) is not SyncClass.JOURNAL
+    assert reg.column_class(table, column) is SyncClass.LOCAL
+
+
+def test_derived_column_is_rebuilt_not_shipped() -> None:
+    """``link_suggestion.score`` — derived: каждая реплика пересчитывает его сама.
+
+    Класс колонки — DERIVED, а не LOCAL: «не уезжает» верно для обоих, но
+    derived ещё и пересобирается после pull. Уехать её заставила бы только
+    запись в ``authored_columns`` — это и проверяется.
+    """
+    assert reg.column_class("link_suggestion", "score") is SyncClass.DERIVED
+    assert "score" not in spec_for("link_suggestion").authored_columns
+
+
+def test_authored_table_without_shipped_entry_ships_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Забытая запись в ``SHIPPED_COLUMNS`` — ни одна колонка не уезжает."""
+    shipped = dict(reg.SHIPPED_COLUMNS)
+    del shipped["task"]
+    monkeypatch.setattr(reg, "SHIPPED_COLUMNS", shipped)
+    assert reg.column_class("task", "title") is SyncClass.LOCAL
+    assert reg.column_class("revision", "diff") is SyncClass.JOURNAL
+
+
+def test_table_spec_mappings_are_immutable() -> None:
+    source = {"topic_id": "adr_topic"}
+    spec = TableSpec("x", SyncClass.AUTHORED, logical_fks=source)
+    source["other_id"] = "task"  # правка исходного dict не просачивается
+    assert dict(spec.logical_fks) == {"topic_id": "adr_topic"}
+    for s in REGISTRY.values():
+        for mapping in (s.logical_fks, s.human_id_refs):
+            with pytest.raises(TypeError):
+                mapping["x"] = "y"  # type: ignore[index]
 
 
 def test_column_class_known_columns() -> None:
@@ -521,6 +583,10 @@ def test_registry_errors_do_not_echo_row_contents() -> None:
         "c:/x/a.py",
         " /Users/x/a.py",
         "file:///Users/x/a.py",
+        "../secret",
+        "foo/../../etc/passwd",
+        "subdir\\..\\..\\key",
+        "..",
         "a.py\x00",
         "",
         "\\\\host\\share\\a",
@@ -737,23 +803,82 @@ def test_gate_ignores_unshipped_tables() -> None:
 # --- слои --------------------------------------------------------------------
 
 
-def test_registry_imports_only_stdlib_and_domain() -> None:
-    """RFC 29 §10.2: stdlib + domain — реестр читают и захват, и сервисы."""
-    tree = ast.parse(Path(reg.__file__).read_text(encoding="utf-8"))
-    roots: set[str] = set()
-    for node in ast.walk(tree):
+_DYNAMIC_IMPORT_CALLS = frozenset({"__import__", "import_module"})
+
+
+def _is_type_checking_guard(node: ast.If) -> bool:
+    test = node.test
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+
+def _call_name(node: ast.Call) -> str | None:
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
+    return None
+
+
+def layering_violations(source: str) -> list[str]:
+    """Импорты реестра вне stdlib + ``cod_doc.domain``.
+
+    Блок ``if TYPE_CHECKING:`` в рантайме не исполняется — его импорты не
+    считаются. Динамический импорт (``__import__``, ``importlib.import_module``)
+    статически не проверить — он нарушение сам по себе.
+    """
+    modules: set[str] = set()
+    problems: list[str] = []
+    stack: list[ast.AST] = [ast.parse(source)]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.If) and _is_type_checking_guard(node):
+            stack.extend(node.orelse)
+            continue
         if isinstance(node, ast.Import):
-            roots |= {alias.name for alias in node.names}
+            modules |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom) and node.module:
-            roots.add(node.module)
-    bad = {
+            modules.add(node.module)
+        elif isinstance(node, ast.Call) and _call_name(node) in _DYNAMIC_IMPORT_CALLS:
+            problems.append(f"динамический импорт в строке {node.lineno}")
+        stack.extend(ast.iter_child_nodes(node))
+    problems += sorted(
         m
-        for m in roots
+        for m in modules
         if m != "__future__"
         and not m.startswith("cod_doc.domain")
         and m.split(".")[0] not in sys.stdlib_module_names
-    }
-    assert bad == set()
+    )
+    return problems
+
+
+def test_registry_imports_only_stdlib_and_domain() -> None:
+    """RFC 29 §10.2: stdlib + domain — реестр читают и захват, и сервисы."""
+    assert layering_violations(Path(reg.__file__).read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import sqlalchemy\n",
+        "from cod_doc.services import x\n",
+        "import importlib\ndef f():\n    importlib.import_module('cod_doc.services')\n",
+        "def f():\n    __import__('sqlalchemy')\n",
+        "from importlib import import_module\nimport_module('x')\n",
+    ],
+)
+def test_layering_gate_catches_static_and_dynamic_imports(source: str) -> None:
+    assert layering_violations(source) != []
+
+
+def test_layering_gate_skips_type_checking_block() -> None:
+    source = (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n    from sqlalchemy import Table\n"
+        "import typing\nif typing.TYPE_CHECKING:\n    import cod_doc.services\n"
+    )
+    assert layering_violations(source) == []
 
 
 # --- регрессии fail-closed (security review CLO-001, четвёртый раунд) --------

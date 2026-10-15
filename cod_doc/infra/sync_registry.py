@@ -164,6 +164,10 @@ class NaturalKey:
 RowPredicate = Callable[[Mapping[str, object]], bool]
 
 
+def _empty_mapping() -> Mapping[str, str]:
+    return MappingProxyType({})
+
+
 @dataclass(frozen=True, slots=True)
 class TableSpec:
     table: str
@@ -173,11 +177,17 @@ class TableSpec:
     authored_columns: frozenset[str] = frozenset()
     row_is_local: RowPredicate | None = None  # restricted
     natural_keys: tuple[NaturalKey, ...] = ()
-    logical_fks: Mapping[str, str] = field(default_factory=dict)  # {'topic_id': 'adr_topic'}
-    human_id_refs: Mapping[str, str] = field(default_factory=dict)  # {'task_id': 'task'}
+    logical_fks: Mapping[str, str] = field(default_factory=_empty_mapping)  # {'topic_id': …}
+    human_id_refs: Mapping[str, str] = field(default_factory=_empty_mapping)  # {'task_id': …}
     rank_column: str | None = None  # 'rank' / 'node_rank'
     deterministic_uid: tuple[str, ...] | None = None  # концы ребра для uuid5
     text_columns: frozenset[str] = frozenset()  # 3-way merge вместо LWW
+
+    def __post_init__(self) -> None:
+        # frozen защищает поля, но не содержимое dict: переданные словари
+        # копируются в неизменяемое представление.
+        for name in ("logical_fks", "human_id_refs"):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
 
 
 # --- построчные предикаты ---------------------------------------------------
@@ -319,6 +329,8 @@ def ref_cleared(ref: DocRef, row: Mapping[str, object]) -> bool:
 _PATH = "path"
 _DRIVE = re.compile(r"^[A-Za-z]:")
 _URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+_SEPARATORS = re.compile(r"[\\/]")
+_PARENT_SEGMENT = ".."
 
 
 def _is_machine_path(value: str) -> bool:
@@ -326,6 +338,9 @@ def _is_machine_path(value: str) -> bool:
 
     Абсолютный POSIX, ``~``, диск Windows, UNC, URI со схемой; пробел по краям
     и NUL — не канон: ``" /Users/…"`` иначе прошёл бы как относительный.
+    Сегмент ``..`` (через ``/`` или ``\\``) выводит за корень проекта.
+    Пустая строка — тоже машинная: пустой путь не адресует файл проекта, а
+    отличить его от недописанного значения нечем (fail-closed).
     """
     return (
         not value
@@ -334,6 +349,7 @@ def _is_machine_path(value: str) -> bool:
         or value.startswith(("/", "~", "\\"))
         or _DRIVE.match(value) is not None
         or _URI.match(value) is not None
+        or _PARENT_SEGMENT in _SEPARATORS.split(value)
     )
 
 
@@ -382,7 +398,7 @@ def _local_event(row: Mapping[str, object]) -> bool:
     if kind.startswith(_LOCAL_EVENT_PREFIX) or kind in _LOCAL_EVENT_KINDS:
         return True
     scope = row.get("scope_kind")
-    return not isinstance(scope, str) or scope not in _DOC_EVENT_SCOPES | _PLAIN_EVENT_SCOPES
+    return type(scope) is not str or scope not in _DOC_EVENT_SCOPES | _PLAIN_EVENT_SCOPES
 
 
 _DOC_ENTITY_KINDS = frozenset({EntityKind.DOCUMENT.value, EntityKind.SECTION.value})
@@ -506,7 +522,7 @@ def _leased(column: str) -> NaturalKey:
     return NaturalKey(("project_id", column), KeyKind.LEASED)
 
 
-_TO_REF = {"to_ref": "to_kind"}
+_TO_REF: Mapping[str, str] = MappingProxyType({"to_ref": "to_kind"})
 
 _SPECS: tuple[TableSpec, ...] = (
     # --- authored: проект, документы, дерево ---------------------------------
@@ -1111,6 +1127,9 @@ def authored_tables() -> list[TableSpec]:
     )
 
 
+_SHIPPED_CLASSES = frozenset({SyncClass.AUTHORED, SyncClass.JOURNAL})
+
+
 def column_class(table: str, column: str) -> SyncClass:
     """Класс колонки; неизвестная колонка — ``LOCAL`` (fail-closed, решение 13).
 
@@ -1122,9 +1141,11 @@ def column_class(table: str, column: str) -> SyncClass:
         return SyncClass.LOCAL
     if column in spec.authored_columns:
         return SyncClass.AUTHORED
-    shipped = SHIPPED_COLUMNS.get(table)
-    if shipped is None:
+    if spec.cls not in _SHIPPED_CLASSES:
+        # derived/local: колонка не уезжает, класс — класс таблицы
         return spec.cls
+    # authored/journal без перечня — забытая запись: не уезжает ничего
+    shipped = SHIPPED_COLUMNS.get(table, frozenset())
     return spec.cls if column in shipped else SyncClass.LOCAL
 
 
