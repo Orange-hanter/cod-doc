@@ -9,11 +9,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from click.testing import CliRunner
 from mcp.server.fastmcp import FastMCP
+from sqlalchemy import select
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
-from cod_doc.infra.models import ProjectModel
+from cod_doc.infra.models import ActivityEventModel, ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
 from tests._alembic import run_alembic
@@ -142,3 +143,22 @@ def test_cli_doc_status_dry_run_leaves_status(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert _status_and_revisions(factory, pid)[0] == DocumentStatus.ACTIVE
+
+
+def test_mcp_status_change_emits_one_event_with_actor(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """ADO-040: событие пишет сервис — ровно одно, с actor_kind из author (ADR-012)."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        pid = _seed(s)
+
+    _tool(monkeypatch, factory, pid)(
+        project="p", doc_key="arch/overview", status="deprecated", author="agent:claude-test"
+    )
+
+    with transactional(factory) as s:
+        events = s.scalars(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "doc.status_changed")
+        ).all()
+        assert len(events) == 1
+        assert (events[0].actor_kind, events[0].actor_id) == ("agent", "agent:claude-test")
+        assert events[0].payload["new_status"] == "deprecated"
