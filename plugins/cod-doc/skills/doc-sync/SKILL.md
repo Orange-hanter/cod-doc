@@ -28,6 +28,7 @@ description: |
 | Добавить секцию | `doc_add_section(project, doc_key, anchor, heading, body, level, position)` | `cod-doc doc add-section <doc_key> <anchor> --heading … --body-file - -p <slug>` |
 | Прочитать секцию (+ head-ревизия) | `doc_section_get(project, doc_key, anchors=[…])` | `cod-doc doc section <doc_key> <anchor> -p <slug>` |
 | Заменить тело секции | `doc_patch_section(project, doc_key, anchor, body, expected_parent_revision_id=…)` | `cod-doc doc patch <doc_key> <anchor> --body-file - --expected-revision … -p <slug>` |
+| Переставить секцию (история сохраняется) | `doc_move_section(project, doc_key, anchor, position)` | `cod-doc doc move-section <doc_key> <anchor> --position N -p <slug>` |
 | Удалить секцию | `doc_delete_section` | `cod-doc doc delete-section <doc_key> <anchor> -p <slug>` |
 | Удалить документ (необратимо; MCP — сначала dry run) | `doc_delete(project, doc_key)` → `doc_delete(…, dry_run=False)` | `cod-doc doc delete <doc_key> -p <slug>` |
 | Переименовать ключ/путь | `doc_rename` | `cod-doc doc rename` |

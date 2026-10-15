@@ -718,6 +718,100 @@ def delete_section(
     return removed
 
 
+class SectionMove(NamedTuple):
+    """Result of :func:`move_section`.
+
+    ``order`` — anchors of the whole document after the move, in display order;
+    ``from_position == to_position`` means no-op (nothing written).
+    """
+
+    section: Section
+    from_position: int
+    to_position: int
+    order: list[str]
+
+
+def move_section(
+    session: Session,
+    *,
+    project_id: int,
+    document_id: int,
+    anchor: str,
+    position: int,
+    author: str,
+    reason: str | None = None,
+) -> SectionMove:
+    """Move one section to index ``position`` inside its document (DEBT-007).
+
+    The section row stays — ``row_id``, body and SECTION revision history are
+    untouched; only ``position`` of the sections between the old and the new
+    index shifts. Before this, reordering meant delete + add (new row, history
+    cut off — ADO-215) or reordering headings in the file and ``doc import
+    --replace``.
+
+    Positions are made dense first (:func:`_renumber_positions`), so
+    ``position`` is a plain index: ``0 … n-1``; anything else raises
+    ``ValidationError("DM-002")``. Unknown anchor → `SectionNotFoundError`.
+
+    The revision hangs on the document (``op="move_section"``), by the
+    precedent of :func:`delete_section`: order is a property of the document,
+    not of one section. Moving to the current index is a no-op.
+    """
+    doc = _require_doc(session, document_id, project_id)
+    _renumber_positions(session, document_id)
+    rows = list(
+        session.execute(
+            select(SectionModel)
+            .where(SectionModel.document_id == document_id)
+            .order_by(SectionModel.position)
+        )
+        .scalars()
+        .all()
+    )
+    moving = next((r for r in rows if r.anchor == anchor), None)
+    if moving is None:
+        raise SectionNotFoundError(f"section {doc.doc_key}#{anchor}")
+    if not 0 <= position < len(rows):
+        raise validation.ValidationError(
+            "DM-002",
+            f"position {position} is out of range 0…{len(rows) - 1} for {doc.doc_key}",
+            position=position,
+        )
+
+    from_position = moving.position
+    if from_position != position:
+        rows.remove(moving)
+        rows.insert(position, moving)
+        for index, row in enumerate(rows):
+            row.position = index
+        doc.last_updated = datetime.now(UTC)
+        session.flush()
+        activity_service.write_revision_and_emit_event(
+            session,
+            project_id=doc.project_id,
+            entity_kind=EntityKind.DOCUMENT,
+            entity_id=document_id,
+            author=author,
+            diff=json.dumps(
+                {"op": "move_section", "anchor": anchor, "from": from_position, "to": position},
+                ensure_ascii=False,
+            ),
+            reason=reason or "move_section",
+            activity_kind="doc.section_moved",
+            activity_scope_kind="section",
+            activity_scope_id=f"{doc.doc_key}#{anchor}",
+            activity_payload={"anchor": anchor, "from": from_position, "to": position},
+            activity_summary=(
+                f"Document {doc.doc_key}: section {anchor} moved {from_position} → {position}"
+            ),
+        )
+        session.flush()
+
+    moved = SectionRepository(session).get(moving.row_id)
+    assert moved is not None
+    return SectionMove(moved, from_position, position, [r.anchor for r in rows])
+
+
 def update_status(
     session: Session,
     *,
