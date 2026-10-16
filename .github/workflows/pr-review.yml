@@ -202,6 +202,7 @@ jobs:
           REVIEW_BLOCK_ON: critical,major
           REVIEW_BLOCK_SINGLE: critical
           REVIEW_CONFIDENCE_MIN: '0.8'
+          REVIEW_LLM_REQUIRED: '0'
           REVIEW_VERIFIER: '1'
           REVIEW_VERIFIER_MODEL: deepseek-v4-pro
           REVIEW_VERIFIER_STRICT: '1'
