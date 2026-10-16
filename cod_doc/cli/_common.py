@@ -43,12 +43,9 @@ def require_project_id(session: Session, project_name: str) -> int:
 
     try:
         return _require(session, project_name)
-    except ProjectNotFoundError:
-        console.print(
-            f"Project '{printable(project_name)}' not in DB. Run 'project add' first.",
-            style="red",
-            markup=False,
-        )
+    except ProjectNotFoundError as exc:
+        # Текст — из сервиса, тот же, что у `require_project_id_click` и MCP (SVC-008).
+        console.print(printable(str(exc)), style="red", markup=False)
         sys.exit(1)
 
 
