@@ -50,3 +50,23 @@ def require_project_id(session: Session, project_name: str) -> int:
             markup=False,
         )
         sys.exit(1)
+
+
+def require_project_id_click(session: Session, project_name: str) -> int:
+    """То же, но ``click.ClickException`` вместо печати и exit (SVC-008).
+
+    Для команд, которые сообщают об ошибках через click: он печатает
+    ``Error: …`` в stderr и выходит с кодом 1, а stdout остаётся чистым для
+    ``--json``. Текст — из ``services.project_lookup``, один на все
+    поверхности; шесть локальных копий держали четыре разных текста, и в трёх
+    подсказка печатала буквальный ``{name}``.
+    """
+    import click
+
+    from cod_doc.services.project_lookup import ProjectNotFoundError
+    from cod_doc.services.project_lookup import require_project_id as _require
+
+    try:
+        return _require(session, project_name)
+    except ProjectNotFoundError as exc:
+        raise click.ClickException(printable(str(exc))) from None

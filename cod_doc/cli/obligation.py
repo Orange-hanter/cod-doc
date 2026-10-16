@@ -46,8 +46,8 @@ def obligation_export(
     """Export versioned obligations_export.v1 from specs, stories and claims."""
     # ADO-179: всё это тянет SQLAlchemy, поэтому импорты живут в теле команды,
     # а не на уровне модуля — иначе за них платит каждый вызов cod-doc.
+    from cod_doc.cli._common import require_project_id_click
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import ProjectRepository
     from cod_doc.services.structure_obligations import (
         export_obligations,
         generate_property_drafts,
@@ -56,11 +56,8 @@ def obligation_export(
 
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg), commit=False) as session:
-        proj = ProjectRepository(session).get_by_slug(project)
-        if proj is None or proj.row_id is None:
-            click.echo(f"Project '{project}' not in DB.", err=True)
-            sys.exit(1)
-        payload = export_obligations(session, proj.row_id, project_slug=project, head_sha=head_sha)
+        project_id = require_project_id_click(session, project)
+        payload = export_obligations(session, project_id, project_slug=project, head_sha=head_sha)
         if with_property_drafts:
             payload["propertyDrafts"] = generate_property_drafts(
                 as_list(payload.get("obligations"), label="obligations")

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import click
 from rich.console import Console
 
+from cod_doc.cli._common import require_project_id_click as _project_db_id
+
 # ADO-179: `infra.db`, `infra.repositories` и `restate_importer` тянут
 # SQLAlchemy, а на уровне модуля это оплачивал каждый вызов cod-doc, включая
 # --help. Импорты переехали в тела функций. Константа `--max-files` нужна
@@ -69,17 +71,6 @@ def _resolve_project_name(positional: str | None, option: str | None) -> str:
             "Не указан проект: cod-doc import <cmd> <PROJECT_NAME> либо -p/--project <slug>."
         )
     return name
-
-
-def _project_db_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        raise click.ClickException(
-            f"Проект '{project_name}' не зарегистрирован в БД. Сначала: cod-doc project init <name>"
-        )
-    return proj.row_id
 
 
 @import_cmd.command("docs")

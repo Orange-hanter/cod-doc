@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, TextIO
 import click
 from rich.console import Console
 
+from cod_doc.cli._common import require_project_id_click as _require_project_id
 from cod_doc.logging_config import get_logger
 from cod_doc.services.ingest_service.registry import INGEST_ADAPTERS
 
@@ -202,18 +203,6 @@ def _build_source_run_id(
         parts.append(str(head_sha))
     parts.append(_uuid7())
     return "-".join(parts)
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        raise click.ClickException(
-            f"Project '{project_name}' is not registered in the DB. "
-            "Run `cod-doc project init {name}` first."
-        )
-    return proj.row_id
 
 
 def _open_entry(

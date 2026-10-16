@@ -26,8 +26,8 @@ from cod_doc.config import SECRET_FIELDS, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory
-from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import project_health_service, project_stats, task_service
+from cod_doc.services.project_lookup import find_project_id
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -124,14 +124,14 @@ def read_project_health(name: str) -> dict[str, Any]:
     factory = make_session_factory(engine)
     session = factory()
     try:
-        db_project = ProjectRepository(session).get_by_slug(name)
-        if db_project is None or db_project.row_id is None:
+        project_id = find_project_id(session, name)
+        if project_id is None:
             return {"project": name, **project_health_service.uninitialized_project_health()}
         return {
             "project": name,
             **project_health_service.build_project_health(
                 session,
-                db_project.row_id,
+                project_id,
                 root_path=Path(proj.entry.path),
             ),
         }
@@ -162,11 +162,11 @@ def _legacy_session(name: str) -> tuple[Any, int]:
         )
     factory = make_session_factory(engine)
     session = factory()
-    db_project = ProjectRepository(session).get_by_slug(name)
-    if db_project is None or db_project.row_id is None:
+    project_id = find_project_id(session, name)
+    if project_id is None:
         session.close()
         raise HTTPException(404, f"Проект не найден в БД: {name}")
-    return session, db_project.row_id
+    return session, project_id
 
 
 @router.get("/projects/{name}/tasks")

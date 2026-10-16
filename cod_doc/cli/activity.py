@@ -10,6 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.cli._common import require_project_id as _require_project_id
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -32,16 +33,6 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 @click.group()

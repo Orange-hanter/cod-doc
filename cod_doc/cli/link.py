@@ -10,6 +10,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.cli._common import require_project_id as _require_project_id
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,16 +29,6 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 def _resolve_section_id(session: Session, project_id: int, doc_key: str, anchor: str) -> int:
@@ -325,17 +317,7 @@ def link_suggest(
     from cod_doc.infra.db import transactional
 
     with transactional(session_factory) as session:
-        try:
-            from cod_doc.infra.repositories import ProjectRepository
-
-            project_row = ProjectRepository(session).get_by_slug(project)
-            project_id = project_row.row_id if project_row is not None else None
-        except Exception:
-            project_id = None
-
-        if project_id is None:
-            console.print(f"[red]Project not found in DB: {project}[/red]")
-            sys.exit(1)
+        project_id = _require_project_id(session, project)
 
         if doc_key:
             from sqlalchemy import select
