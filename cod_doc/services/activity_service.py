@@ -58,7 +58,7 @@ from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.infra.models import ActivityEventModel
 from cod_doc.infra.sync_capture import set_author
 from cod_doc.services import revision_service as rev
-from cod_doc.services.run_context import get_current_run_id
+from cod_doc.services.run_id import get_current_run_id
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

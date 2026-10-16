@@ -25,6 +25,7 @@ from ulid import ULID
 from cod_doc.domain.entities import EntityKind, Revision, TaskStatus
 from cod_doc.infra.models import DocumentModel, RevisionModel, SectionModel, TaskModel
 from cod_doc.infra.sync_capture import set_author
+from cod_doc.services.run_id import get_current_run_id
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -114,8 +115,6 @@ def write(
     rid_obj = ULID.from_datetime(datetime.now(UTC))
     # PCA-031: stamp the active run_id (set by Orchestrator.run_task or
     # tests via run_context.run_scope). NULL = human / external mutation.
-    from cod_doc.services.run_context import get_current_run_id
-
     model = RevisionModel(
         revision_id=str(rid_obj),
         project_id=project_id,
