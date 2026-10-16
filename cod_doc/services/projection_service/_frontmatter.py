@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.services.markdown_parse import parse_markdown
 
 if TYPE_CHECKING:
     from cod_doc.infra.models import DocumentModel
@@ -170,7 +171,6 @@ def _leading_shape(text: str) -> tuple[str | None, bool]:
     what an import (or `backfill_projection_fidelity`) would store — the guard
     in `export.py` must not be a second, drifting copy of that regex.
     """
-    from cod_doc.services.import_service import parse_markdown
 
     parsed = parse_markdown(text)
     return parsed.frontmatter_raw, parsed.title_h1 is not None

@@ -53,6 +53,7 @@ from cod_doc.services import revision_service as rev
 from cod_doc.services.doc_errors import DocumentNotFoundError as DocumentNotFoundError
 from cod_doc.services.doc_errors import SectionAlreadyExistsError as SectionAlreadyExistsError
 from cod_doc.services.doc_errors import SectionNotFoundError as SectionNotFoundError
+from cod_doc.services.markdown_parse import slugify
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -812,7 +813,7 @@ def move_section(
     return SectionMove(moved, from_position, position, [r.anchor for r in rows])
 
 
-#: Алфавит якоря секции — тот же, что оставляет ``import_service._slugify``.
+#: Алфавит якоря секции — тот же, что оставляет ``markdown_parse.slugify``.
 _ANCHOR_RE = re.compile(r"[\w-]+", re.UNICODE)
 
 
@@ -857,7 +858,6 @@ def rename_section(
     `SectionNotFoundError`. Same heading and anchor — no-op.
     """
     from cod_doc.services import link_service
-    from cod_doc.services.import_service import _slugify
 
     doc = _require_doc(session, document_id, project_id)
     if not heading.strip():
@@ -870,7 +870,7 @@ def rename_section(
     if sec is None:
         raise SectionNotFoundError(f"section {doc.doc_key}#{anchor}")
 
-    target_anchor = new_anchor or _slugify(heading)
+    target_anchor = new_anchor or slugify(heading)
     # ai-review #208: якорь уходит в тела ЧУЖИХ документов как фрагмент ссылки
     # (`[[doc:K#a]]`, `[x](p.md#a)`). `]`, `)`, `#`, пробел или перевод строки
     # в нём — инъекция разметки в эти тела. Допустим ровно алфавит слага
