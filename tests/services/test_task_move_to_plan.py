@@ -33,7 +33,7 @@ from cod_doc.infra.models import (
     ProjectModel,
     TaskModel,
 )
-from cod_doc.services import checkout_service, plan_service, task_doc_service
+from cod_doc.services import checkout_service, plan_service, revert_service, task_doc_service
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from cod_doc.services.checkout_service import CheckoutConflictError
@@ -376,7 +376,7 @@ def test_revert_of_a_plan_move_is_an_explicit_refusal(engine_with_schema) -> Non
         last = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)[-1]
 
         with pytest.raises(RevertNotSupportedError):
-            rev.revert(session, last.revision_id, author="human:test", project_id=p)
+            revert_service.revert(session, last.revision_id, author="human:test", project_id=p)
 
 
 # --------------------------------------------------------------------------- #

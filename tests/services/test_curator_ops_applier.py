@@ -22,6 +22,7 @@ from cod_doc.services import (
     doc_service,
     doc_tree_service,
     question_service,
+    revert_service,
     revision_service,
 )
 from tests._scope import only_project_id
@@ -140,7 +141,7 @@ def test_approving_applies_the_patch_by_the_approver_and_revert_undoes_it(
         )
         assert next(r.author for r in revisions if r.revision_id == head) == "human:dakh"
 
-        revision_service.revert(session, head, author="human:dakh", project_id=pid)
+        revert_service.revert(session, head, author="human:dakh", project_id=pid)
         assert _body(session, doc_id) == _BODY
 
 

@@ -244,7 +244,7 @@ def register(mcp: FastMCP) -> None:
         in the revision. A revision of another project is reported as not found.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import revision_service
+        from cod_doc.services import revert_service
         from cod_doc.services.revision_service import (
             RevertNotSupportedError,
             RevisionNotFoundError,
@@ -254,9 +254,7 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 pid = require_project_id(session, project)
-                new_rev = revision_service.revert(
-                    session, revision_id, author=author, project_id=pid
-                )
+                new_rev = revert_service.revert(session, revision_id, author=author, project_id=pid)
         except RevisionNotFoundError:
             raise ValueError(f"Revision '{revision_id}' not found.") from None
         except LookupError as exc:

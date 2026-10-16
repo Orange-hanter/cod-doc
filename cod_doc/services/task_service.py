@@ -11,7 +11,7 @@ Public API:
   (`task_update`).
 - `update_affects_files` — replace/add/remove набора ``affects_files``
   (AFT-021); TASK revision (op=affects_files, старый и новый набор,
-  откатывается `revision_service.revert`) + activity event; та же пара
+  откатывается `revert_service.revert`) + activity event; та же пара
   поверхностей.
 - `move_to_section` — переложить задачу в другую секцию того же плана
   (группировка бэклога); пишет TASK revision (op=section) + activity event,
@@ -995,7 +995,7 @@ def update_affects_files(
 
     Совпадение итогового набора с текущим (порядок не важен) — no-op без
     ревизии и события. Иначе — TASK-ревизия ``op=affects_files`` со старым и
-    новым набором (её откатывает `revision_service.revert`) и activity event
+    новым набором (её откатывает `revert_service.revert`) и activity event
     ``task.affects_files_updated`` одним вызовом
     ``activity_service.write_revision_and_emit_event`` (ADO-040).
 

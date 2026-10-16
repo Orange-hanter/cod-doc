@@ -667,7 +667,7 @@ def delete_section(
     section. The diff is JSON with ``op="delete_section"`` and carries the
     removed body (the unified ``section_delete_diff`` text, byte-identical to
     the `--dry-run` preview), so the content stays recoverable by hand.
-    `revision_service._revert_document` reverts only ``op="rename"`` and
+    `revert_service._revert_document` reverts only ``op="rename"`` and
     answers this one with `RevertNotSupportedError` — an explicit refusal.
 
     ``reindex=False`` — see :func:`add_section`.

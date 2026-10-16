@@ -5,7 +5,7 @@
 * service — ``task_service.update_affects_files``: режимы replace/add/remove,
   схлопывание дублей, пустой набор, no-op без ревизии, AFT-012 warning для
   путей вне ``root_path``, TASK-ревизия ``op=affects_files`` и её откат
-  через ``revision_service.revert``;
+  через ``revert_service.revert``;
 * MCP — ``task_update(affects_files=…, affects_files_mode=…)``;
 * локальность (RFC 27 F13) — ``task_get`` и ready-выборка видят новый набор.
 
@@ -35,8 +35,8 @@ from cod_doc.infra.models import (
     RevisionModel,
 )
 from cod_doc.services import plan_service as plans
+from cod_doc.services import revert_service, task_doc_service
 from cod_doc.services import revision_service as rev
-from cod_doc.services import task_doc_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
 from tests._task_scope import sole_project_id
@@ -544,7 +544,9 @@ def test_revision_revert_restores_previous_set(engine_with_schema) -> None:  # t
         )
         target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
 
-        rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
+        revert_service.revert(
+            session, target.revision_id, author="human:undo", project_id=target.project_id
+        )
 
         assert _paths(session, row_id) == ["src/a.py", "src/b.py"]
         inverse = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
@@ -572,7 +574,9 @@ def test_revision_revert_of_add_restores_set(engine_with_schema) -> None:  # typ
         )
         target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
 
-        rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
+        revert_service.revert(
+            session, target.revision_id, author="human:undo", project_id=target.project_id
+        )
 
         assert _paths(session, row_id) == []
 
@@ -604,7 +608,7 @@ def test_revision_revert_rejects_malformed_old(engine_with_schema, old: object) 
         session.flush()
 
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session, target.revision_id, author="human:undo", project_id=target.project_id
             )
         assert _paths(session, row_id) == ["src/b.py"]
@@ -714,10 +718,12 @@ def test_revision_revert_is_scoped_by_project(engine_with_schema) -> None:  # ty
         target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=pid)[-1]
 
         with pytest.raises(LookupError, match=f"revision not found: '{target.revision_id}'"):
-            rev.revert(session, target.revision_id, author="human:undo", project_id=other_pid)
+            revert_service.revert(
+                session, target.revision_id, author="human:undo", project_id=other_pid
+            )
         assert _paths(session, row_id) == ["src/b.py"]
 
-        rev.revert(session, target.revision_id, author="human:undo", project_id=pid)
+        revert_service.revert(session, target.revision_id, author="human:undo", project_id=pid)
         assert _paths(session, row_id) == ["src/a.py"]
 
 
@@ -769,7 +775,9 @@ def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> 
         session.flush()
 
         with pytest.raises(LookupError, match=f"not found in project #{other_pid}"):
-            rev.revert(session, target.revision_id, author="human:undo", project_id=other_pid)
+            revert_service.revert(
+                session, target.revision_id, author="human:undo", project_id=other_pid
+            )
         assert _paths(session, row_id) == ["src/b.py"]
 
 
@@ -793,7 +801,9 @@ def test_revision_revert_refuses_task_doc_of_another_project(engine_with_schema)
         session.flush()
 
         with pytest.raises(LookupError, match=f"task_doc #{td.row_id} not found in project"):
-            rev.revert(session, first.revision_id, author="human:undo", project_id=other_pid)
+            revert_service.revert(
+                session, first.revision_id, author="human:undo", project_id=other_pid
+            )
         current = task_doc_service.get(session, project_id=pid, task_row_id=row_id, key="plan")
         assert current is not None
         assert current.body == "v2\n"
@@ -822,7 +832,7 @@ def test_revision_revert_wraps_rejected_old_paths(engine_with_schema) -> None:  
         session.flush()
 
         with pytest.raises(rev.RevertNotSupportedError, match=target.revision_id):
-            rev.revert(
+            revert_service.revert(
                 session, target.revision_id, author="human:undo", project_id=target.project_id
             )
         assert _paths(session, row_id) == ["src/b.py"]

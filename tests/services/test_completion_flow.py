@@ -26,6 +26,7 @@ from cod_doc.infra.models import (
     SectionModel,
 )
 from cod_doc.services import doc_service as docs
+from cod_doc.services import revert_service
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from tests._task_scope import sole_project_id
@@ -93,7 +94,7 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
         status_rev = history[-1]
         assert status_rev.diff.startswith('{"op": "status"')
 
-        rev.revert(
+        revert_service.revert(
             session, status_rev.revision_id, author="human:test", project_id=status_rev.project_id
         )
 
@@ -123,7 +124,7 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
             project_id=p,
         )
         complete_rev = history[-1]
-        rev.revert(
+        revert_service.revert(
             session,
             complete_rev.revision_id,
             author="human:test",
@@ -149,7 +150,7 @@ def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type:
         )
         create_rev = history[0]
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session,
                 create_rev.revision_id,
                 author="human:test",
@@ -200,7 +201,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
         history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)
         patch_rev = history[-1]
 
-        rev.revert(
+        revert_service.revert(
             session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
         )
 
@@ -244,7 +245,7 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
         n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p))
 
         patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
-        rev.revert(
+        revert_service.revert(
             session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
         )
 
@@ -279,7 +280,7 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
         )
         rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=p)[-1]
 
-        rev.revert(
+        revert_service.revert(
             session, rename_rev.revision_id, author="human:test", project_id=rename_rev.project_id
         )
 
@@ -349,7 +350,7 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
         # Метка несёт doc_key с «+» — именно её прежний [^+]* не дочитывал.
         assert patch_rev.diff.startswith("--- section:c++-guide#intro+++ section:c++-guide#intro@@")
 
-        rev.revert(session, patch_rev.revision_id, author="human:test", project_id=p)
+        revert_service.revert(session, patch_rev.revision_id, author="human:test", project_id=p)
 
         section = session.get(SectionModel, sec.row_id)
         assert section is not None
@@ -375,7 +376,7 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
 def test_section_label_anchor_is_read_only_when_unambiguous(diff: str, anchor: str | None) -> None:
     """Писатель и читатель метки не расходятся: что нельзя разобрать однозначно —
     не откатывается (ai-review #192, parser differential)."""
-    assert rev._section_label_anchor(diff) == anchor
+    assert revert_service._section_label_anchor(diff) == anchor
 
 
 def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -417,7 +418,9 @@ def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  
         with pytest.raises(
             LookupError, match=f"section #{sec.row_id} not found in project #{other}"
         ):
-            rev.revert(session, patch_rev.revision_id, author="human:test", project_id=other)
+            revert_service.revert(
+                session, patch_rev.revision_id, author="human:test", project_id=other
+            )
         section = session.get(SectionModel, sec.row_id)
         assert section is not None
         assert section.body == "Updated body.\n"
@@ -450,7 +453,9 @@ def test_revert_document_of_another_project_raises(engine_with_schema) -> None: 
         with pytest.raises(
             LookupError, match=f"document #{doc.row_id} not found in project #{other}"
         ):
-            rev.revert(session, rename_rev.revision_id, author="human:test", project_id=other)
+            revert_service.revert(
+                session, rename_rev.revision_id, author="human:test", project_id=other
+            )
         doc_model = session.get(DocumentModel, doc.row_id)
         assert doc_model is not None
         assert doc_model.doc_key == "renamed-key"
@@ -470,7 +475,7 @@ def test_revert_unsupported_entity_kind_raises(engine_with_schema) -> None:  # t
             diff='{"op": "create"}',
         )
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session, written.revision_id, author="human:test", project_id=written.project_id
             )
 

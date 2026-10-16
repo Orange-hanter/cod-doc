@@ -24,7 +24,7 @@ from cod_doc.infra.models import (
     ProjectModel,
     RevisionModel,
 )
-from cod_doc.services import revision_service
+from cod_doc.services import revert_service, revision_service
 from cod_doc.services.plan_service import sections as svc
 from cod_doc.services.plan_service._types import PlanNotFoundError
 from cod_doc.services.validation import ValidationError
@@ -284,7 +284,7 @@ def test_revert_plan_section_not_supported(
         ).scalar_one()
 
     with pytest.raises(revision_service.RevertNotSupportedError), transactional(sf) as s:
-        revision_service.revert(s, revision_id, author="t", project_id=alpha)
+        revert_service.revert(s, revision_id, author="t", project_id=alpha)
 
 
 def test_diff_is_module_local() -> None:

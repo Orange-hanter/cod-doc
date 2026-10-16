@@ -48,6 +48,7 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import checkout_service as checkout
+from cod_doc.services import revert_service
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from tests._scope import only_project_id
@@ -283,7 +284,7 @@ def test_revert_of_a_historical_legacy_revision_lands_canonical(engine_with_sche
             reason="ревизия из до-канонической эпохи",
         )
 
-        rev.revert(
+        revert_service.revert(
             session, historical.revision_id, author="human:test", project_id=historical.project_id
         )
 

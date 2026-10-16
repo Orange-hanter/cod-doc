@@ -473,7 +473,7 @@ def revision_show(ctx: click.Context, revision_id: str, project: str, as_json: b
 def revision_revert(ctx: click.Context, revision_id: str, project: str, author: str) -> None:
     """Revert a revision (creates an inverse revision; history is append-only)."""
     from cod_doc.infra.db import transactional
-    from cod_doc.services import revision_service
+    from cod_doc.services import revert_service
     from cod_doc.services.revision_service import RevertNotSupportedError, RevisionNotFoundError
 
     cfg: Config = ctx.obj["config"]
@@ -482,7 +482,7 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
     try:
         with transactional(sf) as session:
             pid = _require_project_id(session, project)
-            new_rev = revision_service.revert(session, revision_id, author=author, project_id=pid)
+            new_rev = revert_service.revert(session, revision_id, author=author, project_id=pid)
     except RevisionNotFoundError:
         console.print(f"[red]Revision '{revision_id}' not found.[/red]")
         sys.exit(1)
