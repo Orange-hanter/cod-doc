@@ -60,11 +60,11 @@ jobs:
       - name: Preflight — required secrets
         id: pre
         env:
-          HAS_LLM: ${{ secrets.OLLAMA_API_KEY != '' }}
+          HAS_LLM: ${{ secrets.OPENROUTER_API_KEY != '' }}
           HAS_ENGINE_KEY: ${{ secrets.AI_REVIEWER_SSH_KEY != '' }}
         run: |
           if [ "$HAS_LLM" != "true" ] || [ "$HAS_ENGINE_KEY" != "true" ]; then
-            echo "→ OLLAMA_API_KEY / AI_REVIEWER_SSH_KEY не заведены — AI-ревью пропущено"
+            echo "→ OPENROUTER_API_KEY / AI_REVIEWER_SSH_KEY не заведены — AI-ревью пропущено"
             echo "ready=0" >> "$GITHUB_OUTPUT"
           else
             echo "ready=1" >> "$GITHUB_OUTPUT"
@@ -268,23 +268,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          # Провайдер — OpenRouter, не Ollama Cloud: недельный лимит Ollama
+          # обнулял ревью целиком (все вызовы 429 «weekly usage limit»).
+          # LLM_* у движка приоритетнее OLLAMA_*. У ключа есть лимит трат —
+          # кончится, движок пометит в sticky «квота провайдера исчерпана» (402).
+          LLM_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LLM_BASE_URL: https://openrouter.ai/api/v1
           # Абсолютный путь вне чекаута даже при упавшей сборке графа: дефолт
           # движка `.graphify/gf` указывает в дерево PR.
           GRAPHIFY_BIN: ${{ runner.temp }}/graphify/venv/bin/graphify
           REVIEW_MODE: moa
-          MOA_REFERENCE_MODELS: kimi-k2.7-code,glm-5.2,deepseek-v4.1-flash
-          MOA_SPECIALIST_MODELS: security:deepseek-v4.1-flash,correctness:kimi-k2.7-code,architecture:glm-5.2
-          MOA_AGGREGATOR: minimax-m3
-          OLLAMA_MODELS_FALLBACK: deepseek-v4.1-flash
-          # deepseek-v4-flash снят Ollama Cloud 2026-09-25 (HTTP 410 «retired»):
-          # специалист security молча выпадал, а фолбэк указывал на мёртвую модель.
-          # Каталог — https://ollama.com/api/tags.
+          # Тот же ростер, что был на Ollama, в slug'ах OpenRouter (с префиксом
+          # вендора). Каталог — https://openrouter.ai/api/v1/models.
+          MOA_REFERENCE_MODELS: moonshotai/kimi-k2.7-code,z-ai/glm-5.2,deepseek/deepseek-v4.1-flash
+          MOA_SPECIALIST_MODELS: security:deepseek/deepseek-v4.1-flash,correctness:moonshotai/kimi-k2.7-code,architecture:z-ai/glm-5.2
+          MOA_AGGREGATOR: minimax/minimax-m3
+          OLLAMA_MODELS_FALLBACK: deepseek/deepseek-v4.1-flash
+          # kimi-k2.7-code на OpenRouter отвечает на effort=none 400 «Reasoning
+          # is mandatory»; каскад движка сам повторит на low, но это лишний
+          # вызов на каждый запрос — сразу low.
+          LLM_MODEL_SETTINGS: '{"moonshotai/kimi-k2.7-code":{"effort":"low"}}'
           REVIEW_BLOCK_ON: critical,major
           REVIEW_BLOCK_SINGLE: critical
           REVIEW_CONFIDENCE_MIN: '0.8'
           REVIEW_VERIFIER: '1'
-          REVIEW_VERIFIER_MODEL: deepseek-v4-pro
+          REVIEW_VERIFIER_MODEL: deepseek/deepseek-v4-pro
           REVIEW_VERIFIER_STRICT: '1'
           # eslint/ast-grep prescan видит только JS/TS; cod-doc — Python.
           REVIEW_PRESCAN: '0'
