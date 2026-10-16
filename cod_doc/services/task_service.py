@@ -73,16 +73,16 @@ from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
+from cod_doc.services.task_errors import CheckoutConflictError
+
+# SVC-004: класс живёт в листовом `task_errors`; здесь реэкспорт под прежним именем.
+from cod_doc.services.task_errors import TaskNotFoundError as TaskNotFoundError
 from cod_doc.services.task_locality import foreign_paths_warning
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sqlalchemy.orm import Session
-
-
-class TaskNotFoundError(LookupError):
-    pass
 
 
 class DependencyNotFoundError(LookupError):
@@ -1213,8 +1213,6 @@ def _move_one_to_plan(
     (ADO-040). У обоих планов поднимается `last_updated` (COD-022).
     Автоматического revert для `op="plan"` нет — откат это обратный перенос.
     """
-    from cod_doc.services.checkout_service import CheckoutConflictError
-
     model = _require_task(session, task_id, project_id=project_id)
     old_section_id = model.section_id
     old_plan_id = model.plan_id
@@ -1409,8 +1407,6 @@ def move_tasks_to_plan(
     `errors`, остальные переносятся. После переносов — предупреждения о
     рёбрах между планами (`cross_plan_dependency_warnings`).
     """
-    from cod_doc.services.checkout_service import CheckoutConflictError
-
     if (task_ids is None) == (from_section is None):
         raise ValueError("pass exactly one of task_ids / from_section")
     target = _section_in_plan(

@@ -49,6 +49,11 @@ from cod_doc.infra.repositories import DocumentRepository, SectionRepository
 from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
 
+# SVC-004: классы живут в листовом `doc_errors`; здесь реэкспорт под прежними именами.
+from cod_doc.services.doc_errors import DocumentNotFoundError as DocumentNotFoundError
+from cod_doc.services.doc_errors import SectionAlreadyExistsError as SectionAlreadyExistsError
+from cod_doc.services.doc_errors import SectionNotFoundError as SectionNotFoundError
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -61,18 +66,6 @@ class DeleteResult(NamedTuple):
     doc_key: str
     title: str
     section_count: int
-
-
-class DocumentNotFoundError(LookupError):
-    pass
-
-
-class SectionNotFoundError(LookupError):
-    pass
-
-
-class SectionAlreadyExistsError(ValueError):
-    pass
 
 
 def _content_hash(body: str) -> str:

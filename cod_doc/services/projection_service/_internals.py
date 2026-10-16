@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from cod_doc.infra.models import DocumentModel
-from cod_doc.services import doc_service as docs
+from cod_doc.services.doc_errors import DocumentNotFoundError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -14,5 +14,5 @@ if TYPE_CHECKING:
 def _require_doc_model(session: Session, document_id: int) -> DocumentModel:
     m = session.get(DocumentModel, document_id)
     if m is None:
-        raise docs.DocumentNotFoundError(f"document #{document_id}")
+        raise DocumentNotFoundError(f"document #{document_id}")
     return m

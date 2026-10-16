@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from cod_doc.infra.models import DocumentModel, LinkModel, SectionModel
-from cod_doc.services import doc_service as docs
+from cod_doc.services.doc_errors import SectionNotFoundError
 
 from ._types import LinkNotFoundError
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 def _section_or_raise(session: Session, section_id: int) -> SectionModel:
     model = session.get(SectionModel, section_id)
     if model is None:
-        raise docs.SectionNotFoundError(f"section #{section_id}")
+        raise SectionNotFoundError(f"section #{section_id}")
     return model
 
 
