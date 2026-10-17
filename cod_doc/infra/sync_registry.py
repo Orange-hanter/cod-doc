@@ -176,6 +176,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Final
 
 from cod_doc.domain.entities import EntityKind, Sensitivity
 
@@ -466,6 +467,17 @@ def _whole(column: str) -> DocRef:
     return DocRef(column, whole_row=True)
 
 
+#: Что придерживает ссылка сценария на restricted-документ вместе с ней самой.
+_SCENARIO_WITHHELD: Final = ("section_anchor", "doc_content_hash", "group_key")
+#: Заглушка ``scenario.group_key`` (NOT NULL) на приёмнике, когда он придержан.
+RESTRICTED_GROUP_KEY: Final = "restricted"
+#: NOT NULL-колонки, которые ``withheld_columns`` может придержать: значение
+#: приёмника при вставке строки без них (``apply._fill_local``).
+WITHHELD_FILL: Mapping[tuple[str, str], object] = MappingProxyType(
+    {("scenario", "group_key"): RESTRICTED_GROUP_KEY}
+)
+
+
 #: Каждая колонка shipped-таблицы, которая ссылается на документ или секцию
 #: (FK, логическая, строковая ``doc_key`` или полиморфная). Полноту по FK и
 #: по ``doc_key`` сверяет гейт (решение 16).
@@ -477,9 +489,11 @@ DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
         "plan": (DocRef("parent_doc_id", nullable=True), DocRef("completed_log_id", nullable=True)),
         "plan_section": (DocRef("doc_id", nullable=True),),
         "module": (DocRef("spec_doc_id", nullable=True),),
+        # group_key по умолчанию — basename doc_key (scenario_service.create): пока
+        # ссылка придержана, он уезжать не должен, каким бы ни был (fail-closed).
         "scenario": (
-            DocRef("document_id", nullable=True, withheld=("section_anchor", "doc_content_hash")),
-            DocRef("doc_key", nullable=True, withheld=("section_anchor", "doc_content_hash")),
+            DocRef("document_id", nullable=True, withheld=_SCENARIO_WITHHELD),
+            DocRef("doc_key", nullable=True, withheld=_SCENARIO_WITHHELD),
         ),
         "open_question": (DocRef("source_doc_key", nullable=True),),
         "open_question_link": (

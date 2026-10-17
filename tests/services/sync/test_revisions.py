@@ -29,11 +29,13 @@ from cod_doc.domain.entities import (
     Sensitivity,
 )
 from cod_doc.infra import sync_capture as cap
+from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import (
     ApprovalDocRevisionLinkModel,
     DocumentModel,
     RevisionModel,
+    ScenarioModel,
     SectionModel,
     SyncOpModel,
     TaskModel,
@@ -305,6 +307,49 @@ def test_revision_of_entity_with_withheld_restricted_anchor_never_ships(pair) ->
             select(SyncOpModel.fields).where(SyncOpModel.entity_kind == "scenario")
         ).all()
     assert shipped and all("secret" not in f for f in shipped), "сам сценарий — без doc_key"
+
+
+@pytest.mark.parametrize("group_key", [None, "explicit-group"])
+def test_group_key_of_a_scenario_on_a_restricted_document_never_ships(
+    pair, group_key: str | None
+) -> None:
+    """group_key по умолчанию — basename doc_key: у restricted-документа он выдавал имя,
+    которое реестр придерживает (находка #226). Fail-closed: пока ссылка на
+    документ придержана, group_key не уезжает, каким бы он ни был; приёмник
+    ставит заглушку ``sync_registry.RESTRICTED_GROUP_KEY`` в NOT NULL-колонку.
+    """
+    a, b, store = pair
+    _restricted_doc(a, "secret/spec-alpha")
+    with transactional(a.sf) as s:
+        scenario_service.create(
+            s,
+            project_id=a.project_id,
+            title="Сценарий на тайном документе",
+            kind=ScenarioKind.INVARIANT,
+            preconditions="p",
+            expected="e",
+            author=r.AUTHOR,
+            scenario_id="SCN-001",
+            doc_key="secret/spec-alpha",
+            group_key=group_key,
+            steps=["шаг"],
+        )
+    with transactional(a.sf, commit=False) as s:
+        shipped = s.scalars(
+            select(SyncOpModel.fields).where(SyncOpModel.entity_kind == "scenario")
+        ).all()
+    assert shipped
+    assert all("spec-alpha" not in f and "group_key" not in f for f in shipped)
+
+    _push(a, store)
+    _pull(b, store)
+
+    for path in store.root.rglob("*"):
+        if path.is_file():
+            assert b"spec-alpha" not in path.read_bytes(), path
+    with transactional(b.sf, commit=False) as s:
+        row = s.scalars(select(ScenarioModel).where(ScenarioModel.scenario_id == "SCN-001")).one()
+        assert (row.group_key, row.doc_key) == (reg.RESTRICTED_GROUP_KEY, None)
 
 
 def test_revision_diff_never_carries_local_columns(pair) -> None:

@@ -597,13 +597,18 @@ def _check_cascade(session: Session, project: ProjectRef, table: str, row_id: in
 
 
 def _fill_local(session: Session, mapper: Mapper[object], info: cap.TableInfo, obj: object) -> None:
-    """Local-колонки ``NOT NULL`` новой строки: позиция, известные заглушки."""
+    """``NOT NULL`` новой строки без значения: local-колонки (позиция, известные
+    заглушки) и придержанные отправителем (``sync_registry.WITHHELD_FILL``)."""
     tbl = cast("Table", mapper.local_table)
     for column in tbl.columns:
         name = column.name
-        if name in info.shipped or name in {"row_id", _UID}:
+        if name in {"row_id", _UID} or getattr(obj, info.attr(name)) is not None:
             continue
-        if getattr(obj, info.attr(name)) is not None:
+        if name in info.shipped:
+            # Уезжающая NOT NULL-колонка, которую реестр отправителя придержал
+            # (ссылка на restricted-документ): заглушка вместо значения.
+            if (info.table, name) in reg.WITHHELD_FILL and not column.nullable:
+                setattr(obj, info.attr(name), reg.WITHHELD_FILL[(info.table, name)])
             continue
         if column.nullable or column.default is not None or column.server_default is not None:
             continue
