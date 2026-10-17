@@ -28,10 +28,13 @@ audience: [contributors, agents]
 > секция A (идентичность и журнал) закрыта 2026-10-15
 > ([аудит](../audit/2026-10-15-cloud-remote-section-a.md)), секция B
 > (changeset, file-remote, push/pull) — 2026-10-17
-> ([аудит](../audit/2026-10-17-cloud-remote-section-b.md)), секции C–F не
-> начаты. Работает только `file://` remote и только fast-forward pull;
-> `clone`, слияния и конфликтов нет. Контракт ниже — цель; детали схемы и
-> протокола — в [RFC 29](../../../proposals/29-cloud-remote-sync.md).
+> ([аудит](../audit/2026-10-17-cloud-remote-section-b.md)), секция C (слияние
+> и конфликты) — 2026-10-17
+> ([аудит](../audit/2026-10-17-cloud-remote-section-c.md)), секции D–F не
+> начаты. Работает только `file://` remote; pull сливает офлайн-правки
+> по правилам §3.7, несведённое — в `sync_conflict`. `clone`, аренды номеров и
+> checkout'а нет. Контракт ниже — цель; детали схемы и протокола — в
+> [RFC 29](../../../proposals/29-cloud-remote-sync.md).
 
 ## 0. As implemented (2026-10-17)
 
@@ -63,18 +66,48 @@ audience: [contributors, agents]
   `SYNC-103`.
 - **`pull`**: только fast-forward; changeset проверяется до первой записи
   (схема — `SYNC-104`, проект, уезжающие поля, штампы HLC, каскад в restricted)
-  и применяется своей транзакцией. Правка той же сущности на обеих сторонах —
-  `MergeRequiredError` («секция C»).
+  и применяется своей транзакцией. Правка той же сущности на обеих сторонах
+  в секции B давала `MergeRequiredError`; с секции C — слияние (ниже).
 - **Дайджест и `verify`**: sha256 уезжающего состояния проекта без `row_id`,
   `position`, restricted и journal; две реплики после fast-forward равны.
 - **Поверхности**: CLI `cod-doc remote add|list|remove`, `fetch`, `pull
   [--dry-run]`, `push [--no-retry]`, `sync status [--verify]|log|verify`; MCP
   `sync_status`, `sync_pull`, `sync_push` (профили `standard`/`full`).
 
+Секция C (CLO-017…027, [аудит](../audit/2026-10-17-cloud-remote-section-c.md))
+— слияние вместо `MergeRequiredError`:
+
+- **Pull сливает свой хвост с чужими changeset'ами** (`sync_service/merge.py`):
+  поле существующей строки — LWW по штампу `(hlc, op_id)`, равные значения
+  поглощаются; `rank` — обычное поле, ничью решает `uid`. Merge-changeset не
+  строится: разрешившие расхождение операции уезжают следующим push'ем.
+- **Стратегии по виду случая:** текст (`text_columns`: описания, тела секций,
+  решения ADR) — diff3 построчно от общего предка; `task.status` — больший
+  штамп только при допустимом переходе `ALLOWED_TRANSITIONS`, двойной офлайн-
+  checkout — конфликт `double_checkout`; рёбра и тег-связи — add-wins;
+  удаление против правки — удаление выигрывает, правка — в конфликт
+  `delete_edit` со снимком поддерева; совпавший натуральный ключ — склейка в
+  одну строку (`entity_alias reason=merged`), буква секции плана —
+  перебуквление.
+- **Ревизии уезжают** (`sync_service/journal.py`): объединение по
+  `revision_id`, родитель — локальная голова; ревизия уезжает, только если её
+  сущность уезжает целиком. Лента `activity_event` остаётся на реплике.
+- **Конфликты** — local-таблица `sync_conflict`; CLI `cod-doc sync conflicts`
+  / `sync resolve <uid> --take ours|theirs|--text-file`, MCP `sync_conflicts`
+  / `sync_resolve`, пункт `sync_conflict` в `curator_next` (ранг 4, выше
+  реестра хэшей). Разрешение — обычная запись, она уезжает следующим push'ем.
+- **Сходимость** (`tests/services/sync/test_convergence.py`, SCN-087): три
+  реплики со случайными пересекающимися офлайн-правками всех видов в любой
+  перестановке push/pull после разрешения конфликтов приходят к одному
+  дайджесту; множество подписей открытых конфликтов от перестановки не
+  зависит.
+
 Чего нет: `clone` (CLO-029) — вторая реплика заводится эмуляцией (рецепт —
 [аудит секции B §8](../audit/2026-10-17-cloud-remote-section-b.md)); S3 и умный
-remote (`SYNC-110` до CLO-028/035); слияние, конфликты и синхронизация ревизий
-(секция C); аутентификация ни в REST API, ни в MCP (секция E).
+remote (`SYNC-110` до CLO-028/035); разрешение `double_checkout` (CLO-031);
+двойники арендованных номеров `task_id`/`adr_id`/… (`MergeRequiredError`,
+CLO-030); перенос хвоста на переписанную историю remote (CLO-032);
+аутентификация ни в REST API, ни в MCP (секция E).
 
 ## 1. Зачем
 
