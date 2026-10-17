@@ -40,7 +40,7 @@ counter, replica_uid)``: ничья по времени решается uid р�
 | Вид | Задача | Модуль | Что модуль экспортирует |
 |---|---|---|---|
 | ``text`` (``text_columns`` реестра) | CLO-019 | ``text_merge`` | ``resolve(clash: FieldClash) -> Resolution`` |
-| ``status`` (``task.status``) | CLO-020 | ``status_merge`` | ``resolve(clash: FieldClash) -> Resolution`` |
+| ``status`` (``task.status``, ``task.checked_out_*``) | CLO-020 | ``status_merge`` | ``resolve(clash: FieldClash) -> Resolution`` |
 | ``edge`` (удаление ребра против его же правки) | CLO-021 | ``set_merge`` | ``resolve_entity(session, ctx, clash: EntityClash) -> bool`` |
 | ``delete_edit`` (удаление против правки, FK на удалённое) | CLO-022 | ``tombstone`` | ``resolve_entity(session, ctx, clash: EntityClash) -> bool`` |
 | ``key_merge`` (совпал натуральный ключ при вставке) | CLO-023 | ``keys`` | ``resolve_key(session, ctx, clash: KeyClash) -> bool`` |
@@ -125,7 +125,11 @@ STRATEGIES: Final[Mapping[str, tuple[str, str]]] = {
     DELETE_EDIT: ("CLO-022", "tombstone"),
     KEY_MERGE: ("CLO-023", "keys"),
 }
-_STATUS_FIELDS: Final = frozenset({("task", "status")})
+#: ``checked_out_*`` идут той же стратегией: двойной офлайн-checkout виден только
+#: по ним — ``status`` у двух захватов одинаковый и поглощается (CLO-020, Q-011).
+_STATUS_FIELDS: Final = frozenset(
+    {("task", "status"), ("task", "checked_out_by"), ("task", "checked_out_at")}
+)
 #: Виды конфликта про одно поле; у остальных ``field`` пуст.
 _FIELD_CONFLICTS: Final = frozenset({FIELD, TEXT, STATUS})
 _UPSERT: Final = "upsert"
@@ -193,7 +197,8 @@ class FieldClash:
     column: str
     ours: FieldValue
     theirs: FieldValue
-    #: ``base`` последней своей записи поля и чужой операции (для 3-way merge).
+    #: ``base`` первой своей неупакованной записи поля — общий предок с remote —
+    #: и ``base`` чужой операции (для 3-way merge).
     ours_base: FieldValue
     theirs_base: FieldValue
     ours_stamp: Stamp
@@ -232,10 +237,38 @@ class Context:
     author: str
     #: Конфликты к открытию — ``pull`` пишет их в транзакции changeset'а.
     conflicts: list[ConflictSpec] = field(default_factory=list)
+    #: Поле ``(entity_uid, column)`` → конфликт, который оно открыло в текущем
+    #: changeset'е. Решает последняя чужая запись поля, а не промежуточная.
+    by_field: dict[tuple[str, str], ConflictSpec] = field(default_factory=dict)
 
     def drain(self) -> list[ConflictSpec]:
         out, self.conflicts = self.conflicts, []
+        self.by_field = {}
         return out
+
+    def retract(self, entity_uid: str, column: str) -> None:
+        """Чужой changeset снова пишет поле: конфликт его прошлой записи снимается.
+
+        Иначе промежуточное состояние чужой истории (``cancelled`` по пути в
+        ``todo``, checkout со следующим release) давало бы конфликт только той
+        реплике, которая сливает чужую историю по шагам, — а реплика, у которой
+        та же история в своём хвосте, видит лишь итог.
+        """
+        spec = self.by_field.pop((entity_uid, column), None)
+        if spec is None:
+            return
+        self.conflicts = [c for c in self.conflicts if c is not spec]
+        self.by_field = {k: v for k, v in self.by_field.items() if v is not spec}
+
+    def add(self, column: str, spec: ConflictSpec) -> None:
+        """Конфликт про сущность (без поля) — один на сущность и вид."""
+        if spec.field is None:
+            for c in self.conflicts:
+                if (c.entity_uid, c.kind, c.field) == (spec.entity_uid, spec.kind, None):
+                    self.by_field[(spec.entity_uid, column)] = c
+                    return
+        self.conflicts.append(spec)
+        self.by_field[(spec.entity_uid, column)] = spec
 
 
 type FieldStrategy = Callable[[FieldClash], Resolution]
@@ -353,6 +386,12 @@ def _stamp(op: Op) -> Stamp:
 def _latest(tail: Sequence[Op], column: str) -> Op | None:
     found = [op for op in tail if op.kind == _UPSERT and column in op.fields]
     return max(found, key=_stamp) if found else None
+
+
+def _earliest_base(tail: Sequence[Op], column: str) -> FieldValue:
+    """``base`` первой своей записи поля в хвосте — значение до офлайн-правок."""
+    found = [op for op in tail if op.kind == _UPSERT and column in op.fields]
+    return min(found, key=_stamp).base.get(column) if found else None
 
 
 def check(foreign: Sequence[Op], tail: Sequence[Op]) -> None:
@@ -486,6 +525,7 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
             if seen is None or theirs_stamp > seen:
                 out[column] = theirs
             continue
+        ctx.retract(op.entity_uid, column)
         if _equal(mine.fields[column], theirs):
             _trim(session, pending, column)  # одинаковое значение: операции нет
             out[column] = theirs
@@ -496,7 +536,7 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
             column=column,
             ours=mine.fields[column],
             theirs=theirs,
-            ours_base=mine.base.get(column),
+            ours_base=_earliest_base(tail, column),
             theirs_base=op.base.get(column),
             ours_stamp=_stamp(mine),
             theirs_stamp=theirs_stamp,
@@ -512,17 +552,20 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
             merged[column] = result.value
             merged_base[column] = theirs
         elif result.outcome is Outcome.CONFLICT:
-            ctx.conflicts.append(
+            kind = result.conflict_kind or classify(op.entity_kind, column)
+            ctx.add(
+                column,
                 ConflictSpec(
                     entity_kind=op.entity_kind,
                     entity_uid=op.entity_uid,
-                    field=column,
-                    kind=result.conflict_kind or classify(op.entity_kind, column),
+                    # Конфликт про сущность (``double_checkout``) — без поля.
+                    field=column if kind in _FIELD_CONFLICTS else None,
+                    kind=kind,
                     ours=clash.ours,
                     theirs=theirs,
                     base=clash.theirs_base,
                     theirs_op=op.op_id,
-                )
+                ),
             )
     if merged:
         _append(session, ctx, op, merged, merged_base)
