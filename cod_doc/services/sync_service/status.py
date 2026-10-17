@@ -6,8 +6,9 @@ pull): ``behind`` — число скачанных и ещё не примен�
 Без remote — только локальное состояние, ``remote=None``.
 
 Поля, у которых в секции B нет источника, отдаются нейтральными значениями и
-заполнятся своими задачами: ``open_conflicts`` — 0 (CLO-017), ``epoch_remote``
-— ``None`` (``meta.json``, CLO-032), ``leases`` — пусто (CLO-030/031).
+заполнятся своими задачами: ``epoch_remote`` — ``None`` (``meta.json``,
+CLO-032), ``leases`` — пусто (CLO-030/031). ``open_conflicts`` — открытые
+строки ``sync_conflict`` (CLO-017).
 
 ``log`` — changeset'ы локального индекса по первому родителю от головы
 реплики: автор, реплика, число операций. Сеть не нужна: применённый или
@@ -25,7 +26,7 @@ from sqlalchemy import func, select
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import Base, ChangesetModel, SyncOpModel, SyncRefModel
-from cod_doc.services.sync_service import _local, digest, remotes
+from cod_doc.services.sync_service import _local, conflicts, digest, remotes
 from cod_doc.services.sync_service import pull as pull_mod
 
 if TYPE_CHECKING:
@@ -131,6 +132,7 @@ def status(
         pending = digest.pending_count(session, ref.row_id)
         ahead = _ahead(session, head, head_remote) if configured else 0
         restricted = _restricted(session, ref.row_id)
+        open_conflicts = conflicts.count_open(session, ref.row_id)
     checked = (
         digest.verify(sf, project, remote=remote, store=store)
         if verify and configured and store is not None
@@ -148,7 +150,7 @@ def status(
         ahead=ahead,
         behind=behind,
         pending_ops=pending,
-        open_conflicts=0,
+        open_conflicts=open_conflicts,
         epoch_local=_local.EPOCH,
         epoch_remote=None,
         restricted_local=restricted,

@@ -12,14 +12,19 @@ SYNC-102), потом каждый применяется в своей тран
 2. **Штампы** (``apply.check_clock``): реплика операций = реплика changeset'а,
    не своя реплика, не дальше ``hlc.MAX_DRIFT_MS`` впереди стенных часов —
    иначе SYNC-102.
-3. **Расхождение.** Секция B делает только fast-forward: голова реплики —
-   предок головы remote, а свой неупакованный хвост (``sync_op`` без
-   ``changeset``) не трогает сущностей чужих операций. «Трогает» — та же
-   сущность, или удаление с одной стороны того, на что ссылается FK другой.
-   Иначе — ``MergeRequiredError`` до первой записи: LWW, 3-way merge, tombstone
-   против правки — секция C. Непересекающийся хвост остаётся хвостом и уедет
-   следующим push'ем поверх новой головы — merge-changeset не нужен
-   (``fast_forward`` всегда ``True``).
+3. **Расхождение** (``merge.check``). Свой неупакованный хвост (``sync_op``
+   без ``changeset``) и чужие операции могут писать одно и то же. LWW по
+   полю — встроенная стратегия; случаи, стратегий которых ещё нет (3-way
+   merge текстов, ``task.status`` с обеих сторон, удаление против правки),
+   дают ``MergeRequiredError`` с номером задачи до первой записи.
+
+Слияние идёт при применении (``merge.fields_to_apply``): хвост поверх новой
+головы, без merge-changeset'а — локальная голова всегда предок головы remote,
+а хвост ещё не changeset (решение B12; RFC §3.6 строит merge-changeset).
+Проигравшие и поглощённые поля уходят из хвоста; ``fast_forward`` —
+``False``, если свой хвост был (§3.6). Конфликты, которые
+насобирала стратегия, открываются в транзакции того changeset'а
+(``conflicts.open_conflict``) и попадают в ``PullResult.conflicts``.
 
 Применённый changeset ложится в ``changeset`` с ``applied_at``, голова
 реплики сдвигается на него — в той же транзакции. Повторный pull ничего не
@@ -46,7 +51,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ChangesetModel, SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, apply
+from cod_doc.services.sync_service import _local, apply, conflicts, merge
 from cod_doc.services.sync_service.changeset import Changeset, decode
 from cod_doc.services.sync_service.errors import (
     MergeRequiredError,
@@ -60,12 +65,14 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.infra.remote.base import RefValue, RemoteStore
+    from cod_doc.services.sync_service.changeset import Op
 
 __all__ = ["PullResult", "fetch", "pull"]
 
 _CHUNK: Final = 500
-#: Сколько сущностей назвать в сообщении о расхождении.
-_SHOWN: Final = 5
+#: История remote не содержит головы реплики (remote пересоздан, эпоха сменилась):
+#: это не слияние, а перенос хвоста на новую историю — export-pending, CLO-032.
+_REWRITTEN: Final = "CLO-032"
 #: Потолок неприменённых changeset'ов за один pull: обход идёт по ``parents``
 #: недоверенных объектов, и без потолка подделка заставила бы качать без конца.
 #: Больше — работа clone со снапшота (CLO-029).
@@ -78,9 +85,9 @@ MAX_PARENTS: Final = 16
 class PullResult:
     applied: list[str]
     ops: int
-    #: Секция B не строит merge-changeset: всегда fast-forward (§3.6).
+    #: ``False`` — свой хвост пересёкся с чужими операциями и слит (§3.7).
     fast_forward: bool
-    #: Конфликты и склейки — секция C; до неё пусто.
+    #: uid открытых конфликтов (``sync_conflict``); склейки — CLO-023.
     conflicts: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     head: str | None = None
@@ -93,15 +100,6 @@ class _Fetched:
     remote_ref: RefValue | None
     #: Неприменённые changeset'ы в порядке применения (родитель раньше ребёнка).
     changesets: tuple[tuple[str, Changeset], ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _Pending:
-    op_id: str
-    entity_kind: str
-    entity_uid: str
-    kind: str
-    refs: frozenset[str]
 
 
 # --- fetch ------------------------------------------------------------------------
@@ -192,11 +190,11 @@ def _fetch(sf: sessionmaker[Session], project: str, store: RemoteStore) -> _Fetc
         if behind:
             return _Fetched(ref, head, remote_ref, ())
         msg = f"refs/main {remote_ref.sha[:12]} не предок головы реплики"
-        raise MergeRequiredError(msg)
+        raise MergeRequiredError(msg, task=_REWRITTEN)
     found = _download(store, ref, remote_ref.sha, applied)
     if head is not None and not any(head in cs.parents for cs in found.values()):
         msg = f"голова реплики {head[:12]} не предок refs/main {remote_ref.sha[:12]}"
-        raise MergeRequiredError(msg)
+        raise MergeRequiredError(msg, task=_REWRITTEN)
     return _Fetched(ref, head, remote_ref, tuple((s, found[s]) for s in _topological(found)))
 
 
@@ -234,13 +232,6 @@ def _check_schema(sf: sessionmaker[Session], fetched: _Fetched) -> None:
             raise SchemaMismatchError(msg)
 
 
-def _pending(session: Session, project_id: int) -> list[_Pending]:
-    return [
-        _Pending(op.op_id, op.entity_kind, op.entity_uid, op.kind, frozenset(apply.fk_uids(op)))
-        for op in _local.pending_ops(session, project_id)
-    ]
-
-
 def _own(session: Session, changesets: Sequence[tuple[str, Changeset]], me: str) -> set[str]:
     """Свои changeset'ы: реплика — эта, и каждая операция совпала с журналом целиком.
 
@@ -270,30 +261,14 @@ def _own(session: Session, changesets: Sequence[tuple[str, Changeset]], me: str)
 
 
 def _check_divergence(
-    changesets: Sequence[tuple[str, Changeset]], own: set[str], pending: Sequence[_Pending]
-) -> None:
+    changesets: Sequence[tuple[str, Changeset]], own: set[str], tail: Sequence[Op]
+) -> bool:
+    """Хвост против чужих операций (``merge.check``); ``True`` — свой хвост есть (§3.6)."""
     own_ids = {op.op_id for sha, cs in changesets if sha in own for op in cs.ops}
-    tail = [p for p in pending if p.op_id not in own_ids]
-    if not tail:
-        return
-    entities = {(p.entity_kind, p.entity_uid) for p in tail}
-    deleted = {p.entity_uid for p in tail if p.kind == "delete"}
-    referenced = set().union(*(p.refs for p in tail))
-    hits: list[str] = []
-    for sha, cs in changesets:
-        if sha in own:
-            continue
-        hits.extend(
-            f"{op.entity_kind} {op.entity_uid}"
-            for op in cs.ops
-            if (op.entity_kind, op.entity_uid) in entities
-            or (op.kind == "delete" and op.entity_uid in referenced)
-            or (op.kind == "upsert" and apply.fk_uids(op) & deleted)
-        )
-    if hits:
-        shown = ", ".join(sorted(set(hits))[:_SHOWN])
-        msg = f"неупакованные локальные операции и чужие changeset'ы трогают одно: {shown}"
-        raise MergeRequiredError(msg)
+    foreign = [op for sha, cs in changesets if sha not in own for op in cs.ops]
+    mine = [op for op in tail if op.op_id not in own_ids]
+    merge.check(foreign, mine)
+    return bool(mine)
 
 
 # --- применение -------------------------------------------------------------------
@@ -323,6 +298,8 @@ def _apply_one(
     *,
     expected: str | None,
     own: bool,
+    ctx: merge.Context,
+    opened: list[str],
 ) -> tuple[str, str | None]:
     """Один changeset в своей транзакции, голова — CAS с ``expected`` на ``sha``.
 
@@ -341,7 +318,12 @@ def _apply_one(
             if own:
                 _settle_own(session, project, sha, cs)
             else:
-                apply.apply_changeset(session, project, sha, cs)
+                ctx.drain()
+                apply.apply_changeset(session, project, sha, cs, ctx=ctx)
+                opened.extend(
+                    conflicts.open_conflict(session, project.row_id, spec, author=ctx.author)
+                    for spec in ctx.drain()
+                )
             return _APPLIED, sha
         current = _local.local_head(session, project.row_id)
         if _local.is_applied(session, sha):
@@ -349,20 +331,27 @@ def _apply_one(
         return _MOVED, current
 
 
-def _check_all(
-    sf: sessionmaker[Session], fetched: _Fetched
-) -> tuple[set[str], list[tuple[str, Changeset]]]:
-    """Всё, что проверяется до первой записи: схема, «свои», расхождение, штампы."""
+@dataclass(frozen=True, slots=True)
+class _Checked:
+    me: str
+    own: set[str]
+    foreign: list[tuple[str, Changeset]]
+    diverged: bool
+
+
+def _check_all(sf: sessionmaker[Session], fetched: _Fetched) -> _Checked:
+    """Всё, что проверяется до первой записи: схема, «свои», штампы, расхождение."""
     ref = fetched.project
     _check_schema(sf, fetched)
     with transactional(sf) as session:
         me = self_replica(session, ref.row_id)
         own = _own(session, fetched.changesets, me)
-        pending = _pending(session, ref.row_id)
-    _check_divergence(fetched.changesets, own, pending)
+        tail = _local.pending_ops(session, ref.row_id)
     for sha, cs in fetched.changesets:  # свои тоже: штампы и реплика сверяются
         apply.check_clock(cs, self_replica_uid=me, own=sha in own)
-    return own, [(sha, cs) for sha, cs in fetched.changesets if sha not in own]
+    diverged = _check_divergence(fetched.changesets, own, tail)
+    foreign = [(sha, cs) for sha, cs in fetched.changesets if sha not in own]
+    return _Checked(me, own, foreign, diverged)
 
 
 def pull(
@@ -374,7 +363,7 @@ def pull(
     dry_run: bool = False,
     store: RemoteStore | None = None,
 ) -> PullResult:
-    """Fetch + fast-forward: применить чужие changeset'ы поверх своей головы (§10.6)."""
+    """Fetch + merge: чужие changeset'ы поверх своей головы, хвост слит по §3.7 (§10.6)."""
     store = store if store is not None else _local.open_store(project, remote)
     fetched = _fetch(sf, project, store)
     ref = fetched.project
@@ -384,22 +373,27 @@ def pull(
                 _local.set_remote_ref(session, ref.row_id, remote, fetched.remote_ref)
         return PullResult(applied=[], ops=0, fast_forward=True, head=fetched.head)
 
-    own, foreign = _check_all(sf, fetched)
+    checked = _check_all(sf, fetched)
+    own, foreign = checked.own, checked.foreign
     if dry_run:
         # Что сделал бы pull: те же changeset'ы и та голова, на которой он встал бы.
         return PullResult(
             applied=[sha for sha, _ in foreign],
             ops=sum(len(cs.ops) for _, cs in foreign),
-            fast_forward=True,
+            fast_forward=not checked.diverged,
             head=fetched.changesets[-1][0],
         )
 
     _local.ensure_local_head(sf, ref.row_id)
+    ctx = merge.Context(project_id=ref.row_id, replica_uid=checked.me, author=author)
+    opened: list[str] = []
     applied: list[str] = []
     ops = 0
     head = fetched.head
     for sha, cs in fetched.changesets:
-        outcome, current = _apply_one(sf, ref, sha, cs, expected=head, own=sha in own)
+        outcome, current = _apply_one(
+            sf, ref, sha, cs, expected=head, own=sha in own, ctx=ctx, opened=opened
+        )
         head = current
         if outcome == _MOVED:
             break
@@ -407,6 +401,7 @@ def pull(
             applied.append(sha)
             ops += len(cs.ops)
 
+    fast_forward = not checked.diverged
     with transactional(sf) as session:
         _local.set_remote_ref(session, ref.row_id, remote, fetched.remote_ref)
         if applied:
@@ -421,9 +416,11 @@ def pull(
                     "remote": remote,
                     "applied": applied,
                     "ops": ops,
-                    "conflicts": [],
-                    "fast_forward": True,
+                    "conflicts": opened,
+                    "fast_forward": fast_forward,
                 },
                 summary=f"pull {remote}: {len(applied)} changeset'ов, {ops} операций",
             )
-    return PullResult(applied=applied, ops=ops, fast_forward=True, head=head)
+    return PullResult(
+        applied=applied, ops=ops, fast_forward=fast_forward, conflicts=opened, head=head
+    )

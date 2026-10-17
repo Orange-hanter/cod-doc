@@ -774,6 +774,8 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec("sync_ref", _L),
     TableSpec("sync_lease", _L),
     TableSpec("entity_alias", _L),
+    # --- local: конфликты слияния (0051, RFC 29 §3.7) — решение реплики, не данные
+    TableSpec("sync_conflict", _L),
 )
 
 

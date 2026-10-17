@@ -35,7 +35,7 @@ from ._surface_parity import (
 
 SPEC = ServiceSpec(
     name="sync_service",
-    known_mutations=frozenset({"push", "pull"}),
+    known_mutations=frozenset({"push", "pull", "open_conflict", "resolve_conflict"}),
     known_reads=frozenset(
         {
             # pull.py, status.py, digest.py
@@ -57,8 +57,25 @@ SPEC = ServiceSpec(
             # apply.py — применение под suspended, событий не пишет (§10.11)
             "apply_changeset",
             "check_clock",
+            "entity_by_uid",
+            "orm_values",
+            # conflicts.py
+            "list_conflicts",
+            "count_open",
         }
     ),
+    internal_only={
+        "open_conflict": (
+            "конфликт открывает слияние внутри pull (merge), а не пользователь; "
+            "событие sync.conflict_opened пишется в транзакции применения changeset'а"
+        ),
+    },
+    surface_debt={
+        "resolve_conflict": (
+            frozenset({"mcp", "cli"}),
+            "сервис — CLO-017; поверхности sync resolve / sync_resolve — CLO-026 (RFC 29 §11.2)",
+        ),
+    },
 )
 
 
@@ -84,7 +101,12 @@ def test_allowlists_carry_a_justification() -> None:
 
 def test_discovered_mutations_exact() -> None:
     """Новая write-функция в sync_service роняет тест, пока её не впишут в спеку."""
-    assert _surface_parity.discovered_mutations(SPEC) == {"push", "pull"}
+    assert _surface_parity.discovered_mutations(SPEC) == {
+        "push",
+        "pull",
+        "open_conflict",
+        "resolve_conflict",
+    }
 
 
 @pytest.mark.parametrize("surface", sorted(SURFACE_DIRS))

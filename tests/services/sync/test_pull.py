@@ -343,9 +343,9 @@ def test_scn_085_changeset_with_newer_schema_is_refused_without_partial_apply(
         _pull(b, store)
 
     assert err.value.code == "SYNC-104"
-    assert "remote на схеме 0099_from_the_future, у вас 0050_sync_rank — cod-doc update" in str(
-        err.value
-    )
+    with transactional(b.sf) as s:
+        local = _local.schema_head(s)  # голова миграций БД, а не литерал: растёт с каждой
+    assert f"remote на схеме 0099_from_the_future, у вас {local} — cod-doc update" in str(err.value)
     # Ни одна операция не применена — даже changeset'а со старой схемой под ним.
     assert r.authored_state(b) == before
     assert r.task_description(b, "DEM-001") is None

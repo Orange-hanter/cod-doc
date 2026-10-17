@@ -139,3 +139,52 @@ class EntityAliasModel(Base):
     created: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+
+
+#: Виды конфликта (RFC 29 §10.1, миграция 0051): поле, текст, статус задачи,
+#: удаление против правки, склейка натурального ключа, двойной офлайн-checkout.
+SYNC_CONFLICT_KINDS: tuple[str, ...] = (
+    "field",
+    "text",
+    "status",
+    "delete_edit",
+    "key_merge",
+    "double_checkout",
+)
+
+
+class SyncConflictModel(Base):
+    """Конфликт слияния (RFC 29 §3.7, §10.1; CLO-017) — local, не уезжает.
+
+    ``ours``/``theirs``/``base`` — канонический JSON значения в форме
+    changeset'а (§10.4): так переживают круг и не-строки (FK как uid, время,
+    числа). Для ``delete_edit`` ``theirs`` — JSON-снимок поддерева.
+    """
+
+    __tablename__ = "sync_conflict"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('field','text','status','delete_edit','key_merge','double_checkout')",
+            name="ck_sync_conflict_kind",
+        ),
+        CheckConstraint("status IN ('open','resolved')", name="ck_sync_conflict_status"),
+        Index("ix_sync_conflict_status", "project_id", "status"),
+    )
+
+    uid: Mapped[str] = mapped_column(Text, primary_key=True)  # uuid7
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey(_PROJECT_FK, ondelete="CASCADE"), nullable=False
+    )
+    entity_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_uid: Mapped[str] = mapped_column(Text, nullable=False)
+    #: NULL для ``delete_edit`` и склейки ключей.
+    field: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    ours: Mapped[str | None] = mapped_column(Text, nullable=True)
+    theirs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    base: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: ``op_id`` чужой операции.
+    theirs_op: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    resolved_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

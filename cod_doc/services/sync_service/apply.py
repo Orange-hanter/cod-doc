@@ -53,13 +53,17 @@
    секции C. Часы реплики видят ``hlc_max`` (``observe``): следующая своя
    операция будет позже применённых.
 
-Чего здесь нет — слияния (секция C): применение пишет значения changeset'а
-поверх локальных. ``pull`` зовёт его только для fast-forward, когда свой
-неупакованный хвост этих сущностей не трогает.
+7. **Слияние** (секция C, ``merge``). Правка существующей строки пишет только
+   поля, выигравшие LWW у хвоста и истории реплики (``merge.fields_to_apply``);
+   удаление против правки или ссылки решает стратегия вида (``merge.allow``),
+   совпадение натурального ключа при вставке — ``merge.key_collision``. Поле
+   вне ``SHIPPED_COLUMNS`` отвергается до слияния: отброшенное слиянием поле
+   всё равно проходит гейт недоверенного ввода.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import logging
@@ -76,7 +80,7 @@ from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
 from cod_doc.infra.models import Base, SyncOpModel
 from cod_doc.services import search_service
-from cod_doc.services.sync_service import _local
+from cod_doc.services.sync_service import _local, merge
 from cod_doc.services.sync_service._values import from_wire
 from cod_doc.services.sync_service.errors import ObjectMissingError
 
@@ -134,16 +138,6 @@ def _info(table: str) -> tuple[Mapper[object], cap.TableInfo]:
     info = cap.table_info(mapper)
     assert info is not None  # CAPTURED_TABLES → table_info не None
     return mapper, info
-
-
-def fk_uids(op: Op) -> set[str]:
-    """uid, на которые ссылаются FK-поля операции (для проверки расхождения)."""
-    if op.entity_kind not in cap.CAPTURED_TABLES:
-        return set()
-    _, info = _info(op.entity_kind)
-    refs = {*info.fk_targets, *info.polymorphic}
-    payload = op.fields if op.kind == "upsert" else op.base
-    return {str(v) for c, v in payload.items() if c in refs and isinstance(v, str)}
 
 
 # --- затронутое -------------------------------------------------------------------
@@ -352,6 +346,37 @@ def _find(
     return session.scalars(stmt).one_or_none()
 
 
+def entity_by_uid(
+    session: Session, project: ProjectRef, table: str, uid: str
+) -> tuple[object, cap.TableInfo] | None:
+    """ORM-строка таблицы с uid в проекте (чужой проект — SYNC-102) и её ``TableInfo``.
+
+    Только для таблиц с колонкой ``uid``; у тег-таблиц строка адресуется
+    концами ребра (``_find``).
+    """
+    mapper, info = _info(table)
+    if not info.has_uid:
+        msg = f"{table}: строка без колонки uid адресуется концами ребра"
+        raise ObjectMissingError(msg)
+    model = mapper.class_
+    obj = session.scalars(select(model).where(getattr(model, info.attr(_UID)) == uid)).one_or_none()
+    if obj is None:
+        return None
+    _require_own(session, project, table, _row_of(info, obj), f"uid {uid}")
+    return obj, info
+
+
+def orm_values(
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    payload: Mapping[str, object],
+    existing: object | None,
+) -> dict[str, object]:
+    """Поля в форме changeset'а → значения ORM-атрибутов (FK uid → row_id, время)."""
+    return _translate(session, project, info, payload, existing)
+
+
 # --- гейт реестра -----------------------------------------------------------------
 
 
@@ -554,24 +579,80 @@ def _append_position(
 # --- операции ---------------------------------------------------------------------
 
 
-def _apply_op(session: Session, project: ProjectRef, op: Op, touched: Touched) -> None:
+def _require_known_columns(info: cap.TableInfo, op: Op) -> None:
+    """Поле вне ``SHIPPED_COLUMNS`` — SYNC-102, даже если слияние его отбросит."""
+    for column in op.fields:
+        if column not in info.shipped:
+            msg = f"{info.table}.{column}: колонка не уезжает — remote её не пишет"
+            raise ObjectMissingError(msg)
+
+
+def _natural_twin(
+    session: Session, mapper: Mapper[object], info: cap.TableInfo, obj: object
+) -> tuple[tuple[str, ...], str] | None:
+    """Своя строка другого uid с тем же натуральным ключом-именем (Q-007, CLO-023).
+
+    Без проверки вставка упала бы ``IntegrityError`` на UNIQUE (находка F2
+    секции B); арендованные номера (``leased``) не сталкиваются по построению.
+    """
+    if not info.has_uid:
+        return None
+    model = mapper.class_
+    for key in reg.spec_for(info.table).natural_keys:
+        if key.kind is reg.KeyKind.LEASED:
+            continue
+        values = [getattr(obj, info.attr(c)) for c in key.columns]
+        if any(v is None for v in values):
+            continue
+        stmt = select(getattr(model, info.attr(_UID)))
+        for column, value in zip(key.columns, values, strict=True):
+            stmt = stmt.where(getattr(model, info.attr(column)) == value)
+        twin = session.scalars(stmt.limit(1)).first()
+        if twin is not None:
+            return key.columns, str(twin)
+    return None
+
+
+def _apply_delete(
+    session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
+) -> None:
+    """Удаление идемпотентно; против правки или ссылки хвоста — стратегия ``merge``."""
+    mapper, info = _info(op.entity_kind)
+    obj = _find(session, project, mapper, info, op, op.base)
+    if obj is None:
+        return
+    _require_shipped(session, info, obj, op, written=False)
+    if not merge.allow(session, ctx, op):
+        return
+    row_id = getattr(obj, _ROW_ID, None)
+    if isinstance(row_id, int):
+        _check_cascade(session, project, info.table, row_id)
+    _note(touched, info.table, obj, deleted=True, op=op)
+    session.delete(obj)
+
+
+def _apply_op(
+    session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
+) -> None:
     mapper, info = _info(op.entity_kind)
     if op.entity_kind == _PROJECT and (op.entity_uid != project.uid or op.kind == "delete"):
         msg = f"операция над проектом {op.entity_uid} в changeset'е проекта {project.uid}"
         raise ObjectMissingError(msg)
     if op.kind == "delete":
-        obj = _find(session, project, mapper, info, op, op.base)
-        if obj is not None:
-            _require_shipped(session, info, obj, op, written=False)
-            row_id = getattr(obj, _ROW_ID, None)
-            if isinstance(row_id, int):
-                _check_cascade(session, project, info.table, row_id)
-            _note(touched, info.table, obj, deleted=True, op=op)
-            session.delete(obj)
+        _apply_delete(session, project, op, touched, ctx)
         return
+    _require_known_columns(info, op)
     obj = _find(session, project, mapper, info, op, op.fields)
     if obj is not None:
         _require_shipped(session, info, obj, op, written=False)
+    if not merge.allow(session, ctx, op):
+        return
+    if obj is not None:
+        # Существующая строка: поле за полем — LWW по истории и хвосту (§3.7).
+        winning = merge.fields_to_apply(session, ctx, op)
+        if not winning:
+            return
+        op = dataclasses.replace(op, fields=winning)
     values = _translate(session, project, info, op.fields, obj)
     if obj is None:
         if op.base:
@@ -585,6 +666,9 @@ def _apply_op(session: Session, project: ProjectRef, op: Op, touched: Touched) -
             setattr(obj, info.attr(_UID), op.entity_uid)
         for column, value in values.items():
             setattr(obj, info.attr(column), value)
+        twin = _natural_twin(session, mapper, info, obj)
+        if twin is not None and not merge.key_collision(session, ctx, op, *twin):
+            return
         _fill_local(session, mapper, info, obj)
         session.add(obj)
     else:
@@ -747,17 +831,21 @@ def check_clock(
 # --- вход -------------------------------------------------------------------------
 
 
-def apply_changeset(session: Session, project: ProjectRef, sha: str, cs: Changeset) -> int:
+def apply_changeset(
+    session: Session, project: ProjectRef, sha: str, cs: Changeset, *, ctx: merge.Context
+) -> int:
     """Применить ``cs`` в транзакции ``session``; вернуть число операций.
 
     Сбой любой операции — исключение, и вызывающий откатывает транзакцию
-    целиком: changeset применяется весь или никак.
+    целиком: changeset применяется весь или никак. Слияние с хвостом и
+    историей — ``merge`` (§3.7); конфликты, которые оно насобирало в
+    ``ctx.conflicts``, открывает вызывающий в той же транзакции.
     """
     check_clock(cs, self_replica_uid=self_replica(session, project.row_id))
     touched = Touched()
     with cap.suspended(session):
         for op in cs.ops:
-            _apply_op(session, project, op, touched)
+            _apply_op(session, project, op, touched, ctx)
         _renumber(session, touched)
         _rebuild_links(session, touched.section_ids)
         _rebuild_fts(session, project, touched)

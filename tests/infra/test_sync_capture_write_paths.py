@@ -1534,6 +1534,47 @@ NO_OPS["sync_service.pull"] = (
 )
 
 
+# конфликты (CLO-017): таблица local, разрешение — обычная запись поля сущности
+
+
+def _open_title_conflict(w: World) -> str:
+    from cod_doc.services.sync_service import conflicts
+
+    spec = conflicts.ConflictSpec(
+        entity_kind="task",
+        entity_uid=w.uid(TaskModel, task_id="PLN-001"),
+        field="title",
+        kind="field",
+        ours="ours",
+        theirs="Заголовок с другой реплики",
+        base="base",
+        theirs_op="01JTHEIRSOP0000000000000000",
+    )
+    return conflicts.open_conflict(w.session, w.pid, spec, author=AUTHOR)
+
+
+@case("sync_service.open_conflict")
+def _(w: World) -> Expect:
+    _open_title_conflict(w)
+    return []
+
+
+NO_OPS["sync_service.open_conflict"] = (
+    cap.CAPTURED_TABLES,
+    "sync_conflict — local: конфликт состояние реплики, а не данные проекта",
+)
+
+
+@case("sync_service.resolve_conflict")
+def _(w: World) -> Expect:
+    from cod_doc.services.sync_service import conflicts
+
+    uid = _open_title_conflict(w)
+    w.commit()
+    conflicts.resolve_conflict(w.session, w.pid, uid, take="theirs", author=AUTHOR)
+    return [("task", w.now(TaskModel, task_id="PLN-001"))]
+
+
 @case("project_service.init_project")
 def _(w: World) -> Expect:
     from cod_doc.config import ProjectEntry
