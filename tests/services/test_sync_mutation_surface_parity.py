@@ -37,7 +37,9 @@ from ._surface_parity import (
 
 SPEC = ServiceSpec(
     name="sync_service",
-    known_mutations=frozenset({"push", "pull", "open_conflict", "resolve_conflict", "resolve_key"}),
+    known_mutations=frozenset(
+        {"push", "pull", "open_conflict", "resolve_conflict", "resolve_key", "apply_changeset"}
+    ),
     known_reads=frozenset(
         {
             # pull.py, status.py, digest.py
@@ -56,8 +58,7 @@ SPEC = ServiceSpec(
             "decode",
             "encode",
             "sha",
-            # apply.py — применение под suspended, событий не пишет (§10.11)
-            "apply_changeset",
+            # apply.py
             "check_clock",
             "entity_by_uid",
             "orm_values",
@@ -74,6 +75,11 @@ SPEC = ServiceSpec(
         "resolve_key": (
             "стратегия склейки ключей (CLO-023) зовётся из apply внутри pull; "
             "событие sync.alias_created/relettered пишется в транзакции changeset'а"
+        ),
+        "apply_changeset": (
+            "применение changeset'а зовёт только pull; событие sync.conflict_resolved "
+            "(take=deleted, CLO-027) пишется в его транзакции, когда удаление сносит "
+            "строку с открытым конфликтом"
         ),
     },
 )
@@ -107,6 +113,7 @@ def test_discovered_mutations_exact() -> None:
         "open_conflict",
         "resolve_conflict",
         "resolve_key",
+        "apply_changeset",
     }
 
 

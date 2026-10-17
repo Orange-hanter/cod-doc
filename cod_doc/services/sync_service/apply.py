@@ -74,6 +74,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from sqlalchemy import func, insert, select
@@ -83,7 +84,7 @@ from cod_doc.infra import ordering
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
-from cod_doc.infra.models import Base, EntityAliasModel, SyncOpModel
+from cod_doc.infra.models import Base, EntityAliasModel, SyncConflictModel, SyncOpModel
 from cod_doc.services import search_service
 from cod_doc.services.sync_service import _local, merge
 from cod_doc.services.sync_service._values import from_wire
@@ -597,13 +598,18 @@ def _check_cascade(session: Session, project: ProjectRef, table: str, row_id: in
 
 
 def _fill_local(session: Session, mapper: Mapper[object], info: cap.TableInfo, obj: object) -> None:
-    """Local-колонки ``NOT NULL`` новой строки: позиция, известные заглушки."""
+    """``NOT NULL`` новой строки без значения: local-колонки (позиция, известные
+    заглушки) и придержанные отправителем (``sync_registry.WITHHELD_FILL``)."""
     tbl = cast("Table", mapper.local_table)
     for column in tbl.columns:
         name = column.name
-        if name in info.shipped or name in {"row_id", _UID}:
+        if name in {"row_id", _UID} or getattr(obj, info.attr(name)) is not None:
             continue
-        if getattr(obj, info.attr(name)) is not None:
+        if name in info.shipped:
+            # Уезжающая NOT NULL-колонка, которую реестр отправителя придержал
+            # (ссылка на restricted-документ): заглушка вместо значения.
+            if (info.table, name) in reg.WITHHELD_FILL and not column.nullable:
+                setattr(obj, info.attr(name), reg.WITHHELD_FILL[(info.table, name)])
             continue
         if column.nullable or column.default is not None or column.server_default is not None:
             continue
@@ -679,6 +685,9 @@ def _apply_delete(
     mapper, info = _info(op.entity_kind)
     obj = _find(session, project, mapper, info, op.entity_uid, op.base)
     if obj is None:
+        # Корень уже снесён своим удалением: правки этого changeset'а под ним,
+        # легшие в снимок, мертвы и у его автора — конфликта нет (CLO-027).
+        tombstone.drop_pending(ctx, op.entity_kind, op.entity_uid)
         return
     _require_shipped(session, info, obj, op.entity_uid, None)
     if not merge.allow(session, ctx, op):
@@ -689,6 +698,57 @@ def _apply_delete(
         tombstone.before_delete(session, ctx, info.table, row_id, op)
     _note(touched, info.table, obj, deleted=True, base=op.base)
     session.delete(obj)
+    # Сразу в БД: следующая операция того же uid (ребро снято и поставлено снова)
+    # иначе нашла бы удаляемый объект в identity map и легла правкой в него (CLO-027).
+    session.flush()
+    _close_orphaned_conflicts(session, project, ctx)
+
+
+def _close_orphaned_conflicts(session: Session, project: ProjectRef, ctx: merge.Context) -> None:
+    """Открытые конфликты на строках, которые снесло чужое удаление, закрываются.
+
+    Удаление выигрывает (Q-008): правка, о которой был конфликт поля или
+    склейки, мертва, а если её надо вернуть — она в снимке ``delete_edit``
+    реплики, сливавшей удаление со своим хвостом. Без этого конфликт
+    оставался на строке, которой нет, только в тех перестановках, где правка
+    пришла раньше удаления (CLO-027, сид 447). ``delete_edit`` не трогается:
+    его корень удалён по определению.
+    """
+    from cod_doc.services import activity_service
+
+    alive = [
+        spec
+        for spec in ctx.conflicts
+        if spec.kind == merge.DELETE_EDIT
+        or entity_by_uid(session, project, spec.entity_kind, spec.entity_uid) is not None
+    ]
+    if len(alive) != len(ctx.conflicts):  # ещё не записанные конфликты этого changeset'а
+        ctx.conflicts = alive
+        ctx.by_field = {k: v for k, v in ctx.by_field.items() if any(v is a for a in alive)}
+    rows = session.scalars(
+        select(SyncConflictModel).where(
+            SyncConflictModel.project_id == project.row_id,
+            SyncConflictModel.status == "open",
+            SyncConflictModel.kind != merge.DELETE_EDIT,
+        )
+    ).all()
+    for row in rows:
+        if entity_by_uid(session, project, row.entity_kind, row.entity_uid) is not None:
+            continue
+        row.status = "resolved"
+        row.resolved_by = "sync:deleted"
+        row.resolved_at = datetime.now(UTC)
+        activity_service.emit_for_write(
+            session,
+            project.row_id,
+            "sync.conflict_resolved",
+            ctx.author,
+            scope_kind=row.entity_kind,
+            scope_id=row.entity_uid,
+            payload={"conflict_uid": row.uid, "kind": row.kind, "take": "deleted"},
+            summary=f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: сущность удалена",
+        )
+    session.flush()
 
 
 def _absorbed(session: Session, ctx: merge.Context, op: Op) -> bool:

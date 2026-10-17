@@ -28,6 +28,11 @@ changeset'а: в БД остаётся «наше», «их» лежит в ко
 записи. ``double_checkout`` разрешается механикой CLO-031 — до неё
 ``MergeRequiredError`` с номером задачи, тоже до записи.
 
+Конфликт на сущности, которую позже снёс чужой changeset (удаление
+выигрывает, Q-008), разрешается без записи: значение класть некуда, событие
+пишется, конфликт закрывается (CLO-027). Правка, о которой он был, — в снимке
+``delete_edit`` той реплики, что сливала удаление со своим хвостом.
+
 **Виды без поля** (``field`` пуст):
 
 - ``delete_edit`` (CLO-022, ``tombstone``): ``theirs`` — снимок поддерева.
@@ -295,11 +300,14 @@ def _write_fields(
     if unchanged:
         # Значение уже в БД: ORM операции не даст, а её штамп нужен свежий.
         wire = to_wire(row.entity_kind, unchanged)
+        # uid живой строки, а не конфликта: тот мог стать алиасом склейки (CLO-023),
+        # а алиас знает только эта реплика.
+        live = getattr(obj, info.attr("uid"), None) if info.has_uid else None
         cap.record(
             session,
             project_id=project.row_id,
             table=row.entity_kind,
-            entity_uid=row.entity_uid,
+            entity_uid=str(live) if live is not None else row.entity_uid,
             kind="upsert",
             fields=wire,
             base=wire,
@@ -368,7 +376,17 @@ def resolve_conflict(
     project = _project(session, project_id)
     cap.set_author(session, author)
     entity_id: int | None
-    if row.kind == "delete_edit":
+    diff: dict[str, object]
+    if (
+        row.kind != "delete_edit"
+        and apply.entity_by_uid(session, project, row.entity_kind, row.entity_uid) is None
+    ):
+        # Сущность снёс более поздний changeset (удаление выигрывает, Q-008):
+        # писать некуда, но конфликт закрывается — иначе он висел бы вечно.
+        entity_id = None
+        diff = {"op": "sync.resolve", "take": label, "entity": "deleted"}
+        summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: сущности нет"
+    elif row.kind == "delete_edit":
         entity_id, diff = _resolve_delete_edit(session, project, row, label)
         summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: {label}"
     elif row.kind == "key_merge":

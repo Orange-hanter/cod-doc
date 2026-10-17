@@ -1498,6 +1498,16 @@ NO_OPS["sync_service.push"] = (
 
 @case("sync_service.pull")
 def _(w: World) -> Expect:
+    return _pull_from_other_replica(w)
+
+
+@case("sync_service.apply_changeset")
+def _(w: World) -> Expect:
+    # Применение зовёт только pull: тот же путь, событие пишет его транзакция.
+    return _pull_from_other_replica(w)
+
+
+def _pull_from_other_replica(w: World) -> Expect:
     import uuid
 
     from sqlalchemy import text
@@ -1545,12 +1555,13 @@ def _(w: World) -> Expect:
 
 #: Случаи, после которых в ``sync_op`` законно появляются чужие операции с
 #: ``changeset`` — история применённых changeset'ов, а не захват (RFC 29 B14).
-FOREIGN_HISTORY: frozenset[str] = frozenset({"sync_service.pull"})
+FOREIGN_HISTORY: frozenset[str] = frozenset({"sync_service.pull", "sync_service.apply_changeset"})
 
 NO_OPS["sync_service.pull"] = (
     cap.CAPTURED_TABLES,
     "чужие операции применяются под suspended: эха в журнале нет (§10.6)",
 )
+NO_OPS["sync_service.apply_changeset"] = NO_OPS["sync_service.pull"]
 
 
 # конфликты (CLO-017): таблица local, разрешение — обычная запись поля сущности

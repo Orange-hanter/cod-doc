@@ -1006,3 +1006,21 @@ def test_doc_ref_nullability_matches_schema() -> None:
                 table,
                 ref.column,
             )
+
+
+def test_every_withheld_not_null_column_has_a_receiver_fill() -> None:
+    """Придержанная NOT NULL-колонка нужна приёмнику значением (вставка) и
+    дайджесту — тем же значением у отправителя (CLO-027, F8). Без записи в
+    ``WITHHELD_FILL`` вставка на приёмнике падает на NOT NULL."""
+    import cod_doc.infra.models.link_suggestions  # noqa: F401 — ленивая модель
+
+    missing = []
+    for table, refs in reg.DOC_REFS.items():
+        tbl = Base.metadata.tables[table]
+        for ref in refs:
+            if ref.whole_row:
+                continue
+            for column in (ref.column, *ref.withheld):
+                if not tbl.c[column].nullable and (table, column) not in reg.WITHHELD_FILL:
+                    missing.append(f"{table}.{column}")
+    assert missing == []

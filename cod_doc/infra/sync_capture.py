@@ -77,9 +77,9 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
 
-from sqlalchemy import event, insert, select, text, update
+from sqlalchemy import event, func, insert, select, text, update
 from sqlalchemy.orm import Mapper, Session, attributes
 from sqlalchemy.orm.base import NO_VALUE
 from sqlalchemy.orm.util import identity_key
@@ -810,8 +810,55 @@ def _late_edge_uid(session: Session, info: TableInfo, obj: object, lookup: _Look
     attributes.set_committed_value(obj, info.attr(_UID), uid)
 
 
+def _fresh_row_ids(session: Session) -> None:
+    """``row_id`` новой строки сущности с ревизиями — выше всех ``entity_id`` её вида.
+
+    Адрес ревизии — ``(entity_kind, entity_id)``, а SQLite без AUTOINCREMENT
+    отдаёт новой строке номер удалённой: её ревизии прирастали к новой строке
+    и уезжали в дайджест под чужим uid — на этой реплике да, на остальных нет
+    (CLO-027, сид 0). Строки, которые заводит pull, ``apply._fresh_row_id``
+    нумерует так же. Только SQLite: последовательность Postgres номеров не
+    переиспользует, а явный ``row_id`` разошёлся бы с ней.
+    """
+    if session.get_bind().dialect.name != "sqlite":
+        return
+    pending: dict[str, list[tuple[TableInfo, object]]] = {}
+    for obj in session.new:
+        info = table_info(attributes.instance_state(obj).mapper)
+        if info is None or info.table not in _ENTITY_KIND_OF:
+            continue
+        if getattr(obj, info.attr(_ROW_ID), None) is None:
+            pending.setdefault(info.table, []).append((info, obj))
+    if not pending:
+        return
+    rev = Base.metadata.tables["revision"]
+    with session.no_autoflush:
+        for table, objs in pending.items():
+            tbl = Base.metadata.tables[table]
+            top_row = session.execute(select(func.max(tbl.c.row_id))).scalar() or 0
+            top_rev = (
+                session.execute(
+                    select(func.max(rev.c.entity_id)).where(
+                        rev.c.entity_kind == _ENTITY_KIND_OF[table]
+                    )
+                ).scalar()
+                or 0
+            )
+            if top_rev <= top_row:
+                continue  # номер удалённой строки ни одной ревизией не занят
+            for i, (info, obj) in enumerate(objs, start=1):
+                setattr(obj, info.attr(_ROW_ID), int(top_rev) + i)
+
+
+#: Таблица → ``EntityKind`` её ревизий.
+_ENTITY_KIND_OF: Final = MappingProxyType(
+    {table: str(kind.value) for kind, table in reg.ENTITY_KIND_TABLES.items()}
+)
+
+
 def _before_flush(session: Session, _flush_context: object, _instances: object) -> None:
     _assign_uids(session)
+    _fresh_row_ids(session)
 
 
 def _after_flush(session: Session, flush_context: UOWTransaction) -> None:
@@ -1151,8 +1198,16 @@ def _shipped_line(
     entity_uid = _entity_uid(info, row, lookup)
     if entity_uid is None:
         raise SyncCaptureError(f"{table}.uid: пуст")
-    wanted = info.shipped - reg.withheld_columns(table, gate)
-    return entity_uid, _dumps(_columns_payload(info, wanted, row, lookup))
+    withheld = reg.withheld_columns(table, gate) & info.shipped
+    payload = _columns_payload(info, info.shipped - withheld, row, lookup)
+    # Придержанная колонка входит в дайджест тем, что окажется у приёмника:
+    # ``NULL`` или заглушка ``WITHHELD_FILL`` (CLO-027, F8). Приёмник не знает,
+    # что колонку придержали, — он хеширует то, что лежит в строке; отправитель
+    # хеширует то же самое вместо настоящего значения. Без этого ``sync verify``
+    # у всех приёмников проекта с придержанной ссылкой показывал расхождение.
+    for column in sorted(withheld):
+        payload[column] = reg.WITHHELD_FILL.get((table, column))
+    return entity_uid, _dumps(payload)
 
 
 def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str, str]]:
@@ -1162,7 +1217,8 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
     выпускает: поля — ровно как их сериализует хук (``shipped_fields``: FK —
     uid конца, придержанные колонки выброшены), в той же JSON-форме, что
     ``sync_op.fields``. Строки ``row_is_local`` (restricted и всё под ним) не
-    выдаются.
+    выдаются. Придержанная колонка (``withheld_columns``) выдаётся значением,
+    которое окажется у приёмника: ``NULL`` или ``sync_registry.WITHHELD_FILL``.
 
     **Порядок — ``(таблица, uid)``**, ровно тот, что нужен дайджесту, и
     выдача потоковая: таблицы по имени, строки таблицы с колонкой ``uid`` —
