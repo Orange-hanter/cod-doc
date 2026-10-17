@@ -30,7 +30,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import doc_service
-from cod_doc.services.sync_service import _local, pull, push
+from cod_doc.services.sync_service import _local, merge, pull, push
 from cod_doc.services.sync_service.changeset import Changeset, Op, decode, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, SchemaMismatchError
 from tests.services.sync import _replicas as r
@@ -195,7 +195,16 @@ def test_local_tail_on_other_entities_survives_pull_and_ships_later(pair: tuple)
     assert r.task_description(b, "DEM-001") == "правка B"
 
 
-def test_tail_touching_the_same_entity_is_left_to_section_c(pair: tuple) -> None:
+def _without_text_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Стратегии ``text`` нет — так выглядел бы любой ещё не сделанный случай секции C."""
+    real = merge._plugin
+    monkeypatch.setattr(merge, "_plugin", lambda m: None if m == "text_merge" else real(m))
+
+
+def test_tail_touching_the_same_entity_is_left_to_section_c(
+    pair: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _without_text_strategy(monkeypatch)
     a, b, store = pair
     r.make_task(a, "DEM-001")
     _push(a, store)

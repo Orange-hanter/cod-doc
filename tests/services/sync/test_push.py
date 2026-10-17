@@ -18,7 +18,7 @@ from sqlalchemy import select, text
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ActivityEventModel, ChangesetModel, ProjectModel, SyncOpModel
 from cod_doc.infra.remote.file import FileRemote
-from cod_doc.services.sync_service import pull, push
+from cod_doc.services.sync_service import merge, pull, push
 from cod_doc.services.sync_service.changeset import decode
 from cod_doc.services.sync_service.errors import PushRejectedError
 from tests.services.sync import _replicas as r
@@ -238,7 +238,16 @@ def test_sync_103_after_three_retries(pair: tuple) -> None:
     assert r.pending(b) > 0
 
 
-def test_pull_that_needs_a_merge_ends_push_with_sync_103(pair: tuple) -> None:
+def _without_text_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Стратегии ``text`` нет — так выглядел бы любой ещё не сделанный случай секции C."""
+    real = merge._plugin
+    monkeypatch.setattr(merge, "_plugin", lambda m: None if m == "text_merge" else real(m))
+
+
+def test_pull_that_needs_a_merge_ends_push_with_sync_103(
+    pair: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _without_text_strategy(monkeypatch)
     a, b, store = pair
     _at_common_head(a, b, store)
     r.set_description(a, "DEM-001", "A")
