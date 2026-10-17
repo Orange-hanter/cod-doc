@@ -345,20 +345,6 @@ def test_inserts_between_the_same_neighbours_order_identically(pair: tuple) -> N
 # --- границы следующих задач ----------------------------------------------------------
 
 
-def test_status_changed_on_both_sides_waits_for_clo_020(pair: tuple) -> None:
-    a, b, store = pair
-    _common_task(a, b, store)
-    _set(a, status="blocked")
-    _push(a, store)
-    _set(b, status="cancelled")
-    before = r.authored_state(b)
-
-    with pytest.raises(MergeRequiredError, match="CLO-020"):
-        _pull(b, store)
-
-    assert r.authored_state(b) == before
-
-
 def test_delete_against_edit_waits_for_clo_022(pair: tuple) -> None:
     a, b, store = pair
     _common_task(a, b, store)

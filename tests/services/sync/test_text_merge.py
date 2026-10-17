@@ -311,3 +311,29 @@ def test_section_body_merges_line_by_line(tmp_path: Path) -> None:
         t.assert_converged(u)
     assert len({t.digest_of(rep) for u in universes for rep in u.replicas}) == 1
     t.dispose(*universes)
+
+
+def test_several_own_edits_merge_from_the_common_ancestor(tmp_path: Path) -> None:
+    """Две правки A подряд и одна правка B: база A — значение до первой правки.
+
+    С базой последней правки A (``один…`` уже изменён) и базой B (исходный
+    текст) общего предка бы не нашлось, и порядок, в котором сливает A, давал
+    бы конфликт, а порядок, в котором сливает B, — чистое слияние.
+    """
+    first = BASE.replace("один", "ОДИН")
+    second = first.replace("два", "ДВА")
+
+    def edits(a: r.Replica, b: r.Replica) -> None:
+        _set_task(a, "description", first)
+        _set_task(a, "description", second)
+        _set_task(b, "description", BASE.replace("пять", "ПЯТЬ"))
+
+    universes = t.two_orders(tmp_path, _task_setup, edits)
+    for u in universes:
+        assert t.exchange(u).conflicts == []
+        t.settle(u)
+        for rep in u.replicas:
+            assert _column(rep, "description") == "ОДИН\nДВА\nтри\nчетыре\nПЯТЬ\n"
+        t.assert_converged(u)
+    assert len({t.digest_of(rep) for u in universes for rep in u.replicas}) == 1
+    t.dispose(*universes)
