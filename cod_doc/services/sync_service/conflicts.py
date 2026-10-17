@@ -25,9 +25,20 @@ changeset'а: в БД остаётся «наше», «их» лежит в ко
 **Коды** (§10.10). ``SYNC-302`` — конфликта нет в проекте или он уже
 разрешён; ``SYNC-301`` — ``take`` не подходит к виду: свой текст — только у
 ``text``, у остальных видов — ``ours``/``theirs``. Проверки идут до первой
-записи. Виды со снимком поддерева и склейкой (``delete_edit``, ``key_merge``,
-``double_checkout``) разрешаются механикой своих задач (CLO-022, CLO-023,
-CLO-031) — до них ``MergeRequiredError`` с номером задачи, тоже до записи.
+записи. ``double_checkout`` разрешается механикой CLO-031 — до неё
+``MergeRequiredError`` с номером задачи, тоже до записи.
+
+**Виды без поля** (``field`` пуст):
+
+- ``delete_edit`` (CLO-022, ``tombstone``): ``theirs`` — снимок поддерева.
+  ``--take theirs`` пересоздаёт его строки с исходными uid
+  (``apply.restore_rows``) под захватом — каждая уезжает операцией, ревизия
+  ложится на корень; строка снимка с пометкой ``partial`` (сущность родилась
+  до журнала) — SYNC-301 до записи. ``--take ours`` оставляет удаление: писать
+  нечего, только событие.
+- ``key_merge`` (CLO-023, ``keys``): ``ours``/``theirs`` — ``{uid, fields}``
+  обеих склеенных строк по разошедшимся телам; выбранные поля пишутся в
+  выжившую строку.
 """
 
 from __future__ import annotations
@@ -45,7 +56,7 @@ from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.models import ProjectModel, SyncConflictModel
 from cod_doc.infra.models.sync import SYNC_CONFLICT_KINDS
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, apply
+from cod_doc.services.sync_service import _local, apply, tombstone
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
 from cod_doc.services.sync_service.errors import (
@@ -56,6 +67,8 @@ from cod_doc.services.sync_service.errors import (
 from cod_doc.services.sync_service.merge import ConflictSpec
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlalchemy.orm import InstanceState, Session
 
 __all__ = [
@@ -76,11 +89,7 @@ _CUSTOM: Final = "custom"
 #: Виды, у которых разрешение — запись одного поля сущности.
 FIELD_KINDS: Final = frozenset({"field", "text", "status"})
 #: Виды со своей механикой разрешения → задача, которая её строит.
-DEFERRED_KINDS: Final = {
-    "delete_edit": "CLO-022",
-    "key_merge": "CLO-023",
-    "double_checkout": "CLO-031",
-}
+DEFERRED_KINDS: Final = {"key_merge": "CLO-023", "double_checkout": "CLO-031"}
 _ENTITY_KINDS: Final = {table: kind for kind, table in reg.ENTITY_KIND_TABLES.items()}
 
 
@@ -197,29 +206,42 @@ def _project(session: Session, project_id: int) -> _local.ProjectRef:
     return _local.ProjectRef(row_id=proj.row_id, uid=str(proj.uid), slug=proj.slug)
 
 
-def _write_value(
-    session: Session, project: _local.ProjectRef, row: SyncConflictModel, value: object, author: str
-) -> tuple[int, object]:
-    """Записать поле сущности через ORM; вернуть (row_id, прежнее значение)."""
-    column = cast("str", row.field)
+def _target(
+    session: Session, project: _local.ProjectRef, row: SyncConflictModel
+) -> tuple[object, cap.TableInfo]:
     target = apply.entity_by_uid(session, project, row.entity_kind, row.entity_uid)
     if target is None:
         msg = f"конфликт {row.uid}: {row.entity_kind} {row.entity_uid} в проекте больше нет"
         raise ConflictNotFoundError(msg)
-    obj, info = target
-    if column not in info.shipped:
-        msg = f"конфликт {row.uid}: колонка {row.entity_kind}.{column} не уезжает"
-        raise ConflictResolveError(msg)
-    attr = info.attr(column)
-    previous = getattr(obj, attr)
-    values = apply.orm_values(session, project, info, {column: value}, obj)
-    setattr(obj, attr, values[column])
-    state = cast("InstanceState[object]", inspect(obj))
-    changed = state.attrs[attr].history.has_changes()
+    return target
+
+
+def _write_fields(
+    session: Session,
+    project: _local.ProjectRef,
+    row: SyncConflictModel,
+    values: Mapping[str, object],
+    author: str,
+) -> tuple[int, dict[str, object]]:
+    """Записать поля сущности через ORM; вернуть (row_id, прежние значения)."""
+    obj, info = _target(session, project, row)
+    for column in values:
+        if column not in info.shipped:
+            msg = f"конфликт {row.uid}: колонка {row.entity_kind}.{column} не уезжает"
+            raise ConflictResolveError(msg)
+    previous = {column: getattr(obj, info.attr(column)) for column in values}
+    orm = apply.orm_values(session, project, info, values, obj)
+    unchanged: dict[str, object] = {}
+    for column, value in orm.items():
+        attr = info.attr(column)
+        setattr(obj, attr, value)
+        state = cast("InstanceState[object]", inspect(obj))
+        if not state.attrs[attr].history.has_changes():
+            unchanged[column] = values[column]
     session.flush()
-    if not changed:
+    if unchanged:
         # Значение уже в БД: ORM операции не даст, а её штамп нужен свежий.
-        wire = to_wire(row.entity_kind, {column: value})
+        wire = to_wire(row.entity_kind, unchanged)
         cap.record(
             session,
             project_id=project.row_id,
@@ -231,6 +253,47 @@ def _write_value(
             author=author,
         )
     return int(getattr(obj, "row_id")), previous  # noqa: B009
+
+
+def _resolve_delete_edit(
+    session: Session, project: _local.ProjectRef, row: SyncConflictModel, take: str
+) -> tuple[int | None, dict[str, object]]:
+    """``theirs`` — восстановить поддерево из снимка с исходными uid; ``ours`` — удаление
+    остаётся, писать нечего (CLO-022)."""
+    if take == _OURS:
+        return None, {"op": "sync.resolve", "take": take, "restored": 0}
+    rows = tombstone.rows_of(_decode(row.theirs))
+    partial = [f"{r['table']} {r.get('uid')}" for r in rows if r.get("partial")]
+    if partial:
+        msg = (
+            f"конфликт {row.uid}: строки {partial} родились до журнала, снимок неполон — "
+            "восстановить их нечем"
+        )
+        raise ConflictResolveError(msg)
+    created = apply.restore_rows(session, project, rows)
+    target = apply.entity_by_uid(session, project, row.entity_kind, row.entity_uid)
+    entity_id = None if target is None else int(getattr(target[0], "row_id"))  # noqa: B009
+    return entity_id, {"op": "sync.resolve", "take": take, "restored": len(created)}
+
+
+def _resolve_key_merge(
+    session: Session, project: _local.ProjectRef, row: SyncConflictModel, take: str, author: str
+) -> tuple[int, dict[str, object]]:
+    """Тела склеенной сущности (CLO-023): поля выбранной стороны — в выжившую строку."""
+    side = _decode(row.ours if take == _OURS else row.theirs)
+    fields = side.get("fields") if isinstance(side, dict) else None
+    if not isinstance(fields, dict):
+        msg = f"конфликт {row.uid}: у стороны {take} нет полей"
+        raise ConflictResolveError(msg)
+    entity_id, previous = _write_fields(session, project, row, fields, author)
+    diff: dict[str, object] = {
+        "op": "sync.resolve",
+        "take": take,
+        "fields": sorted(fields),
+        "old": {k: _jsonable(v) for k, v in previous.items()},
+        "new": fields,
+    }
+    return entity_id, diff
 
 
 def resolve_conflict(
@@ -247,18 +310,27 @@ def resolve_conflict(
     value, label = _chosen(row, take)
     project = _project(session, project_id)
     cap.set_author(session, author)
-    entity_id, previous = _write_value(session, project, row, value, author)
-    payload: dict[str, object] = {"conflict_uid": row.uid, "kind": row.kind, "take": label}
-    summary = f"конфликт {row.kind} {row.entity_kind}.{row.field}: {label}"
-    entity_kind = _ENTITY_KINDS.get(row.entity_kind)
-    if entity_kind is not None:
+    entity_id: int | None
+    if row.kind == "delete_edit":
+        entity_id, diff = _resolve_delete_edit(session, project, row, label)
+        summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: {label}"
+    elif row.kind == "key_merge":
+        entity_id, diff = _resolve_key_merge(session, project, row, label, author)
+        summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: {label}"
+    else:
+        column = cast("str", row.field)
+        entity_id, previous = _write_fields(session, project, row, {column: value}, author)
         diff = {
             "op": "sync.resolve",
             "field": row.field,
             "take": label,
-            "old": _jsonable(previous),
+            "old": _jsonable(previous[column]),
             "new": _jsonable(value),
         }
+        summary = f"конфликт {row.kind} {row.entity_kind}.{row.field}: {label}"
+    payload: dict[str, object] = {"conflict_uid": row.uid, "kind": row.kind, "take": label}
+    entity_kind = _ENTITY_KINDS.get(row.entity_kind)
+    if entity_kind is not None and entity_id is not None:
         activity_service.write_revision_and_emit_event(
             session,
             project_id=project_id,

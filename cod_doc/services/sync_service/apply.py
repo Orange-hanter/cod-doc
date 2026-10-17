@@ -42,8 +42,10 @@
    ревизии, ``plan_section``). Пути ``owned`` уходят с родителем, даже если
    ребёнок local: ``affected_file``/``module_code`` с машинным путём,
    ``task_metrics``, ``trace_call``, ``routine_run``, ``finding_source_run``,
-   derived ``link`` и ``doc_node_suggestion``. Tombstone со снимком
-   поддерева и конфликт «правка под удалённым родителем» — CLO-022.
+   derived ``link`` и ``doc_node_suggestion``. Если поддерево задевает свой
+   хвост, ``tombstone.before_delete`` снимает его в конфликт ``delete_edit``
+   (CLO-022); чужая операция над потомком своего удалённого родителя — в тот же
+   снимок (``tombstone.absorb_orphan``), не в SYNC-102.
 5. **Derived** пересобирается по затронутым сущностям тем же кодом, что и на
    обычной записи: ``link_service.sync_section`` + ``resolve_section`` по
    секциям, ``search_service.index_*`` по документам, задачам, историям, ADR,
@@ -78,7 +80,7 @@ from cod_doc.infra import ordering
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
-from cod_doc.infra.models import Base, SyncOpModel
+from cod_doc.infra.models import Base, EntityAliasModel, SyncOpModel
 from cod_doc.services import search_service
 from cod_doc.services.sync_service import _local, merge
 from cod_doc.services.sync_service._values import from_wire
@@ -173,13 +175,15 @@ _FTS_PARENT: Final[Mapping[str, tuple[str, str]]] = {
 }
 
 
-def _note(touched: Touched, table: str, obj: object, *, deleted: bool, op: Op) -> None:
+def _note(
+    touched: Touched, table: str, obj: object, *, deleted: bool, base: Mapping[str, object]
+) -> None:
     if table == "document":
         if deleted:
             touched.unindexed_doc_keys.add(str(getattr(obj, "doc_key")))  # noqa: B009
         else:
             touched.doc_ids.add(int(getattr(obj, "row_id")))  # noqa: B009
-            old_key = op.base.get("doc_key")
+            old_key = base.get("doc_key")
             if isinstance(old_key, str) and old_key != getattr(obj, "doc_key"):  # noqa: B009
                 touched.unindexed_doc_keys.add(old_key)
     elif table == "section":
@@ -250,10 +254,34 @@ def _row_of(info: cap.TableInfo, obj: object) -> dict[str, object]:
 # --- значения ---------------------------------------------------------------------
 
 
+def alias_target(session: Session, project_id: int, table: str, uid: str) -> str | None:
+    """Живой uid склеенной сущности (``entity_alias``, CLO-023); ``None`` — алиаса нет.
+
+    Цепочка алиасов (выживший сам позже склеен) проходится до конца; цикл
+    обрывает множество посещённых.
+    """
+    found: str | None = None
+    seen = {uid}
+    current = uid
+    while True:
+        row = session.get(EntityAliasModel, (project_id, table, current))
+        if row is None or row.uid in seen:
+            return found
+        seen.add(row.uid)
+        current = found = row.uid
+
+
 def _row_id_by_uid(session: Session, project: ProjectRef, table: str, uid: str) -> int | None:
-    """``row_id`` строки ``table`` с этим uid в проекте pull'а; чужой проект — SYNC-102."""
+    """``row_id`` строки ``table`` с этим uid в проекте pull'а; чужой проект — SYNC-102.
+
+    uid склеенной сущности (CLO-023) резолвится через ``entity_alias``: операции,
+    собранные до склейки, ссылаются на проигравший uid.
+    """
     tbl = Base.metadata.tables[table]
     found = _row(session, table, tbl.c.uid == uid)
+    if found is None:
+        alias = alias_target(session, project.row_id, table, uid)
+        found = None if alias is None else _row(session, table, tbl.c.uid == alias)
     if found is None:
         return None
     _require_own(session, project, table, found, f"uid {uid}")
@@ -321,15 +349,15 @@ def _find(
     project: ProjectRef,
     mapper: Mapper[object],
     info: cap.TableInfo,
-    op: Op,
+    uid: str,
     key_payload: Mapping[str, object],
 ) -> object | None:
     model = mapper.class_
     if info.has_uid:
-        stmt = select(model).where(getattr(model, info.attr(_UID)) == op.entity_uid)
+        stmt = select(model).where(getattr(model, info.attr(_UID)) == uid)
         obj = session.scalars(stmt).one_or_none()
         if obj is not None:
-            _require_own(session, project, info.table, _row_of(info, obj), f"uid {op.entity_uid}")
+            _require_own(session, project, info.table, _row_of(info, obj), f"uid {uid}")
         return obj
     columns = reg.spec_for(info.table).deterministic_uid or ()
     try:
@@ -381,29 +409,33 @@ def orm_values(
 
 
 def _require_shipped(
-    session: Session, info: cap.TableInfo, obj: object, op: Op, *, written: bool
+    session: Session,
+    info: cap.TableInfo,
+    obj: object,
+    uid: str,
+    written: Mapping[str, object] | None,
 ) -> None:
     """Remote не пишет строку, которую реестр этой реплики держит local.
 
     Тот же гейт, что у захвата (``sync_capture.shipped_fields``): restricted
     документ и всё, что на него ссылается, ``row_is_local``, придержанные
-    колонки (``withheld_columns``). До записи — существующая строка, после —
-    итоговая: так не пройдёт ни правка local-строки, ни новая строка под
-    restricted-документом, ни колонка, которую реестр для этой строки
-    придерживает.
+    колонки (``withheld_columns``). До записи (``written=None``) — существующая
+    строка, после — итоговая с записанными полями: так не пройдёт ни правка
+    local-строки, ни новая строка под restricted-документом, ни колонка, которую
+    реестр для этой строки придерживает.
     """
     try:
         allowed = cap.shipped_fields(session, info.table, _row_of(info, obj))
     except cap.SyncCaptureError as exc:
-        msg = f"{info.table} {op.entity_uid}: {exc}"
+        msg = f"{info.table} {uid}: {exc}"
         raise ObjectMissingError(msg) from exc
     if allowed is None:
-        msg = f"{info.table} {op.entity_uid}: строка local на этой реплике (restricted и т. п.)"
+        msg = f"{info.table} {uid}: строка local на этой реплике (restricted и т. п.)"
         raise ObjectMissingError(msg)
-    if written:
-        withheld = sorted(set(op.fields) - set(allowed))
+    if written is not None:
+        withheld = sorted(set(written) - set(allowed))
         if withheld:
-            msg = f"{info.table} {op.entity_uid}: колонки {withheld} реестр придерживает"
+            msg = f"{info.table} {uid}: колонки {withheld} реестр придерживает"
             raise ObjectMissingError(msg)
 
 
@@ -579,9 +611,9 @@ def _append_position(
 # --- операции ---------------------------------------------------------------------
 
 
-def _require_known_columns(info: cap.TableInfo, op: Op) -> None:
+def _require_known_columns(info: cap.TableInfo, fields: Mapping[str, object]) -> None:
     """Поле вне ``SHIPPED_COLUMNS`` — SYNC-102, даже если слияние его отбросит."""
-    for column in op.fields:
+    for column in fields:
         if column not in info.shipped:
             msg = f"{info.table}.{column}: колонка не уезжает — remote её не пишет"
             raise ObjectMissingError(msg)
@@ -616,19 +648,90 @@ def _natural_twin(
 def _apply_delete(
     session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
 ) -> None:
-    """Удаление идемпотентно; против правки или ссылки хвоста — стратегия ``merge``."""
+    """Удаление идемпотентно; против правки или ссылки хвоста — стратегия ``merge``.
+
+    Удаление выигрывает (Q-008): если поддерево задевает свой хвост, снимок
+    поддерева и конфликт ``delete_edit`` пишет ``tombstone.before_delete`` — после
+    проверки каскада (restricted-строку каскад не снесёт), до самого удаления.
+    """
+    from cod_doc.services.sync_service import tombstone
+
     mapper, info = _info(op.entity_kind)
-    obj = _find(session, project, mapper, info, op, op.base)
+    obj = _find(session, project, mapper, info, op.entity_uid, op.base)
     if obj is None:
         return
-    _require_shipped(session, info, obj, op, written=False)
+    _require_shipped(session, info, obj, op.entity_uid, None)
     if not merge.allow(session, ctx, op):
         return
     row_id = getattr(obj, _ROW_ID, None)
     if isinstance(row_id, int):
         _check_cascade(session, project, info.table, row_id)
-    _note(touched, info.table, obj, deleted=True, op=op)
+        tombstone.before_delete(session, ctx, info.table, row_id, op)
+    _note(touched, info.table, obj, deleted=True, base=op.base)
     session.delete(obj)
+
+
+def _absorbed(session: Session, ctx: merge.Context, op: Op) -> bool:
+    """Операция над потомком мёртвого родителя уходит в снимок конфликта (CLO-022)."""
+    from cod_doc.services.sync_service import tombstone
+
+    return tombstone.absorb_orphan(session, ctx, op)
+
+
+def _create(
+    mapper: Mapper[object],
+    info: cap.TableInfo,
+    uid: str | None,
+    values: Mapping[str, object],
+) -> object:
+    obj = mapper.class_()
+    if info.has_uid:
+        setattr(obj, info.attr(_UID), uid)
+    for column, value in values.items():
+        setattr(obj, info.attr(column), value)
+    return obj
+
+
+def _finish(
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    obj: object,
+    uid: str,
+    fields: Mapping[str, object],
+) -> None:
+    """Итоговая строка: проект (``project_id`` не перевешивается на чужой, ребёнок —
+    под своим родителем) и гейт реестра."""
+    session.flush()
+    _require_own(session, project, info.table, _row_of(info, obj), f"{info.table} {uid}")
+    _require_shipped(session, info, obj, uid, fields)
+
+
+def create_row(
+    session: Session, project: ProjectRef, table: str, uid: str | None, fields: Mapping[str, object]
+) -> object:
+    """Новая строка из полей в форме changeset'а — тем же путём, что чужая вставка.
+
+    Без проверки натурального ключа: зовут её стратегии, которые сами решили,
+    что строка нужна (перебуквление CLO-023, восстановление из снимка CLO-022).
+    Под захватом строка даёт операцию (восстановление), под ``suspended`` — нет.
+    """
+    mapper, info = _info(table)
+    _require_known_columns(info, fields)
+    values = _translate(session, project, info, fields, None)
+    obj = _create(mapper, info, uid, values)
+    _fill_local(session, mapper, info, obj)
+    session.add(obj)
+    _finish(session, project, info, obj, uid or table, fields)
+    return obj
+
+
+def _through_alias(session: Session, project: ProjectRef, info: cap.TableInfo, op: Op) -> Op:
+    """Операция над проигравшим uid склейки (CLO-023) — над выжившим."""
+    if not info.has_uid or op.entity_kind == _PROJECT:
+        return op
+    alias = alias_target(session, project.row_id, op.entity_kind, op.entity_uid)
+    return op if alias is None else dataclasses.replace(op, entity_uid=alias)
 
 
 def _apply_op(
@@ -638,14 +741,17 @@ def _apply_op(
     if op.entity_kind == _PROJECT and (op.entity_uid != project.uid or op.kind == "delete"):
         msg = f"операция над проектом {op.entity_uid} в changeset'е проекта {project.uid}"
         raise ObjectMissingError(msg)
+    op = _through_alias(session, project, info, op)
     if op.kind == "delete":
         _apply_delete(session, project, op, touched, ctx)
         return
-    _require_known_columns(info, op)
-    obj = _find(session, project, mapper, info, op, op.fields)
+    _require_known_columns(info, op.fields)
+    obj = _find(session, project, mapper, info, op.entity_uid, op.fields)
     if obj is not None:
-        _require_shipped(session, info, obj, op, written=False)
+        _require_shipped(session, info, obj, op.entity_uid, None)
     if not merge.allow(session, ctx, op):
+        return
+    if obj is None and op.base and _absorbed(session, ctx, op):
         return
     if obj is not None:
         # Существующая строка: поле за полем — LWW по истории и хвосту (§3.7).
@@ -653,33 +759,82 @@ def _apply_op(
         if not winning:
             return
         op = dataclasses.replace(op, fields=winning)
-    values = _translate(session, project, info, op.fields, obj)
-    if obj is None:
-        if op.base:
-            msg = (
-                f"правка {info.table} {op.entity_uid}, которой на реплике нет: "
-                "её создание старше журнала — нужен clone со снапшота (CLO-029)"
-            )
-            raise ObjectMissingError(msg)
-        obj = mapper.class_()
-        if info.has_uid:
-            setattr(obj, info.attr(_UID), op.entity_uid)
-        for column, value in values.items():
-            setattr(obj, info.attr(column), value)
-        twin = _natural_twin(session, mapper, info, obj)
-        if twin is not None and not merge.key_collision(session, ctx, op, *twin):
+    try:
+        values = _translate(session, project, info, op.fields, obj)
+    except ObjectMissingError:
+        # Ссылка на строку, которую снёс свой tombstone: операция — в снимок.
+        if obj is None and _absorbed(session, ctx, op):
             return
-        _fill_local(session, mapper, info, obj)
-        session.add(obj)
-    else:
-        for column, value in values.items():
-            setattr(obj, info.attr(column), value)
-    session.flush()
-    # Итоговая строка: проект (project_id не перевешивается на чужой, ребёнок —
-    # под своим родителем) и гейт реестра.
-    _require_own(session, project, info.table, _row_of(info, obj), f"{info.table} {op.entity_uid}")
-    _require_shipped(session, info, obj, op, written=True)
-    _note(touched, info.table, obj, deleted=False, op=op)
+        raise
+    if obj is None:
+        _insert(session, project, mapper, info, op, values, touched, ctx)
+        return
+    for column, value in values.items():
+        setattr(obj, info.attr(column), value)
+    _finish(session, project, info, obj, op.entity_uid, op.fields)
+    _note(touched, info.table, obj, deleted=False, base=op.base)
+
+
+def _insert(
+    session: Session,
+    project: ProjectRef,
+    mapper: Mapper[object],
+    info: cap.TableInfo,
+    op: Op,
+    values: Mapping[str, object],
+    touched: Touched,
+    ctx: merge.Context,
+) -> None:
+    """Чужая вставка; совпавший натуральный ключ — стратегия ``keys`` (Q-007)."""
+    if op.base:
+        msg = (
+            f"правка {info.table} {op.entity_uid}, которой на реплике нет: "
+            "её создание старше журнала — нужен clone со снапшота (CLO-029)"
+        )
+        raise ObjectMissingError(msg)
+    obj = _create(mapper, info, op.entity_uid, values)
+    twin = _natural_twin(session, mapper, info, obj)
+    if twin is not None and not merge.key_collision(session, ctx, op, *twin):
+        # Стратегия склеила или перебуквила сама: затронута выжившая строка.
+        target = alias_target(session, project.row_id, info.table, op.entity_uid)
+        survivor = _find(session, project, mapper, info, target or op.entity_uid, op.fields)
+        if survivor is not None:
+            _note(touched, info.table, survivor, deleted=False, base=op.base)
+        return
+    _fill_local(session, mapper, info, obj)
+    session.add(obj)
+    _finish(session, project, info, obj, op.entity_uid, op.fields)
+    _note(touched, info.table, obj, deleted=False, base=op.base)
+
+
+def restore_rows(
+    session: Session, project: ProjectRef, rows: Iterable[Mapping[str, object]]
+) -> list[object]:
+    """Пересоздать строки снимка с исходными uid (resolve ``delete_edit``, CLO-022).
+
+    ``rows`` — родитель раньше детей, поля в форме changeset'а. Строка, которая
+    уже есть (её восстановили раньше или она приехала pull'ом), пропускается.
+    Запись идёт под захватом: каждая строка даёт операцию, и восстановление
+    уезжает следующим push'ем. Позиции и derived пересобираются, как после
+    применения changeset'а.
+    """
+    touched = Touched()
+    created: list[object] = []
+    for row in rows:
+        table = str(row["table"])
+        uid = row.get("uid")
+        fields = cast("Mapping[str, object]", row["fields"])
+        mapper, info = _info(table)
+        key = str(uid) if uid is not None else table
+        if _find(session, project, mapper, info, key, fields) is not None:
+            continue
+        obj = create_row(session, project, table, None if uid is None else str(uid), fields)
+        _note(touched, table, obj, deleted=False, base={})
+        created.append(obj)
+    _renumber(session, touched)
+    _rebuild_links(session, touched.section_ids)
+    _rebuild_fts(session, project, touched)
+    return created
 
 
 # --- derived ----------------------------------------------------------------------
@@ -766,6 +921,14 @@ def _record_ops(session: Session, project: ProjectRef, sha: str, cs: Changeset) 
     for i in range(0, len(ids), _CHUNK):
         chunk = ids[i : i + _CHUNK]
         known |= set(session.scalars(select(SyncOpModel.op_id).where(SyncOpModel.op_id.in_(chunk))))
+    # Операция над проигравшим uid склейки ложится в историю выжившего: на неё
+    # смотрит LWW следующих правок этой сущности (CLO-023).
+    aliases = {
+        (row.entity_kind, row.alias): row.uid
+        for row in session.scalars(
+            select(EntityAliasModel).where(EntityAliasModel.project_id == project.row_id)
+        )
+    }
     rows = [
         {
             "op_id": op.op_id,
@@ -773,7 +936,7 @@ def _record_ops(session: Session, project: ProjectRef, sha: str, cs: Changeset) 
             "replica_uid": Hlc.parse(op.hlc).replica_uid,
             "hlc": op.hlc,
             "entity_kind": op.entity_kind,
-            "entity_uid": op.entity_uid,
+            "entity_uid": aliases.get((op.entity_kind, op.entity_uid), op.entity_uid),
             "kind": op.kind,
             "fields": _dumps(op.fields),
             "base": _dumps(op.base),

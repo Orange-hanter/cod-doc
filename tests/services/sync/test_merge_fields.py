@@ -373,7 +373,8 @@ def test_status_changed_on_both_sides_waits_for_clo_020(pair: tuple) -> None:
     assert r.authored_state(b) == before
 
 
-def test_delete_against_edit_waits_for_clo_022(pair: tuple) -> None:
+def test_delete_against_edit_is_won_by_the_delete(pair: tuple) -> None:
+    """Удаление против правки — стратегия CLO-022: удаление выигрывает, правка — в конфликт."""
     a, b, store = pair
     _common_task(a, b, store)
     with transactional(a.sf) as s:
@@ -381,12 +382,14 @@ def test_delete_against_edit_waits_for_clo_022(pair: tuple) -> None:
         s.delete(s.scalars(select(TaskModel).where(TaskModel.task_id == TASK)).one())
     _push(a, store)
     _set(b, title="правка под удалением")
-    before = r.authored_state(b)
 
-    with pytest.raises(MergeRequiredError, match="CLO-022"):
-        _pull(b, store)
+    pulled = _pull(b, store)
 
-    assert r.authored_state(b) == before
+    assert len(pulled.conflicts) == 1
+    assert r.task_description(b, TASK) is None  # задачи нет
+    _push(b, store)
+    _pull(a, store)
+    _assert_converged(a, b, store)
 
 
 def test_edge_delete_against_its_own_upsert_waits_for_clo_021() -> None:
