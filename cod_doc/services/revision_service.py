@@ -7,6 +7,17 @@ Public API:
 - `write` — append a new revision; auto-fills `revision_id` (ULID) and
   `parent_revision_id` (last revision of the same entity, if any).
 - `list_for_entity` — full history of an entity, oldest → newest.
+- `append_foreign` — ревизия из чужого changeset'а (RFC 29 §3.7, Q-010;
+  CLO-024): свои `revision_id`/`author`/`reason`/`at`, родитель — голова
+  сущности на этой реплике.
+
+**Голова сущности — последняя записанная на реплике** (`row_id DESC`), а не
+самая поздняя по `at`. На одной реплике это одно и то же: `at` — время ULID
+в момент записи. После синхронизации — нет: чужая ревизия могла быть
+написана раньше своей, ещё не уехавшей, но встаёт поверх неё (Q-010), и
+история на реплике остаётся линейной. По `at` голова откатилась бы на свою
+ревизию, следующая запись получила бы того же родителя, что и чужая, а
+устаревший `expected_parent_revision_id` прошёл бы проверку.
 
 Откат ревизии (`revert`, COD-022) живёт в `revert_service` (SVC-002): он
 вызывает сервисы-владельцы сущностей, а они сами пишут сюда ревизии. Пока
@@ -41,6 +52,11 @@ class RevisionConflictError(RuntimeError):
     Mirrors DATA_MODEL §3.5: writers may pass the parent ULID they last observed;
     if a concurrent writer landed first, the head moved and we refuse the write.
     """
+
+
+#: Имя из ARCHITECTURE §12.1 и RFC 29 §3.7 (Q-010): тот же класс, не подкласс —
+#: поверхности ловят `RevisionConflictError`, и оба имени ловят одно и то же.
+OptimisticLockError = RevisionConflictError
 
 
 # Sentinel: caller didn't pass a parent expectation. Distinct from `None`,
@@ -82,7 +98,7 @@ def _current_head(
         RevisionModel.entity_id == entity_id,
         RevisionModel.project_id == project_id,
     )
-    stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(1)
+    stmt = stmt.order_by(RevisionModel.row_id.desc()).limit(1)
     return session.execute(stmt).scalar_one_or_none()
 
 
@@ -129,6 +145,49 @@ def write(
         reason=reason,
         commit_sha=commit_sha,
         run_id=get_current_run_id(),
+    )
+    session.add(model)
+    session.flush()
+    return _to_domain(model)
+
+
+def append_foreign(
+    session: Session,
+    *,
+    revision_id: str,
+    project_id: int,
+    entity_kind: EntityKind,
+    entity_id: int,
+    author: str,
+    at: datetime,
+    diff: str,
+    reason: str | None = None,
+    commit_sha: str | None = None,
+) -> Revision:
+    """Ревизия из чужого changeset'а поверх локальной головы (RFC 29 §3.7, Q-010).
+
+    `revision_id`, `author`, `reason`, `at` — как у источника: ревизия одна на
+    всех репликах, на неё ссылаются `approval_doc_revision_link` и
+    `task_document.current_revision_id`. `parent_revision_id` — голова
+    сущности на этой реплике в момент применения: история линейна, и
+    оптимистическая блокировка работает как на одной реплике. `run_id` — NULL:
+    прогон оркестратора — телеметрия чужой машины (ADR-012).
+
+    Автора транзакции (`set_author`) не ставит: применение идёт под
+    `sync_capture.suspended`, операций не пишет.
+    """
+    model = RevisionModel(
+        revision_id=revision_id,
+        project_id=project_id,
+        entity_kind=entity_kind.value,
+        entity_id=entity_id,
+        parent_revision_id=_current_head(session, entity_kind, entity_id, project_id),
+        author=author,
+        at=at,
+        diff=diff,
+        reason=reason,
+        commit_sha=commit_sha,
+        run_id=None,
     )
     session.add(model)
     session.flush()
@@ -264,8 +323,8 @@ def heads_for_entities(
 ) -> dict[int, str | None]:
     """Batch-вариант :func:`head_for_entity`: head каждой сущности одним SELECT.
 
-    Порядок тот же, что у ``_current_head`` (at DESC, row_id DESC), head
-    сущности — первая строка её группы. Ключи — все переданные id; у сущности
+    Порядок тот же, что у ``_current_head`` (row_id DESC — последняя записанная
+    на реплике), head сущности — первая строка её группы. Ключи — все переданные id; у сущности
     без ревизий значение None. Пустой ``entity_ids`` — ``{}`` без запроса.
     """
     if not entity_ids:
@@ -278,7 +337,7 @@ def heads_for_entities(
             RevisionModel.entity_id.in_(heads),
             RevisionModel.project_id == project_id,
         )
-        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
+        .order_by(RevisionModel.row_id.desc())
     )
     seen: set[int] = set()
     for revision_id, entity_id in session.execute(stmt):

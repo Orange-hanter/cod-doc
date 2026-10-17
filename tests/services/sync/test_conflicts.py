@@ -82,6 +82,11 @@ def _pending_ops(rep: r.Replica) -> list[dict[str, object]]:
         return [{"kind": o.entity_kind, "fields": json.loads(o.fields)} for o in rows]
 
 
+def _task_ops(rep: r.Replica) -> list[dict[str, object]]:
+    """Хвост без ревизий: разрешение пишет и ревизию, она уезжает тоже (CLO-024)."""
+    return [op for op in _pending_ops(rep) if op["kind"] != "revision"]
+
+
 def _count(rep: r.Replica, model: type, *where: object) -> int:
     with transactional(rep.sf) as s:
         return int(s.scalar(select(func.count()).select_from(model).where(*where)) or 0)
@@ -145,7 +150,8 @@ def test_resolve_theirs_writes_value_operation_revision_and_event(rep: r.Replica
 
     assert out["status"] == "resolved"
     assert _task(rep).title == "Заголовок B"
-    last = _pending_ops(rep)[-1]
+    # Ревизия разрешения тоже уезжает (CLO-024); значение — последняя операция задачи.
+    last = [op for op in _pending_ops(rep) if op["kind"] != "revision"][-1]
     assert last["kind"] == "task"
     assert last["fields"]["title"] == "Заголовок B"  # type: ignore[index]
     assert _count(rep, RevisionModel, RevisionModel.entity_id == task.row_id) == revisions + 1
@@ -164,11 +170,11 @@ def test_resolve_theirs_writes_value_operation_revision_and_event(rep: r.Replica
 def test_resolve_ours_ships_ours_even_when_the_db_already_holds_it(rep: r.Replica) -> None:
     """«Наше» уже в БД, но его штамп мог проиграть — разрешение пишет новую операцию."""
     uid = _open(rep, theirs="Заголовок B")
-    before = len(_pending_ops(rep))
+    before = len(_task_ops(rep))
 
     _resolve(rep, uid, "ours")
 
-    ops = _pending_ops(rep)
+    ops = _task_ops(rep)
     assert len(ops) == before + 1
     assert ops[-1]["fields"] == {"title": "Task DEM-001"}
     assert _task(rep).title == "Task DEM-001"

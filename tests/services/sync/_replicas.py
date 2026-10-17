@@ -38,6 +38,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import doc_service, task_service
+from cod_doc.services.sync_service import digest
 from tests._alembic import run_alembic
 
 if TYPE_CHECKING:
@@ -239,6 +240,10 @@ def authored_state(r: Replica) -> dict[str, list[str]]:
                     continue
                 if table in reg.UID_TABLES:
                     data["uid"] = row["uid"]
+                # Родителя ревизии переписывает применение (Q-010) — как дайджест.
+                for t, column in digest.EXCLUDED_COLUMNS:
+                    if t == table:
+                        data.pop(column, None)
                 rows.append(json.dumps(data, sort_keys=True, default=str, ensure_ascii=False))
             if rows:
                 out[table] = sorted(rows)

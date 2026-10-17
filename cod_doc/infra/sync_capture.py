@@ -56,6 +56,10 @@ authored-полями (``fields``) и их прежними значениями
 9. **Каскад внутри БД** (``ON DELETE CASCADE`` без ORM-каскада) операций
    детей не даёт: на другой реплике тот же каскад сработает от удаления
    родителя.
+10. **Журнал** (``JOURNAL_IDS`` реестра, CLO-024). Ревизия даёт одну операцию
+    ``upsert`` на вставку: адрес — ``revision_id``, поля — уезжающие колонки
+    без него. Правка и удаление строки журнала операций не дают: журнал
+    дописывается, а удаляет его только каскад удалённого проекта.
 """
 
 from __future__ import annotations
@@ -105,13 +109,14 @@ _PROJECT_ID = "project_id"
 _SENSITIVITY = "sensitivity"
 _DOC_KINDS = frozenset({"document", "section"})
 
-#: Таблицы под захватом: authored плюс derived с authored-колонками
-#: (``link_suggestion.state``, Q-017).
+#: Таблицы под захватом: authored, derived с authored-колонками
+#: (``link_suggestion.state``, Q-017) и journal из ``JOURNAL_IDS`` (CLO-024).
 CAPTURED_TABLES: frozenset[str] = frozenset(
     t
     for t, spec in reg.REGISTRY.items()
-    if spec.cls is reg.SyncClass.AUTHORED or spec.authored_columns
+    if spec.cls is reg.SyncClass.AUTHORED or spec.authored_columns or t in reg.JOURNAL_IDS
 )
+_SHIPPED_CLASSES = frozenset({reg.SyncClass.AUTHORED, reg.SyncClass.JOURNAL})
 
 #: Как разрешить метку документа для каждой ссылки ``DOC_REFS`` захватываемых
 #: таблиц: ``document``/``section`` — FK, ``doc_key`` — ключ документа в проекте,
@@ -139,6 +144,7 @@ DOC_REF_TARGETS: Mapping[tuple[str, str], str] = MappingProxyType(
         ("link_suggestion", "from_section_id"): "section",
         ("link_suggestion", "to_section_id"): "section",
         ("link_suggestion", "to_doc_key"): "doc_key",
+        ("revision", "entity_id"): "entity_kind",
     }
 )
 
@@ -166,6 +172,8 @@ class TableInfo:
     nullable: frozenset[str]
     #: Ссылка, через которую ищется проект строки без ``project_id``.
     parent: tuple[str, str] | None
+    #: Колонка глобального id journal-таблицы (``JOURNAL_IDS``): адрес операции.
+    identity: str | None = None
 
     def attr(self, column: str) -> str:
         return dict(self.columns)[column]
@@ -182,11 +190,12 @@ def _table_info(mapper: Mapper[object]) -> TableInfo | None:
     if name not in CAPTURED_TABLES:
         return None
     spec = reg.spec_for(name)
+    identity = reg.JOURNAL_IDS.get(name)
     columns = tuple((c.name, mapper.get_property_by_column(c).key) for c in table.columns)
     shipped = frozenset(
         c.name
         for c in table.columns
-        if c.name != _UID and reg.column_class(name, c.name) is reg.SyncClass.AUTHORED
+        if c.name not in {_UID, identity} and reg.column_class(name, c.name) in _SHIPPED_CLASSES
     )
     fk_targets: dict[str, str] = {fk.parent.name: fk.column.table.name for fk in table.foreign_keys}
     fk_targets.update(spec.logical_fks)
@@ -206,6 +215,7 @@ def _table_info(mapper: Mapper[object]) -> TableInfo | None:
         has_uid=_UID in table.c,
         nullable=frozenset(c.name for c in table.columns if c.nullable),
         parent=parent,
+        identity=identity,
     )
 
 
@@ -598,8 +608,8 @@ def _new_op(
 
 
 def _entity_uid(info: TableInfo, row: Mapping[str, object], lookup: _Lookup) -> str | None:
-    if info.has_uid:
-        value = row.get(_UID)
+    if info.has_uid or info.identity is not None:
+        value = row.get(info.identity or _UID)
         return value if isinstance(value, str) and value else None
     return _edge_uid(info, row, lookup)
 
@@ -612,6 +622,8 @@ def _upsert_op(
     is_new: bool,
     lookup: _Lookup,
 ) -> PendingOp | None:
+    if info.identity is not None and not is_new:
+        return None  # журнал дописывается: правка строки журнала не уезжает (решение 10)
     changed = info.shipped if is_new else _changed(info, state)
     if not changed:
         return None
@@ -652,6 +664,8 @@ def _upsert_op(
 def _delete_op(
     session: Session, info: TableInfo, state: InstanceState[object], lookup: _Lookup
 ) -> PendingOp | None:
+    if info.identity is not None:
+        return None  # журнал не удаляется операцией (решение 10)
     before = {c: v for c, v in _row_before(info, state).items() if v is not NO_VALUE}
     project_id = lookup.project_id(info.table, before)
     gate = gating_row(lookup, info.table, before, project_id)
@@ -967,7 +981,8 @@ def record(
     ``project_id`` сверх сигнатуры §10.3: ``sync_op.project_id`` обязателен,
     а вывести его из uid без запроса нельзя.
     """
-    if table not in CAPTURED_TABLES:
+    if table not in CAPTURED_TABLES or table in reg.JOURNAL_IDS:
+        # Журнал bulk-путей не имеет: ревизия пишется ORM и захватывается хуком.
         msg = f"sync_capture.record: {table!r} не захватывается"
         raise ValueError(msg)
     if kind not in _OP_KINDS:
@@ -1086,12 +1101,13 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
             stmt = stmt.where(tbl.c.row_id == project_id)
         elif _PROJECT_ID in tbl.c:
             stmt = stmt.where(tbl.c.project_id == project_id)
-        if info.has_uid:
-            stmt = stmt.order_by(tbl.c.uid.collate("C") if postgres else tbl.c.uid)
+        key = info.identity or (_UID if info.has_uid else None)
+        if key is not None:
+            stmt = stmt.order_by(tbl.c[key].collate("C") if postgres else tbl.c[key])
         rows = session.connection().execute(stmt).mappings()
         lines = (_shipped_line(lookup, info, dict(raw), project_id) for raw in rows)
         present = (line for line in lines if line is not None)
-        for uid, fields in present if info.has_uid else sorted(present):
+        for uid, fields in present if key is not None else sorted(present):
             yield table, uid, fields
 
 

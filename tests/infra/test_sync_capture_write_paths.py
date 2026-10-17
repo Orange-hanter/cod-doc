@@ -368,6 +368,25 @@ def _task_field(fn_name: str, **kw: Any) -> Callable[[World], Expect]:
 
 
 case("task_service.update_description")(_task_field("update_description", new_description="new"))
+
+
+@case("revision_service.write")
+def _(w: World) -> Expect:
+    """Журнал (CLO-024): ревизия уезжает операцией с адресом ``revision_id``."""
+    from cod_doc.domain.entities import EntityKind
+    from cod_doc.services import revision_service
+
+    written = revision_service.write(
+        w.session,
+        project_id=w.pid,
+        entity_kind=EntityKind.TASK,
+        entity_id=w.task("PLN-001").row_id,
+        author=AUTHOR,
+        diff="{}",
+    )
+    return [("revision", lambda: written.revision_id)]
+
+
 case("task_service.update_acceptance")(_task_field("update_acceptance", new_acceptance="done"))
 case("task_service.update_priority")(_task_field("update_priority", new_priority=Priority.HIGH))
 case("task_service.update_status")(
@@ -1701,6 +1720,9 @@ def _allowed_fields(table: str) -> frozenset[str]:
     spec = reg.spec_for(table)
     if spec.cls is reg.SyncClass.AUTHORED:
         return reg.SHIPPED_COLUMNS[table] - {"uid"}
+    if table in reg.JOURNAL_IDS:
+        # Журнал (CLO-024): id строки — адрес операции, в полях его нет.
+        return reg.SHIPPED_COLUMNS[table] - {reg.JOURNAL_IDS[table]}
     return spec.authored_columns
 
 

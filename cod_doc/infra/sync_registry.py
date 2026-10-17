@@ -142,6 +142,18 @@
     таблиц синхронизации (``replica``, ``sync_op``, ``changeset``,
     ``sync_ref``, ``sync_lease``, ``entity_alias``) — ``local``: это состояние
     реплики, а не проекта.
+19. **Журнал в changeset'е** (CLO-024, Q-010). ``revision`` уезжает
+    операцией ``upsert`` на вставку строки; адрес операции —
+    ``revision_id`` (``JOURNAL_IDS``), колонки ``uid`` у журнала нет.
+    Применение — объединение по этому id: ``parent_revision_id`` переписывает
+    реплика (локальная голова сущности), поэтому в дайджест он не входит.
+    Ревизия сущности без колонки ``uid`` (``EntityKind.LINK`` — derived
+    ``link``) — local: адресовать её на другой реплике не через что.
+    ``activity_event`` в ``JOURNAL_IDS`` нет: события ``sync.*`` пишет сам
+    обмен (``sync.pushed`` после CAS дал бы новую операцию после каждого
+    push), а лента событий — телеметрия реплики, а не данные проекта. Класс
+    таблицы остаётся ``journal``: перечень уезжающих колонок готов на случай,
+    если события поедут.
 """
 
 from __future__ import annotations
@@ -403,7 +415,9 @@ def _undecided_suggestion(row: Mapping[str, object]) -> bool:
 
 
 def _local_revision(row: Mapping[str, object]) -> bool:
-    return _parse_entity_kind(row.get("entity_kind")) is None
+    kind = _parse_entity_kind(row.get("entity_kind"))
+    # Ревизия сущности без uid (derived ``link``) не адресуема на другой реплике.
+    return kind is None or ENTITY_KIND_TABLES.get(kind) not in UID_TABLES
 
 
 def _local_event(row: Mapping[str, object]) -> bool:
@@ -823,6 +837,10 @@ ENTITY_KIND_TABLES: Mapping[EntityKind, str] = MappingProxyType(
         EntityKind.QUESTION: "open_question",
     }
 )
+
+#: Journal-таблицы, которые уезжают в changeset'ах, → колонка глобального id:
+#: адрес операции (``entity_uid``) и ключ объединения при применении (решение 19).
+JOURNAL_IDS: Mapping[str, str] = MappingProxyType({"revision": "revision_id"})
 
 #: Значение ``to_kind`` → таблица с арендованным номером, на который указывает
 #: ``to_ref``. Виды, которых здесь нет (document, section, code, url, …),

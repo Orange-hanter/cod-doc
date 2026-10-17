@@ -1,0 +1,141 @@
+"""Применение journal-операций чужого changeset'а (RFC 29 §3.7, Q-010; CLO-024).
+
+Journal (``revision``) не сливается: строки объединяются по глобальному id
+(``sync_registry.JOURNAL_IDS``). Зовёт ``apply._apply_op`` до слияния по полям
+— у журнала нет ни LWW, ни стратегий ``merge``, и ``pull`` не сверяет его с
+хвостом (``merge.check``): две реплики не могут написать одну ревизию.
+
+Что делает применение ревизии:
+
+1. **Уже есть** строка с этим ``revision_id`` в проекте — ничего: объединение
+   идемпотентно. В другом проекте этой БД — SYNC-102.
+2. **Недоверенный ввод** — как у ``apply``: только ``upsert`` без ``base``
+   (журнал дописывается), только колонки ``SHIPPED_COLUMNS``, обязательные
+   поля на месте, ``project_id`` — uid проекта pull'а, вид сущности —
+   ``EntityKind`` таблицы с колонкой ``uid``. Нарушение — SYNC-102.
+3. **Сущность ревизии** ищется по uid в проекте pull'а. Нет её:
+   документ или секция — ревизия не пишется: гейт реестра на любой реплике
+   держит такую ревизию local (метки документа нет — fail-closed, решение 17),
+   и в дайджест она не входит ни там, ни здесь. Сущность другого вида
+   (удалена этой репликой раньше) — ревизия пишется с ``entity_id =
+   DANGLING_ENTITY_ID``: на источнике ссылка повиснет так же после удаления,
+   а висячая полиморфная ссылка сериализуется ``NULL`` на обеих репликах.
+4. **Гейт реестра**: ревизия, которую реестр этой реплики держит local
+   (сущность в restricted-документе), не пишется — SYNC-102, как правка
+   local-строки у ``apply._require_shipped``.
+5. **Запись** — ``revision_service.append_foreign``: свои ``revision_id``,
+   ``author``, ``reason``, ``at``; ``parent_revision_id`` — локальная голова
+   сущности. Присланный ``parent_revision_id`` игнорируется: он описывает
+   историю реплики-источника.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING, Final
+
+from sqlalchemy import inspect, select
+
+from cod_doc.domain.entities import EntityKind
+from cod_doc.infra import sync_capture as cap
+from cod_doc.infra import sync_registry as reg
+from cod_doc.infra.models import RevisionModel
+from cod_doc.services import revision_service
+from cod_doc.services.sync_service import apply
+from cod_doc.services.sync_service._values import from_wire
+from cod_doc.services.sync_service.errors import ObjectMissingError
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from cod_doc.services.sync_service._local import ProjectRef
+    from cod_doc.services.sync_service.changeset import Op
+
+__all__ = ["DANGLING_ENTITY_ID", "apply_op"]
+
+_TABLE: Final = "revision"
+#: ``row_id`` сущности, которой у реплики нет: SQLite и PostgreSQL выдают
+#: ``row_id`` с единицы, так что ссылка гарантированно висячая.
+DANGLING_ENTITY_ID: Final = 0
+_REQUIRED: Final = frozenset({"project_id", "entity_kind", "entity_id", "author", "at", "diff"})
+_DOC_TABLES: Final = frozenset({"document", "section"})
+
+
+def _reject(op: Op, why: str) -> ObjectMissingError:
+    return ObjectMissingError(f"{op.entity_kind} {op.entity_uid}: {why}")
+
+
+def _check_shape(op: Op, info: cap.TableInfo) -> None:
+    if op.kind != "upsert" or op.base:
+        raise _reject(op, "журнал только дописывается — правка или удаление строки")
+    unknown = sorted(set(op.fields) - info.shipped)
+    if unknown:
+        raise _reject(op, f"колонки {unknown} не уезжают — remote их не пишет")
+    missing = sorted(c for c in _REQUIRED if op.fields.get(c) is None)
+    if missing:
+        raise _reject(op, f"нет обязательных полей {missing}")
+
+
+def _entity_table(op: Op) -> tuple[EntityKind, str]:
+    try:
+        kind = EntityKind(str(op.fields["entity_kind"]))
+    except ValueError:
+        raise _reject(op, "незнакомый вид сущности") from None
+    table = reg.ENTITY_KIND_TABLES.get(kind)
+    if table is None or table not in reg.UID_TABLES:
+        raise _reject(op, f"вид сущности {kind.value!r} без uid — такие ревизии не уезжают")
+    return kind, table
+
+
+def _existing(session: Session, project: ProjectRef, op: Op) -> bool:
+    found = session.scalars(
+        select(RevisionModel.project_id).where(RevisionModel.revision_id == op.entity_uid)
+    ).first()
+    if found is None:
+        return False
+    if found != project.row_id:
+        raise _reject(op, "ревизия с этим id принадлежит другому проекту этой БД")
+    return True
+
+
+def apply_op(session: Session, project: ProjectRef, op: Op) -> None:
+    """Применить journal-операцию ``op`` в транзакции changeset'а."""
+    info = cap.table_info(inspect(RevisionModel))
+    assert info is not None  # revision в CAPTURED_TABLES
+    _check_shape(op, info)
+    if _existing(session, project, op):
+        return
+    if op.fields["project_id"] != project.uid:
+        raise _reject(op, "ревизия чужого проекта")
+    kind, table = _entity_table(op)
+    target = apply.entity_by_uid(session, project, table, str(op.fields["entity_id"]))
+    if target is None and table in _DOC_TABLES:
+        return  # local на обеих репликах: метки документа нет (п. 3)
+    entity_id = DANGLING_ENTITY_ID if target is None else int(getattr(target[0], "row_id"))  # noqa: B009
+    row = {
+        "revision_id": op.entity_uid,
+        "project_id": project.row_id,
+        "entity_kind": kind.value,
+        "entity_id": entity_id,
+    }
+    if target is not None and cap.shipped_fields(session, _TABLE, row) is None:
+        raise _reject(op, "ревизия local на этой реплике (restricted и т. п.)")
+    at = from_wire(_TABLE, "at", op.fields["at"])
+    if not isinstance(at, datetime):
+        raise _reject(op, "at — не время")
+    revision_service.append_foreign(
+        session,
+        revision_id=op.entity_uid,
+        project_id=project.row_id,
+        entity_kind=kind,
+        entity_id=entity_id,
+        author=str(op.fields["author"]),
+        at=at,
+        diff=str(op.fields["diff"]),
+        reason=_text(op.fields.get("reason")),
+        commit_sha=_text(op.fields.get("commit_sha")),
+    )
+
+
+def _text(value: object) -> str | None:
+    return None if value is None else str(value)

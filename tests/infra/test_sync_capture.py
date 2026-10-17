@@ -207,7 +207,9 @@ def test_every_captured_table_reaches_a_project() -> None:
 
 def test_captured_tables_are_authored_or_carry_authored_columns() -> None:
     assert "link_suggestion" in cap.CAPTURED_TABLES
-    assert "revision" not in cap.CAPTURED_TABLES  # журнал уезжает объединением, не операциями
+    # Журнал (CLO-024): ревизии уезжают операциями на вставку, события — нет.
+    assert "revision" in cap.CAPTURED_TABLES
+    assert "activity_event" not in cap.CAPTURED_TABLES
     assert "sync_op" not in cap.CAPTURED_TABLES
     assert {s.table for s in reg.authored_tables()} <= cap.CAPTURED_TABLES
 
