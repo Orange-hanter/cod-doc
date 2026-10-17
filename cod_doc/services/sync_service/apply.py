@@ -74,6 +74,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from sqlalchemy import func, insert, select
@@ -83,7 +84,7 @@ from cod_doc.infra import ordering
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
-from cod_doc.infra.models import Base, EntityAliasModel, SyncOpModel
+from cod_doc.infra.models import Base, EntityAliasModel, SyncConflictModel, SyncOpModel
 from cod_doc.services import search_service
 from cod_doc.services.sync_service import _local, merge
 from cod_doc.services.sync_service._values import from_wire
@@ -699,6 +700,54 @@ def _apply_delete(
     session.delete(obj)
     # Сразу в БД: следующая операция того же uid (ребро снято и поставлено снова)
     # иначе нашла бы удаляемый объект в identity map и легла правкой в него (CLO-027).
+    session.flush()
+    _close_orphaned_conflicts(session, project, ctx)
+
+
+def _close_orphaned_conflicts(session: Session, project: ProjectRef, ctx: merge.Context) -> None:
+    """Открытые конфликты на строках, которые снесло чужое удаление, закрываются.
+
+    Удаление выигрывает (Q-008): правка, о которой был конфликт поля или
+    склейки, мертва, а если её надо вернуть — она в снимке ``delete_edit``
+    реплики, сливавшей удаление со своим хвостом. Без этого конфликт
+    оставался на строке, которой нет, только в тех перестановках, где правка
+    пришла раньше удаления (CLO-027, сид 447). ``delete_edit`` не трогается:
+    его корень удалён по определению.
+    """
+    from cod_doc.services import activity_service
+
+    alive = [
+        spec
+        for spec in ctx.conflicts
+        if spec.kind == merge.DELETE_EDIT
+        or entity_by_uid(session, project, spec.entity_kind, spec.entity_uid) is not None
+    ]
+    if len(alive) != len(ctx.conflicts):  # ещё не записанные конфликты этого changeset'а
+        ctx.conflicts = alive
+        ctx.by_field = {k: v for k, v in ctx.by_field.items() if any(v is a for a in alive)}
+    rows = session.scalars(
+        select(SyncConflictModel).where(
+            SyncConflictModel.project_id == project.row_id,
+            SyncConflictModel.status == "open",
+            SyncConflictModel.kind != merge.DELETE_EDIT,
+        )
+    ).all()
+    for row in rows:
+        if entity_by_uid(session, project, row.entity_kind, row.entity_uid) is not None:
+            continue
+        row.status = "resolved"
+        row.resolved_by = "sync:deleted"
+        row.resolved_at = datetime.now(UTC)
+        activity_service.emit_for_write(
+            session,
+            project.row_id,
+            "sync.conflict_resolved",
+            ctx.author,
+            scope_kind=row.entity_kind,
+            scope_id=row.entity_uid,
+            payload={"conflict_uid": row.uid, "kind": row.kind, "take": "deleted"},
+            summary=f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: сущность удалена",
+        )
     session.flush()
 
 

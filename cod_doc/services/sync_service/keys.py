@@ -39,9 +39,11 @@ merged``, событие ``sync.alias_created``): операции, собран
 уехавшая под проигравшим uid, склеится на каждой реплике сама — по тому же
 правилу.
 
-**Перебуквление.** Вторая по ``(hlc, uid)`` секция получает следующую свободную
-букву плана (``A``…``Z``, ``AA``…), слаг ``<буква>-…`` — вместе с ней; задачи
-остаются при своих секциях. Запись — под ``suspended`` на обеих репликах: каждая
+**Перебуквление.** Буквы всех секций плана — функция множества заявок
+(``assign_labels``): первый по ``(hlc, uid)`` заявитель буквы её получает,
+остальные — следующую букву плана (``A``…``Z``, ``AA``…), на которую никто не
+заявлялся; слаг ``<буква>-…`` — вместе с ней; задачи остаются при своих
+секциях. Заявка — последняя операция журнала, писавшая букву (CLO-027). Запись — под ``suspended`` на обеих репликах: каждая
 перебуквливает сама, когда видит чужую вставку, и пишет одинаковое событие
 ``plan_section.relettered`` ``{from, to, section_uid}``. Своя операция вставки в
 хвосте не переписывается — по ней перебуквит и другая сторона.
@@ -173,7 +175,7 @@ def resolve_key(session: Session, ctx: Context, clash: KeyClash) -> bool:
     theirs = clash.theirs
     theirs_first = (theirs.hlc, theirs.entity_uid) < _created(history, clash.ours_uid)
     if key.kind is reg.KeyKind.LABEL:
-        return _reletter(session, ctx, project, obj, info, key, theirs, theirs_first=theirs_first)
+        return _reletter(session, ctx, project, obj, info, key, theirs)
     _glue(
         session,
         ctx,
@@ -415,6 +417,58 @@ def next_label(current: str, used: set[str]) -> str:
     raise ValueError(msg)
 
 
+def _claim(
+    session: Session, project_id: int, table: str, uid: str, column: str, current: str
+) -> tuple[str, Stamp]:
+    """Заявка строки на метку: (метка, штамп) последней операции, писавшей метку.
+
+    Перебуквление операций не пишет (``suspended``), поэтому последняя запись
+    метки в журнале — то, на что строка претендовала. Строка без такой
+    операции (до журнала) претендует на текущую метку и проигрывает всем.
+    """
+    claims = [
+        row
+        for row in _ops(session, project_id, table, uid)
+        if row.kind == "upsert" and column in json.loads(row.fields)
+    ]
+    if not claims:
+        return current, (_NEVER, uid)
+    last = max(claims, key=lambda row: (row.hlc, row.op_id))
+    return str(json.loads(last.fields)[column]), (last.hlc, uid)
+
+
+def assign_labels(claims: Mapping[str, tuple[str, Stamp]]) -> dict[str, str]:
+    """Метки всех строк родителя — функция одного множества заявок (CLO-027).
+
+    Первый по штампу заявитель каждой метки её получает; остальные, по меткам
+    в порядке алфавита и по штампу внутри, — следующую метку, на которую никто
+    не заявлялся и которую ещё никто не получил. От порядка прихода вставок
+    ответ не зависит: три реплики, заявившие одну букву, сходятся.
+    """
+    order = {label: i for i, label in enumerate(_labels())}
+    groups: dict[str, list[tuple[Stamp, str]]] = {}
+    for uid, (label, stamp) in claims.items():
+        groups.setdefault(label, []).append((stamp, uid))
+    labels = sorted(groups, key=lambda label: (order.get(label, len(order)), label))
+    out: dict[str, str] = {}
+    for label in labels:
+        groups[label].sort()
+        out[groups[label][0][1]] = label
+    taken = set(groups)
+    for label in labels:
+        for _stamp, uid in groups[label][1:]:
+            new = next_label(label, taken)
+            out[uid] = new
+            taken.add(new)
+    return out
+
+
+def _with_label(slug: object, old: str, new: str) -> object:
+    if isinstance(slug, str) and slug.startswith(f"{old}-"):
+        return new + slug[len(old) :]
+    return slug
+
+
 def _reletter(
     session: Session,
     ctx: Context,
@@ -423,42 +477,71 @@ def _reletter(
     info: cap.TableInfo,
     key: reg.NaturalKey,
     theirs: Op,
-    *,
-    theirs_first: bool,
 ) -> bool:
+    """Чужая вставка заняла метку: метки всех строк родителя пересчитываются заново.
+
+    Раньше вторая строка брала следующую свободную метку в момент прихода —
+    у трёх реплик, заявивших одну букву, ответ зависел от порядка (CLO-027,
+    сид 9). Теперь метки — ``assign_labels`` по заявкам всех строк родителя
+    плюс входящей; переставленные строки сначала уходят на временные метки
+    (UNIQUE ``(plan_id, letter)``).
+    """
     *parents, column = key.columns
-    tbl = Base.metadata.tables[info.table]
-    where = [tbl.c[p] == getattr(obj, info.attr(p)) for p in parents]
-    used = {str(v) for v in session.scalars(select(tbl.c[column]).where(*where))}
-    old = str(theirs.fields[column])
-    new = next_label(old, used)
-    if theirs_first:
-        # Своя уступает: новая буква ей, чужая вставка идёт как обычно.
-        uid = str(getattr(obj, info.attr(_UID)))
-        setattr(obj, info.attr(column), new)
-        slug = getattr(obj, info.attr(_SLUG), None) if _SLUG in info.shipped else None
-        if isinstance(slug, str) and slug.startswith(f"{old}-"):
-            setattr(obj, info.attr(_SLUG), new + slug[len(old) :])
-        session.flush()
-    else:
-        uid = theirs.entity_uid
-        fields: dict[str, object] = {**theirs.fields, column: new}
-        slug = fields.get(_SLUG)
-        if isinstance(slug, str) and slug.startswith(f"{old}-"):
-            fields[_SLUG] = new + slug[len(old) :]
-        apply.create_row(session, project, info.table, uid, fields)
-    parent_uid = _parent_uid(session, info, obj, parents)
-    activity_service.emit_for_write(
-        session,
-        ctx.project_id,
-        f"{info.table}.relettered",
-        ctx.author,
-        scope_kind="plan",
-        scope_id=parent_uid,
-        payload={"from": old, "to": new, "section_uid": uid},
-        summary=f"{info.table} {uid}: {old} → {new}",
+    model = type(obj)
+    rows = list(
+        session.scalars(
+            select(model).where(
+                *[getattr(model, info.attr(p)) == getattr(obj, info.attr(p)) for p in parents]
+            )
+        )
     )
-    return theirs_first
+    claims: dict[str, tuple[str, Stamp]] = {}
+    current: dict[str, str] = {}
+    for row in rows:
+        uid = str(getattr(row, info.attr(_UID)))
+        current[uid] = str(getattr(row, info.attr(column)))
+        claims[uid] = _claim(session, ctx.project_id, info.table, uid, column, current[uid])
+    claimed = str(theirs.fields[column])
+    claims[theirs.entity_uid] = (claimed, (theirs.hlc, theirs.entity_uid))
+    target = assign_labels(claims)
+
+    moved = [
+        row
+        for row in rows
+        if target[str(getattr(row, info.attr(_UID)))] != current[str(getattr(row, info.attr(_UID)))]
+    ]
+    for i, row in enumerate(moved):
+        setattr(row, info.attr(column), f"~{i}")
+    session.flush()
+    events: list[tuple[str, str, str]] = []
+    for row in moved:
+        uid = str(getattr(row, info.attr(_UID)))
+        old, new = current[uid], target[uid]
+        setattr(row, info.attr(column), new)
+        if _SLUG in info.shipped:
+            setattr(row, info.attr(_SLUG), _with_label(getattr(row, info.attr(_SLUG)), old, new))
+        events.append((old, new, uid))
+    session.flush()
+    new = target[theirs.entity_uid]
+    fields: dict[str, object] = {**theirs.fields, column: new}
+    if _SLUG in fields:
+        fields[_SLUG] = _with_label(fields[_SLUG], claimed, new)
+    apply.create_row(session, project, info.table, theirs.entity_uid, fields)
+    if new != claimed:
+        events.append((claimed, new, theirs.entity_uid))
+    parent_uid = _parent_uid(session, info, obj, parents)
+    for old, new_label, uid in events:
+        activity_service.emit_for_write(
+            session,
+            ctx.project_id,
+            f"{info.table}.relettered",
+            ctx.author,
+            scope_kind="plan",
+            scope_id=parent_uid,
+            payload={"from": old, "to": new_label, "section_uid": uid},
+            summary=f"{info.table} {uid}: {old} → {new_label}",
+        )
+    return False
 
 
 def _parent_uid(session: Session, info: cap.TableInfo, obj: object, parents: list[str]) -> str:
