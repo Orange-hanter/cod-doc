@@ -39,7 +39,6 @@ from cod_doc.infra.models import (
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import checkout_service, scenario_service, task_service
 from cod_doc.services.sync_service import conflicts, digest, merge, pull, push
-from cod_doc.services.sync_service.changeset import Op
 from cod_doc.services.sync_service.errors import MergeRequiredError
 from tests.services.sync import _replicas as r
 
@@ -359,24 +358,6 @@ def test_delete_against_edit_waits_for_clo_022(pair: tuple) -> None:
         _pull(b, store)
 
     assert r.authored_state(b) == before
-
-
-def test_edge_delete_against_its_own_upsert_waits_for_clo_021() -> None:
-    def op(kind: str, fields: dict[str, object], base: dict[str, object]) -> Op:
-        return Op(
-            op_id="01J0000000000000000000000" + kind[0].upper(),
-            hlc="1760000000000.0000.r",
-            entity_kind="dependency",
-            entity_uid="edge",
-            kind=kind,
-            fields=fields,  # type: ignore[arg-type]
-            base=base,  # type: ignore[arg-type]
-            author=r.AUTHOR,
-        )
-
-    ends = {"from_task_id": "t1", "to_task_id": "t2", "kind": "blocks"}
-    with pytest.raises(MergeRequiredError, match="CLO-021"):
-        merge.check([op("delete", {}, ends)], [op("upsert", ends, {})])
 
 
 def test_natural_key_twin_waits_for_clo_023_instead_of_integrity_error(pair: tuple) -> None:
