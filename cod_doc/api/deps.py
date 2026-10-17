@@ -30,7 +30,7 @@ from cod_doc.infra.db import (
     make_session_factory,
     sqlite_file_path,
 )
-from cod_doc.infra.repositories import ProjectRepository
+from cod_doc.services.project_lookup import find_project_id
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -364,12 +364,12 @@ def get_project_db(slug: str) -> Iterator[tuple[Session, int]]:
     session = factory()
     try:
         try:
-            proj = ProjectRepository(session).get_by_slug(slug)
+            project_id = find_project_id(session, slug)
         except OperationalError as exc:
             raise HTTPException(404, f"Схема БД не накатана: {slug}") from exc
-        if proj is None or proj.row_id is None:
+        if project_id is None:
             raise HTTPException(404, f"Проект не найден в БД: {slug}")
-        yield (session, proj.row_id)
+        yield (session, project_id)
     finally:
         session.close()
 
@@ -388,13 +388,13 @@ def try_open_project_db(slug: str) -> Iterator[tuple[Session | None, int | None]
     session = factory()
     try:
         try:
-            proj = ProjectRepository(session).get_by_slug(slug)
+            project_id = find_project_id(session, slug)
         except OperationalError:
             yield (None, None)
             return
-        if proj is None or proj.row_id is None:
+        if project_id is None:
             yield (None, None)
         else:
-            yield (session, proj.row_id)
+            yield (session, project_id)
     finally:
         session.close()

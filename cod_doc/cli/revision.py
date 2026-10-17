@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from cod_doc.cli._common import require_project_id as _require_project_id
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -33,16 +34,6 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 def _resolve_entity_id(session: Session, kind: str, ref: str, project_id: int) -> int:
@@ -473,7 +464,7 @@ def revision_show(ctx: click.Context, revision_id: str, project: str, as_json: b
 def revision_revert(ctx: click.Context, revision_id: str, project: str, author: str) -> None:
     """Revert a revision (creates an inverse revision; history is append-only)."""
     from cod_doc.infra.db import transactional
-    from cod_doc.services import revision_service
+    from cod_doc.services import revert_service
     from cod_doc.services.revision_service import RevertNotSupportedError, RevisionNotFoundError
 
     cfg: Config = ctx.obj["config"]
@@ -482,7 +473,7 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
     try:
         with transactional(sf) as session:
             pid = _require_project_id(session, project)
-            new_rev = revision_service.revert(session, revision_id, author=author, project_id=pid)
+            new_rev = revert_service.revert(session, revision_id, author=author, project_id=pid)
     except RevisionNotFoundError:
         console.print(f"[red]Revision '{revision_id}' not found.[/red]")
         sys.exit(1)

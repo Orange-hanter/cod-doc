@@ -9,6 +9,7 @@ import pytest
 from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
+from cod_doc.services import revert_service
 from cod_doc.services import revision_service as rev
 
 
@@ -258,7 +259,7 @@ def test_revert_of_another_projects_revision_is_not_found(engine_with_schema) ->
             reason="initial",
         )
         with pytest.raises(LookupError, match="revision not found"):
-            rev.revert(session, r.revision_id, author="human:test", project_id=b)
+            revert_service.revert(session, r.revision_id, author="human:test", project_id=b)
         assert rev.get(session, r.revision_id, project_id=b) is None
         assert rev.get(session, r.revision_id, project_id=a) is not None
 
@@ -269,7 +270,9 @@ def test_revert_raises_lookup_for_unknown_revision_id(engine_with_schema) -> Non
     with transactional(factory) as session:
         pid = _add_project(session)
         with pytest.raises(LookupError, match="revision not found"):
-            rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test", project_id=pid)
+            revert_service.revert(
+                session, "01HQX5Z9F0K8R0000000000000", author="human:test", project_id=pid
+            )
 
 
 def test_reads_by_entity_are_scoped_by_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

@@ -25,9 +25,22 @@ class ProjectNotFoundError(LookupError, ValueError):
     """
 
 
-def require_project_id(session: Session, slug: str) -> int:
-    """``row_id`` проекта по слагу; нет в БД — ``ProjectNotFoundError`` с подсказкой."""
+def find_project_id(session: Session, slug: str) -> int | None:
+    """``row_id`` проекта по слагу или ``None``, если его нет в БД.
+
+    Единственное место, где поверхности читают проект по слагу (SVC-008): CLI,
+    web и MCP различаются только тем, во что превращают отсутствие — exit 1,
+    HTTP 404 или страница «не инициализирован».
+    """
     proj = ProjectRepository(session).get_by_slug(slug)
     if proj is None or proj.row_id is None:
-        raise ProjectNotFoundError(f"Project '{slug}' not in DB — run 'cod-doc project add' first.")
+        return None
     return proj.row_id
+
+
+def require_project_id(session: Session, slug: str) -> int:
+    """``row_id`` проекта по слагу; нет в БД — ``ProjectNotFoundError`` с подсказкой."""
+    project_id = find_project_id(session, slug)
+    if project_id is None:
+        raise ProjectNotFoundError(f"Project '{slug}' not in DB — run 'cod-doc project add' first.")
+    return project_id

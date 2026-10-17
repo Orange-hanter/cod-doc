@@ -20,6 +20,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.cli._common import require_project_id_click as _require_project_id
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -47,17 +48,6 @@ def _project_session(cfg: Config, project: str) -> tuple[sessionmaker[Session], 
     factory, engine = db_for_entry(entry)
     root = Path(entry.path).expanduser().resolve()
     return factory, engine, root
-
-
-def _require_project_id(session: Session, project: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project)
-    if proj is None or proj.row_id is None:
-        raise click.ClickException(
-            f"Проект '{project}' не зарегистрирован в БД. Сначала: cod-doc project add"
-        )
-    return proj.row_id
 
 
 def _resolve_extra_projects(

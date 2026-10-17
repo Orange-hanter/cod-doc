@@ -83,19 +83,16 @@ def hash_update(master_path: str, project: str | None, author: str, dry_run: boo
             "[yellow]Файл вне зарегистрированных проектов — событие в журнал не записано.[/yellow]"
         )
     else:
+        from cod_doc.cli._common import require_project_id
         from cod_doc.infra.db import db_for_entry, transactional
-        from cod_doc.infra.repositories import ProjectRepository
         from cod_doc.services import hash_service
 
         factory, engine = db_for_entry(entry)
         try:
             with transactional(factory) as session:
-                row = ProjectRepository(session).get_by_slug(entry.name)
-                if row is None or row.row_id is None:
-                    console.print(f"[red]Проект '{entry.name}' не заведён в БД.[/red]")
-                    sys.exit(1)
+                project_id = require_project_id(session, entry.name)
                 n, warns = hash_service.update_master_hashes(
-                    session, row.row_id, path, author=author, root_path=entry.root
+                    session, project_id, path, author=author, root_path=entry.root
                 )
         finally:
             engine.dispose()
@@ -118,18 +115,15 @@ def _print_stale(path: Path, entry: ProjectEntry | None) -> None:
         text = path.read_text(encoding="utf-8") if path.exists() else ""
         findings = stale_refs_in(text, path.parent)
     else:
+        from cod_doc.cli._common import require_project_id
         from cod_doc.infra.db import db_for_entry, transactional
-        from cod_doc.infra.repositories import ProjectRepository
         from cod_doc.services import hash_service
 
         factory, engine = db_for_entry(entry)
         try:
             with transactional(factory, commit=False) as session:
-                row = ProjectRepository(session).get_by_slug(entry.name)
-                if row is None or row.row_id is None:
-                    console.print(f"[red]Проект '{entry.name}' не заведён в БД.[/red]")
-                    sys.exit(1)
-                findings = hash_service.stale_refs(session, row.row_id, path, entry.root)
+                project_id = require_project_id(session, entry.name)
+                findings = hash_service.stale_refs(session, project_id, path, entry.root)
         finally:
             engine.dispose()
     for f in findings:

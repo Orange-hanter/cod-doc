@@ -11,7 +11,7 @@ Public API:
   (`task_update`).
 - `update_affects_files` — replace/add/remove набора ``affects_files``
   (AFT-021); TASK revision (op=affects_files, старый и новый набор,
-  откатывается `revision_service.revert`) + activity event; та же пара
+  откатывается `revert_service.revert`) + activity event; та же пара
   поверхностей.
 - `move_to_section` — переложить задачу в другую секцию того же плана
   (группировка бэклога); пишет TASK revision (op=section) + activity event,
@@ -73,16 +73,16 @@ from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
+from cod_doc.services.task_errors import CheckoutConflictError
+
+# SVC-004: класс живёт в листовом `task_errors`; здесь реэкспорт под прежним именем.
+from cod_doc.services.task_errors import TaskNotFoundError as TaskNotFoundError
 from cod_doc.services.task_locality import foreign_paths_warning
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sqlalchemy.orm import Session
-
-
-class TaskNotFoundError(LookupError):
-    pass
 
 
 class DependencyNotFoundError(LookupError):
@@ -995,7 +995,7 @@ def update_affects_files(
 
     Совпадение итогового набора с текущим (порядок не важен) — no-op без
     ревизии и события. Иначе — TASK-ревизия ``op=affects_files`` со старым и
-    новым набором (её откатывает `revision_service.revert`) и activity event
+    новым набором (её откатывает `revert_service.revert`) и activity event
     ``task.affects_files_updated`` одним вызовом
     ``activity_service.write_revision_and_emit_event`` (ADO-040).
 
@@ -1213,8 +1213,6 @@ def _move_one_to_plan(
     (ADO-040). У обоих планов поднимается `last_updated` (COD-022).
     Автоматического revert для `op="plan"` нет — откат это обратный перенос.
     """
-    from cod_doc.services.checkout_service import CheckoutConflictError
-
     model = _require_task(session, task_id, project_id=project_id)
     old_section_id = model.section_id
     old_plan_id = model.plan_id
@@ -1409,8 +1407,6 @@ def move_tasks_to_plan(
     `errors`, остальные переносятся. После переносов — предупреждения о
     рёбрах между планами (`cross_plan_dependency_warnings`).
     """
-    from cod_doc.services.checkout_service import CheckoutConflictError
-
     if (task_ids is None) == (from_section is None):
         raise ValueError("pass exactly one of task_ids / from_section")
     target = _section_in_plan(

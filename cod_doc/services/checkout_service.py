@@ -25,34 +25,17 @@ from sqlalchemy import select
 from cod_doc.infra.models import TaskModel
 from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services import activity_service
-from cod_doc.services.task_service import TaskNotFoundError
+
+# SVC-004: классы живут в листовом `task_errors`; здесь реэкспорт под прежними именами.
+from cod_doc.services.task_errors import CheckoutConflictError as CheckoutConflictError
+from cod_doc.services.task_errors import CheckoutStatusError as CheckoutStatusError
+from cod_doc.services.task_errors import TaskNotFoundError
 from cod_doc.services.task_status_machine import normalise
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from cod_doc.domain.entities import TaskStatus
-
-
-class CheckoutConflictError(RuntimeError):
-    """Raised when the task is already locked by a different actor."""
-
-    def __init__(self, *, task_id: str, locked_by: str) -> None:
-        super().__init__(
-            f"Task {task_id!r} is checked out by {locked_by!r}; never retry on conflict"
-        )
-        self.task_id = task_id
-        self.locked_by = locked_by
-
-
-class CheckoutStatusError(RuntimeError):
-    """Raised when the current task status is not in ``expected_statuses``."""
-
-    def __init__(self, *, task_id: str, current: str, expected: list[str]) -> None:
-        super().__init__(f"Task {task_id!r} is in {current!r}, not in expected {expected!r}")
-        self.task_id = task_id
-        self.current = current
-        self.expected = expected
 
 
 @dataclass

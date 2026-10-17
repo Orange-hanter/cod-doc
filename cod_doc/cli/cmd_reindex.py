@@ -29,8 +29,8 @@ def reindex() -> None:
 @click.pass_context
 def reindex_files(ctx: click.Context, project: str, max_files: int) -> None:
     """Scan the project root + populate ``repo_file`` / ``_symbol`` / ``_import``."""
+    from cod_doc.cli._common import require_project_id
     from cod_doc.infra.db import db_for_entry, transactional
-    from cod_doc.infra.repositories import ProjectRepository
     from cod_doc.services import repo_index_service
 
     cfg: Config = ctx.obj["config"]
@@ -42,13 +42,10 @@ def reindex_files(ctx: click.Context, project: str, max_files: int) -> None:
     factory, _engine = db_for_entry(entry)
 
     with transactional(factory) as session:
-        proj = ProjectRepository(session).get_by_slug(project)
-        if proj is None or proj.row_id is None:
-            console.print(f"[red]Project '{project}' not in DB.[/red]")
-            sys.exit(1)
+        project_id = require_project_id(session, project)
         result = repo_index_service.scan_project(
             session,
-            project_id=proj.row_id,
+            project_id=project_id,
             repo_path=Path(entry.path),
             max_files=max_files,
         )

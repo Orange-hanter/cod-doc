@@ -30,6 +30,7 @@ from cod_doc.infra.models import (
     RevisionModel,
 )
 from cod_doc.services import doc_service as docs
+from cod_doc.services import revert_service
 from cod_doc.services import revision_service as rev
 from tests._scope import doc_project_id, only_project_id
 
@@ -233,7 +234,7 @@ def test_reverting_a_section_delete_is_refused_explicitly(engine_with_schema) ->
         assert revision_id is not None
 
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session,
                 revision_id,
                 author="human:dakh",
@@ -289,7 +290,7 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
         assert delta.row_id == gamma.row_id
 
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session,
                 gamma_patch,
                 author="human:dakh",
@@ -414,7 +415,7 @@ def test_unlabelled_section_revision_is_not_reverted_blindly(engine_with_schema)
         )
 
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session,
                 unlabelled.revision_id,
                 author="human:dakh",
@@ -473,7 +474,7 @@ def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_sche
         assert delta.row_id == gamma.row_id
 
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(
+            revert_service.revert(
                 session,
                 gamma_patch,
                 author="human:dakh",

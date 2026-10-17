@@ -19,6 +19,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.cli._common import require_project_id_click as _project_id
+
 if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.orm import Session, sessionmaker
@@ -38,15 +40,6 @@ def _open(cfg: Config, project: str) -> tuple[sessionmaker[Session], Engine]:
     if entry is None:
         raise click.ClickException(f"Проект не найден: {project}")
     return db_for_entry(entry)
-
-
-def _project_id(session: Session, project: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    row = ProjectRepository(session).get_by_slug(project)
-    if row is None or row.row_id is None:
-        raise click.ClickException(f"Проект '{project}' не заведён в БД")
-    return row.row_id
 
 
 def _emit(payload: dict[str, Any]) -> None:

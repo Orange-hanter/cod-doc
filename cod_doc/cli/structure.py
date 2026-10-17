@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 import click
 from rich.console import Console
 
+from cod_doc.cli._common import require_project_id as _project_id
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -35,16 +37,6 @@ def _session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     url = resolve_db_url(Path(entry.path))
     return make_session_factory(make_engine(url))
-
-
-def _project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        _console().print(f"[red]Project '{project_name}' not in DB.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 def _pinned(

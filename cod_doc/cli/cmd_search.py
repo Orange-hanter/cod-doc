@@ -54,8 +54,8 @@ def search(
     index means one bm25 scale, so ``--limit`` per kind applies to the merged
     result and every hit reports its owning project.
     """
+    from cod_doc.cli._common import require_project_id
     from cod_doc.infra.db import db_for_entry, transactional
-    from cod_doc.infra.repositories import ProjectRepository
     from cod_doc.services import search_service
 
     cfg: Config = ctx.obj["config"]
@@ -67,10 +67,7 @@ def search(
     slugs = search_service.split_project_slugs(projects)
 
     with transactional(factory) as session:
-        proj = ProjectRepository(session).get_by_slug(project)
-        if proj is None or proj.row_id is None:
-            console.print(f"[red]Project '{project}' not in DB.[/red]")
-            sys.exit(1)
+        project_id = require_project_id(session, project)
         # Резолв кросс-проектных слагов — тем же сервисом, что и у MCP
         # ctx_search: единая проверка «все проекты в одной БД» (hub-режим).
         try:
@@ -85,12 +82,12 @@ def search(
             raise click.ClickException(str(exc)) from exc
         try:
             if reindex:
-                for pid in (proj.row_id, *extra.values()):
+                for pid in (project_id, *extra.values()):
                     counts = search_service.reindex_all(session, pid)
                     console.print(f"📚 reindexed: {counts}")
             result = search_service.search(
                 session,
-                project_id=proj.row_id,
+                project_id=project_id,
                 query=query,
                 scope=scope,
                 limit=limit,

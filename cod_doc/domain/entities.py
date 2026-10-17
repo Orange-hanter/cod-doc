@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from datetime import date, datetime
+    from datetime import datetime
 
 
 class DocumentType(StrEnum):
@@ -194,12 +194,6 @@ class Priority(StrEnum):
     LOW = "low"
 
 
-class DependencyKind(StrEnum):
-    BLOCKS = "blocks"
-    RELATES = "relates"
-    DUPLICATES = "duplicates"
-
-
 class AffectedFileKind(StrEnum):
     SOURCE = "source"
     TEST = "test"
@@ -254,15 +248,6 @@ class ADRStatus(StrEnum):
     SUPERSEDED = "superseded"
     DEPRECATED = "deprecated"
     REJECTED = "rejected"
-
-
-class ADRTaskRelation(StrEnum):
-    """How a task relates to an ADR (ADR-001 / cycle-5)."""
-
-    IMPLEMENTS = "implements"
-    INVALIDATES = "invalidates"
-    DISCOVERS = "discovers"
-    RELATES = "relates"
 
 
 class ScenarioKind(StrEnum):
@@ -385,14 +370,6 @@ class ModuleStatus(StrEnum):
     PROPOSED = "proposed"
     ACTIVE = "active"
     DEPRECATED = "deprecated"
-
-
-class ModuleCodeKind(StrEnum):
-    BACKEND = "backend"
-    FRONTEND = "frontend"
-    TESTS = "tests"
-    MIGRATIONS = "migrations"
-    ADMIN_PANEL = "admin_panel"
 
 
 class EntityKind(StrEnum):
@@ -632,23 +609,6 @@ class Task:
 
 
 @dataclass(slots=True)
-class Dependency:
-    from_task_id: int
-    to_task_id: int
-    kind: DependencyKind = DependencyKind.BLOCKS
-    note: str | None = None
-    row_id: int | None = None
-
-
-@dataclass(slots=True)
-class AffectedFile:
-    task_id: int
-    path: str
-    kind: AffectedFileKind = AffectedFileKind.SOURCE
-    row_id: int | None = None
-
-
-@dataclass(slots=True)
 class StorySection:
     """Именованная группа историй проекта — продуктовый модуль.
 
@@ -821,22 +781,6 @@ class Module:
 
 
 @dataclass(slots=True)
-class ModuleDependency:
-    from_module: int
-    to_module: int
-    reason: str | None = None
-    row_id: int | None = None
-
-
-@dataclass(slots=True)
-class ModuleCode:
-    module_id: int
-    kind: ModuleCodeKind
-    path: str
-    row_id: int | None = None
-
-
-@dataclass(slots=True)
 class Revision:
     revision_id: str
     project_id: int
@@ -850,41 +794,6 @@ class Revision:
     reason: str | None = None
     commit_sha: str | None = None
     run_id: str | None = None
-
-
-class AgentRunStatus(StrEnum):
-    """PCA-030: lifecycle of a single Orchestrator.run_task invocation."""
-
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-@dataclass(slots=True)
-class AgentRun:
-    """PCA-030: per-orchestrator-heartbeat run record (proposal 04)."""
-
-    run_id: str
-    project_id: int
-    row_id: int | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    wake_reason: str | None = None
-    triggering_task_id: str | None = None
-    triggering_doc_ref: str | None = None
-    llm_calls: int = 0
-    llm_tokens_in: int = 0
-    llm_tokens_out: int = 0
-    status: AgentRunStatus = AgentRunStatus.RUNNING
-    summary: str | None = None
-
-
-@dataclass(slots=True)
-class Tag:
-    project_id: int
-    name: str
-    row_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -905,56 +814,3 @@ class TraceCall:
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
-
-
-@dataclass(slots=True)
-class Adr:
-    """Architecture Decision Record (ADR-001)."""
-
-    project_id: int
-    adr_id: str  # 'ADR-NNN'
-    title: str
-    status: ADRStatus = ADRStatus.PROPOSED
-    decided_at: date | None = None
-    context: str | None = None
-    decision: str | None = None
-    alternatives: str | None = None
-    consequences: str | None = None
-    author: str = "human"
-    created: datetime | None = None
-    last_updated: datetime | None = None
-    row_id: int | None = None
-
-
-@dataclass(slots=True)
-class AdrDiagram:
-    """Mermaid diagram attached to an ADR."""
-
-    adr_id: int  # row_id of parent ADR
-    position: int = 0
-    title: str | None = None
-    mermaid: str = ""
-    row_id: int | None = None
-    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
-    rank: str | None = None
-
-
-@dataclass(slots=True)
-class AdrSupersede:
-    """Edge in the ADR supersede DAG: ``superseding`` replaces ``superseded``."""
-
-    superseding_id: int  # row_id
-    superseded_id: int  # row_id
-    reason: str | None = None
-    at: datetime | None = None
-    row_id: int | None = None
-
-
-@dataclass(slots=True)
-class AdrTaskLink:
-    """Link between an ADR and a task — by task_id string (not row_id)."""
-
-    adr_row_id: int
-    task_id: str
-    relation: ADRTaskRelation = ADRTaskRelation.IMPLEMENTS
-    row_id: int | None = None

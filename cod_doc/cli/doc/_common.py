@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 
+from cod_doc.cli._common import require_project_id
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -17,6 +18,10 @@ if TYPE_CHECKING:
 
 console = Console()
 log = get_logger("cli.doc")
+
+#: SVC-008: команды группы берут резолвер проекта отсюда под прежним именем;
+#: сам он один на весь CLI — ``cod_doc.cli._common.require_project_id``.
+_require_project_id = require_project_id
 
 _STATUS_ICON = {
     "draft": "✏️",
@@ -43,16 +48,6 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 def _read_body(body_file: str | None, *, body: str | None = None) -> str:

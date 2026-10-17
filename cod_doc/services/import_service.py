@@ -31,7 +31,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-import yaml
 from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
@@ -39,6 +38,11 @@ from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel
 from cod_doc.services import activity_service, search_service
 from cod_doc.services import doc_service as docs
+
+# SVC-005: чистый разбор markdown живёт в листовом `markdown_parse`; здесь реэкспорт.
+from cod_doc.services.markdown_parse import ParsedMarkdown as ParsedMarkdown
+from cod_doc.services.markdown_parse import ParsedSection as ParsedSection
+from cod_doc.services.markdown_parse import parse_markdown as parse_markdown
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -63,106 +67,6 @@ class ReplaceWouldEmptyError(RuntimeError):
     damaged one, so the call is refused and the decision handed back to the
     caller: `force=True` (`doc import --force`) goes through.
     """
-
-
-_FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
-_H1_LINE = re.compile(r"^#\s+(.+?)\s*#*\s*$")
-_H2_LINE = re.compile(r"^##\s+(.+?)\s*#*\s*$")
-_SLUG_BAD = re.compile(r"[^\w\-]+", re.UNICODE)
-
-
-@dataclass(slots=True)
-class ParsedSection:
-    anchor: str
-    heading: str
-    level: int
-    body: str
-
-
-@dataclass(slots=True)
-class ParsedMarkdown:
-    frontmatter: dict[str, Any] = field(default_factory=dict)
-    # ADO-010: the YAML block exactly as written, without the `---` fences and
-    # without a trailing newline. `frontmatter` is the parsed form; this is what
-    # export re-emits so key order / flow style / unquoted dates survive.
-    frontmatter_raw: str | None = None
-    title_h1: str | None = None
-    preamble: str = ""
-    sections: list[ParsedSection] = field(default_factory=list)
-
-
-def _slugify(text: str) -> str:
-    s = text.strip().lower().replace(" ", "-")
-    s = _SLUG_BAD.sub("", s)
-    return s or "section"
-
-
-def parse_markdown(raw: str) -> ParsedMarkdown:
-    """Parse a markdown source into frontmatter + preamble + sections."""
-    body = raw
-    out = ParsedMarkdown()
-
-    # 1. Frontmatter (optional)
-    fm_match = _FRONTMATTER.match(raw)
-    if fm_match:
-        try:
-            out.frontmatter = yaml.safe_load(fm_match.group(1)) or {}
-            if not isinstance(out.frontmatter, dict):
-                out.frontmatter = {}
-        except yaml.YAMLError:
-            out.frontmatter = {}
-        out.frontmatter_raw = fm_match.group(1)
-        body = raw[fm_match.end() :]
-
-    # 2. Optional leading H1 — strip and remember
-    lines = body.split("\n")
-    if lines and (m := _H1_LINE.match(lines[0])):
-        out.title_h1 = m.group(1).strip()
-        lines = lines[1:]
-        # Drop one blank separator line if any, for clean preamble.
-        if lines and not lines[0].strip():
-            lines = lines[1:]
-
-    # 3. Walk lines: collect preamble until first H2, then split by H2.
-    preamble_lines: list[str] = []
-    in_fence = False
-    used_anchors: set[str] = set()
-    current: ParsedSection | None = None
-    current_body: list[str] = []
-
-    def _flush_current() -> None:
-        if current is not None:
-            current.body = "\n".join(current_body).strip("\n")
-            out.sections.append(current)
-
-    for line in lines:
-        if line.startswith("```"):
-            in_fence = not in_fence
-            if current is None:
-                preamble_lines.append(line)
-            else:
-                current_body.append(line)
-            continue
-        if not in_fence and (m := _H2_LINE.match(line)):
-            heading = m.group(1).strip()
-            anchor_base = _slugify(heading)
-            anchor = anchor_base
-            i = 1
-            while anchor in used_anchors:
-                i += 1
-                anchor = f"{anchor_base}-{i}"
-            used_anchors.add(anchor)
-            _flush_current()
-            current = ParsedSection(anchor=anchor, heading=heading, level=2, body="")
-            current_body = []
-            continue
-        if current is None:
-            preamble_lines.append(line)
-        else:
-            current_body.append(line)
-    _flush_current()
-    out.preamble = "\n".join(preamble_lines).strip("\n").strip()
-    return out
 
 
 # ── ADO-015: coercion that reports itself ────────────────────────────────────

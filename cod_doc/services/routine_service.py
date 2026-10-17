@@ -49,7 +49,7 @@ from cod_doc.infra.models import (
     RoutineRunModel,
 )
 from cod_doc.services import activity_service
-from cod_doc.services.run_context import get_current_run_id
+from cod_doc.services.run_id import get_current_run_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

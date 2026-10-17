@@ -204,6 +204,15 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `services/serializers.py`, `mcp/tools/_db.py` их только ре-экспортирует).
   Стережёт AST-гейт `tests/services/test_services_layering.py` (аналог
   `tests/api/test_web_layer_imports.py`).
+- **Импорт в теле функции цикл не разрывает** (SVC-006). Он снимает ошибку
+  загрузки, но не зависимость: так ядро services срослось в кольцо из 16
+  модулей. `tests/services/test_services_import_cycles.py` считает и такие
+  импорты (кроме `TYPE_CHECKING`) и держит потолок самой большой компоненты
+  (`MAX_SCC_SIZE`, только вниз). Нужен общий код двум сторонам — вынеси его в
+  лист: исключения — `doc_errors`/`task_errors`, разбор markdown —
+  `markdown_parse`, `run_id` — свой модуль, откат ревизий — `revert_service`
+  над сервисами-владельцами. Остаток потолка — каскад якорей
+  `doc_service ↔ link_service` (SVC-007).
 - **Атомарный checkout — протокольное правило (ADO-039).** Переход
   `todo→in_progress` разрешён только через `task_checkout`: прямой
   `update_status` падает, если не передан `via_checkout=True`. `complete()`
@@ -330,6 +339,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `infra/test_task_status_canonicalisation_migration.py` | бэкфилл 0037 сводит легаси-написания в канон, ready-множество при этом не гаснет |
 | `services/test_task_status_write_canonicalisation.py` | ни один write-путь не пишет легаси-написание статуса в `task.status` |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
+| `services/test_services_import_cycles.py` | самая большая компонента циклов импортов в `services` (с импортами в телах функций) не больше `MAX_SCC_SIZE`, и потолок плотный (SVC-006) |
+| `services/test_project_lookup_single_source.py` | `cod_doc/{cli,api,mcp}` не ищут проект по слагу сами: только `services.project_lookup` (в CLI — `cli/_common.require_project_id[_click]`) (SVC-008) |
 | `services/test_presentation_no_orm_writes.py` | `cod_doc/{mcp,cli,api}` не пишут в ORM мимо сервисов: ни `session.add/delete/merge`, ни `*Repository(...).add/update/delete` (включая форму через локальную переменную); allowlist пуст (ADO-208, RFC 26 §5.1) |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |

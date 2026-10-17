@@ -42,28 +42,18 @@ from typing import TYPE_CHECKING, Any
 from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.infra.models import AgentRunModel
 
+# SVC-003: contextvar живёт в листовом `run_id`, чтобы write-сервисы читали его,
+# не завися от `run_context` (а он — от `activity_service`). Здесь реэкспорт.
+from cod_doc.services.run_id import CURRENT_RUN_ID as _current_run_id
+from cod_doc.services.run_id import get_current_run_id as get_current_run_id
+from cod_doc.services.run_id import set_current_run_id as set_current_run_id
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from sqlalchemy.orm import Session, sessionmaker
 
 _log = logging.getLogger(__name__)
-
-
-_current_run_id: ContextVar[str | None] = ContextVar("cod_doc_run_id", default=None)
-
-
-def get_current_run_id() -> str | None:
-    """Return the run_id active in the current async/thread context, or None."""
-    return _current_run_id.get()
-
-
-def set_current_run_id(run_id: str | None) -> None:
-    """Override the active run_id; intended for tests / non-orchestrator contexts.
-
-    Production code should use :func:`run_scope` so the value is reset on exit.
-    """
-    _current_run_id.set(run_id)
 
 
 @contextmanager
