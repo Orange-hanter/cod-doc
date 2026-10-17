@@ -251,13 +251,10 @@ def test_conflict_of_another_project_is_sync_302(rep: r.Replica) -> None:
         assert conflicts.list_conflicts(s, rep.project_id + 1) == []
 
 
-@pytest.mark.parametrize(
-    ("kind", "task"), [("key_merge", "CLO-023"), ("double_checkout", "CLO-031")]
-)
-def test_kinds_without_mechanics_wait_for_their_tasks(rep: r.Replica, kind: str, task: str) -> None:
-    """Склейка и двойной checkout — механика CLO-023/031; до них — граница до записи."""
-    uid = _open(rep, kind=kind, field=None, ours=None, theirs=None)
-    with pytest.raises(MergeRequiredError, match=task):
+def test_double_checkout_waits_for_clo_031(rep: r.Replica) -> None:
+    """Двойной офлайн-checkout — механика CLO-031; до неё — граница до записи."""
+    uid = _open(rep, kind="double_checkout", field=None, ours=None, theirs=None)
+    with pytest.raises(MergeRequiredError, match="CLO-031"):
         _resolve(rep, uid, "theirs")
     with transactional(rep.sf) as s:
         assert s.get_one(SyncConflictModel, uid).status == "open"

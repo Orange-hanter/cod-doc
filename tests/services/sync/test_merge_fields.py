@@ -410,15 +410,19 @@ def test_edge_delete_against_its_own_upsert_waits_for_clo_021() -> None:
         merge.check([op("delete", {}, ends)], [op("upsert", ends, {})])
 
 
-def test_natural_key_twin_waits_for_clo_023_instead_of_integrity_error(pair: tuple) -> None:
-    """Один doc_key, созданный на обеих репликах, — склейка (F2 секции B), а не IntegrityError."""
+def test_natural_key_twin_is_glued_instead_of_integrity_error(pair: tuple) -> None:
+    """Один doc_key, созданный на обеих репликах, — склейка CLO-023 (F2 секции B)."""
     a, b, store = pair
     r.make_doc(a, "guide/same", {"intro": "A"})
     _push(a, store)
     r.make_doc(b, "guide/same", {"intro": "B"})
 
-    with pytest.raises(MergeRequiredError, match="CLO-023"):
-        _pull(b, store)
+    pulled = _pull(b, store)
+
+    assert len(pulled.conflicts) == 1  # тела секции intro разошлись
+    _push(b, store)
+    _pull(a, store)
+    _assert_converged(a, b, store)
 
 
 # --- точки расширения ---------------------------------------------------------------

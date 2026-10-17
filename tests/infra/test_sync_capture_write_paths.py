@@ -1575,6 +1575,40 @@ def _(w: World) -> Expect:
     return [("task", w.now(TaskModel, task_id="PLN-001"))]
 
 
+@case("sync_service.resolve_key")
+def _(w: World) -> Expect:
+    from cod_doc.infra.hlc import self_replica
+    from cod_doc.services.sync_service import keys, merge
+    from cod_doc.services.sync_service.changeset import Op
+
+    with cap.suspended(w.session):  # своя строка до журнала: операции создания нет
+        w.session.add(TagModel(project_id=w.pid, name="dup"))
+    w.commit()
+    ours = w.uid(TagModel, name="dup")
+    theirs = Op(
+        op_id="01JTHEIRSOP0000000000000000",
+        hlc="0000000000001.0000.0192-foreign",
+        entity_kind="tag",
+        entity_uid="0192-foreign-tag",
+        kind="upsert",
+        fields={"project_id": w.uid(ProjectModel, row_id=w.pid), "name": "dup"},
+        base={},
+        author=AUTHOR,
+    )
+    ctx = merge.Context(project_id=w.pid, replica_uid=self_replica(w.session, w.pid), author=AUTHOR)
+    clash = merge.KeyClash("tag", ("project_id", "name"), theirs, ours)
+    with cap.suspended(w.session):
+        assert keys.resolve_key(w.session, ctx, clash) is False
+    assert w.uid(TagModel, name="dup") == "0192-foreign-tag"  # чужая вставка раньше
+    return []
+
+
+NO_OPS["sync_service.resolve_key"] = (
+    cap.CAPTURED_TABLES,
+    "склейка идёт внутри pull под suspended: своя строка принимает чужой uid без эха",
+)
+
+
 @case("project_service.init_project")
 def _(w: World) -> Expect:
     from cod_doc.config import ProjectEntry

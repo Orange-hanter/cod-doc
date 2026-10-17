@@ -89,7 +89,7 @@ _CUSTOM: Final = "custom"
 #: Виды, у которых разрешение — запись одного поля сущности.
 FIELD_KINDS: Final = frozenset({"field", "text", "status"})
 #: Виды со своей механикой разрешения → задача, которая её строит.
-DEFERRED_KINDS: Final = {"key_merge": "CLO-023", "double_checkout": "CLO-031"}
+DEFERRED_KINDS: Final = {"double_checkout": "CLO-031"}
 _ENTITY_KINDS: Final = {table: kind for kind, table in reg.ENTITY_KIND_TABLES.items()}
 
 
@@ -101,9 +101,37 @@ def _decode(raw: str | None) -> object:
     return None if raw is None else json.loads(raw)
 
 
+#: Пространство имён uuid5 конфликтов склейки. Константа навсегда: от неё
+#: зависит совпадение uid конфликта на репликах.
+_KEY_MERGE_NS: Final = uuid.UUID("5b0c6f0e-5d8f-5a8e-9a43-1c2f0b7c9d21")
+
+
+def _side_uid(value: FieldValue) -> str | None:
+    uid = value.get("uid") if isinstance(value, dict) else None
+    return uid if isinstance(uid, str) else None
+
+
+def _conflict_uid(spec: ConflictSpec) -> str:
+    """uid конфликта: uuid7, а у склейки ключа — uuid5 от (таблица, выживший, проигравший).
+
+    Склейку одной пары может увидеть каждая реплика (строка уехала под обоими
+    uid): uid конфликта у них совпадает, а повторное открытие на одной реплике
+    не плодит строк.
+    """
+    if spec.kind == "key_merge":
+        sides = {_side_uid(spec.ours), _side_uid(spec.theirs)} - {None, spec.entity_uid}
+        if len(sides) == 1:
+            (loser,) = sides
+            name = f"{spec.entity_kind}\x00{spec.entity_uid}\x00{loser}"
+            return str(uuid.uuid5(_KEY_MERGE_NS, name))
+    return str(uuid.uuid7())
+
+
 def open_conflict(session: Session, project_id: int, spec: ConflictSpec, *, author: str) -> str:
     """Записать открытый конфликт и событие ``sync.conflict_opened``; вернуть uid."""
-    uid = str(uuid.uuid7())
+    uid = _conflict_uid(spec)
+    if session.get(SyncConflictModel, uid) is not None:
+        return uid
     session.add(
         SyncConflictModel(
             uid=uid,
