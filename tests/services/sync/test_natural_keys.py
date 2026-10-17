@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
 from sqlalchemy import func, select, text
+from sqlalchemy.orm import Session
 
 from cod_doc.cli import main
 from cod_doc.config import Config
@@ -39,7 +41,9 @@ from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import (
     ActivityEventModel,
     DocNodeModel,
+    DocumentModel,
     EntityAliasModel,
+    PlanModel,
     PlanSectionModel,
     ProjectModel,
     RoutineModel,
@@ -50,6 +54,7 @@ from cod_doc.services import doc_service, plan_service, project_service, task_se
 from cod_doc.services.sync_service import conflicts, digest, pull, push
 from cod_doc.services.sync_service.errors import ObjectMissingError
 from tests.services.sync import _replicas as r
+from tests.services.sync.test_apply_untrusted import _forge, _refused
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -323,6 +328,81 @@ def test_key_twin_of_a_restricted_row_is_refused(pair: tuple) -> None:
     assert err.value.code == "SYNC-102"
     assert r.authored_state(b) == before
     assert _aliases(b) == []
+
+
+def _plan_only_on_b(b: r.Replica, scope: str) -> None:
+    """План B, заведённый до журнала: его uid никто не знает, чужая вставка выиграет."""
+    with Session(b.engine) as s:
+        now = datetime.now(UTC)
+        plan = PlanModel(project_id=b.project_id, scope=scope, created=now, last_updated=now)
+        plan.uid = "0192-b-plan"
+        s.add(plan)
+        s.commit()
+
+
+def test_key_merge_op_with_a_local_column_is_refused(pair: tuple) -> None:
+    """Чужая вставка-двойник с local-колонкой — SYNC-102 до склейки, ничего не записано."""
+    a, b, store = pair
+    _push(a, store)
+    _pull(b, store)
+    _plan_only_on_b(b, "twin")
+    project_uid = _uid_of(b, ProjectModel, b.project_id)
+    _forge(
+        a,
+        store,
+        [
+            {
+                "entity_kind": "plan",
+                "entity_uid": "0192-forged-plan",
+                "fields": {"project_id": project_uid, "scope": "twin", "row_id": 1},
+            }
+        ],
+    )
+
+    _refused(b, store, "колонка не уезжает")
+    assert _aliases(b) == []
+
+
+def test_key_merge_cannot_point_a_glued_row_at_a_restricted_document(pair: tuple) -> None:
+    """Склейка пишет поля через тот же финальный гейт: ссылка на restricted — SYNC-102."""
+    a, b, store = pair
+    _push(a, store)
+    _pull(b, store)
+    with transactional(b.sf) as s:
+        doc = doc_service.create(
+            s,
+            project_id=b.project_id,
+            doc_key="secret",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="secret",
+            author=r.AUTHOR,
+            path="docs/secret.md",
+            sensitivity=Sensitivity.RESTRICTED,
+            reindex=False,
+        )
+        secret_uid = str(s.get_one(DocumentModel, doc.row_id).uid)
+    _plan_only_on_b(b, "twin")
+    project_uid = _uid_of(b, ProjectModel, b.project_id)
+    _forge(
+        a,
+        store,
+        [
+            {
+                "entity_kind": "plan",
+                "entity_uid": "0192-forged-plan",
+                "fields": {"project_id": project_uid, "scope": "twin", "parent_doc_id": secret_uid},
+            }
+        ],
+    )
+
+    _refused(b, store, "придерживает")
+    assert _aliases(b) == []
+
+
+def _uid_of(rep: r.Replica, model: type, row_id: int) -> str:
+    with transactional(rep.sf, commit=False) as s:
+        return str(s.get_one(model, row_id).uid)
 
 
 # --- SCN-091: метка-порядок --------------------------------------------------------

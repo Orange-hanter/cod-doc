@@ -692,7 +692,7 @@ def _create(
     return obj
 
 
-def _finish(
+def finish_row(
     session: Session,
     project: ProjectRef,
     info: cap.TableInfo,
@@ -722,7 +722,7 @@ def create_row(
     obj = _create(mapper, info, uid, values)
     _fill_local(session, mapper, info, obj)
     session.add(obj)
-    _finish(session, project, info, obj, uid or table, fields)
+    finish_row(session, project, info, obj, uid or table, fields)
     return obj
 
 
@@ -771,7 +771,7 @@ def _apply_op(
         return
     for column, value in values.items():
         setattr(obj, info.attr(column), value)
-    _finish(session, project, info, obj, op.entity_uid, op.fields)
+    finish_row(session, project, info, obj, op.entity_uid, op.fields)
     _note(touched, info.table, obj, deleted=False, base=op.base)
 
 
@@ -803,7 +803,7 @@ def _insert(
         return
     _fill_local(session, mapper, info, obj)
     session.add(obj)
-    _finish(session, project, info, obj, op.entity_uid, op.fields)
+    finish_row(session, project, info, obj, op.entity_uid, op.fields)
     _note(touched, info.table, obj, deleted=False, base=op.base)
 
 

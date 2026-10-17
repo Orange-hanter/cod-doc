@@ -236,7 +236,9 @@ def _glue(
     if winners:
         for column, orm in apply.orm_values(session, project, info, winners, obj).items():
             setattr(obj, info.attr(column), orm)
-    session.flush()
+    # Тот же финальный гейт, что у обычной вставки: проект строки и реестр
+    # (restricted, придержанные колонки) — по итоговой строке и записанным полям.
+    apply.finish_row(session, project, info, obj, survivor, winners)
     if theirs_first:
         _rekey_tail(session, ctx.project_id, table, loser, survivor)
     _alias(session, ctx, table, loser, survivor)
