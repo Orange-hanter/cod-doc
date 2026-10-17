@@ -1030,6 +1030,27 @@ def shipped_fields(
     return _columns_payload(info, wanted - reg.withheld_columns(table, gate), row, lookup)
 
 
+def _shipped_line(
+    lookup: _Lookup, info: TableInfo, row: Mapping[str, object], project_id: int
+) -> tuple[str, str] | None:
+    """``(uid сущности, поля JSON)`` строки проекта; ``None`` — строка не уезжает."""
+    table = info.table
+    if (
+        _PROJECT_ID not in row
+        and table != "project"
+        and lookup.project_id(table, row) != project_id
+    ):
+        return None
+    gate = gating_row(lookup, table, row, project_id)
+    if not _ships(table, gate):
+        return None
+    entity_uid = _entity_uid(info, row, lookup)
+    if entity_uid is None:
+        raise SyncCaptureError(f"{table}.uid: пуст")
+    wanted = info.shipped - reg.withheld_columns(table, gate)
+    return entity_uid, _dumps(_columns_payload(info, wanted, row, lookup))
+
+
 def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str, str]]:
     """Уезжающее состояние проекта: ``(таблица, uid сущности, поля JSON)`` (RFC 29 §3.7).
 
@@ -1037,12 +1058,20 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
     выпускает: поля — ровно как их сериализует хук (``shipped_fields``: FK —
     uid конца, придержанные колонки выброшены), в той же JSON-форме, что
     ``sync_op.fields``. Строки ``row_is_local`` (restricted и всё под ним) не
-    выдаются. Порядок не задан — сортирует потребитель (дайджест).
+    выдаются.
+
+    **Порядок — ``(таблица, uid)``**, ровно тот, что нужен дайджесту, и
+    выдача потоковая: таблицы по имени, строки таблицы с колонкой ``uid`` —
+    ``ORDER BY uid`` в SQL (на PostgreSQL с ``COLLATE "C"``, чтобы порядок
+    совпал с байтовым у SQLite и Python). В памяти сортируются только таблицы
+    без колонки ``uid`` — тег-таблицы с составным PK, чей uid вычисляется
+    (``edge_uid``); они малы.
 
     Один ``_Lookup`` на весь обход: концы ссылок и метки документов читаются
     по разу, а не по разу на строку, как у ``shipped_fields``.
     """
     lookup = _Lookup(session)
+    postgres = session.get_bind().dialect.name == "postgresql"
     for table in sorted(CAPTURED_TABLES):
         mapper = _mapper_for(table)
         info = table_info(mapper) if mapper is not None else None
@@ -1057,18 +1086,13 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
             stmt = stmt.where(tbl.c.row_id == project_id)
         elif _PROJECT_ID in tbl.c:
             stmt = stmt.where(tbl.c.project_id == project_id)
-        for raw in session.connection().execute(stmt).mappings():
-            row = dict(raw)
-            if _PROJECT_ID not in tbl.c and lookup.project_id(table, row) != project_id:
-                continue
-            gate = gating_row(lookup, table, row, project_id)
-            if not _ships(table, gate):
-                continue
-            entity_uid = _entity_uid(info, row, lookup)
-            if entity_uid is None:
-                raise SyncCaptureError(f"{table}.uid: пуст")
-            wanted = info.shipped - reg.withheld_columns(table, gate)
-            yield table, entity_uid, _dumps(_columns_payload(info, wanted, row, lookup))
+        if info.has_uid:
+            stmt = stmt.order_by(tbl.c.uid.collate("C") if postgres else tbl.c.uid)
+        rows = session.connection().execute(stmt).mappings()
+        lines = (_shipped_line(lookup, info, dict(raw), project_id) for raw in rows)
+        present = (line for line in lines if line is not None)
+        for uid, fields in present if info.has_uid else sorted(present):
+            yield table, uid, fields
 
 
 @contextmanager

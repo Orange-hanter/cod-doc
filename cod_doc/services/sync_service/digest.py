@@ -80,13 +80,11 @@ def _line(table: str, uid: str, fields_json: str) -> bytes:
 
 def compute(session: Session, project_id: int) -> str:
     """Дайджест уезжающего состояния проекта (§3.7), hex ``sha256``."""
-    lines = sorted(
-        (table, uid, _line(table, uid, fields))
-        for table, uid, fields in cap.shipped_state(session, project_id)
-    )
     h = hashlib.sha256()
-    for _table, _uid, line in lines:
-        h.update(line)
+    # shipped_state выдаёт строки уже в порядке (entity_kind, uid) и потоком:
+    # память — одна строка плюс кэш концов ссылок, а не весь проект.
+    for table, uid, fields in cap.shipped_state(session, project_id):
+        h.update(_line(table, uid, fields))
     return h.hexdigest()
 
 

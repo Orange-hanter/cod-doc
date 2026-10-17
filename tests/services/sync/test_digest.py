@@ -266,3 +266,23 @@ def test_verify_on_empty_remote_and_legacy_zero_digest(pair: tuple, tmp_path: Pa
         s.execute(text("UPDATE changeset SET digest = :z"), {"z": _local.DIGEST_PENDING})
     # голова упакована «до CLO-014»: сверять не с чем
     assert _verify(a, store) == digest.VerifyResult(_digest(a), None, equal=False)
+
+
+def test_streamed_digest_equals_sorted_reference(pair: tuple) -> None:
+    """Поток ``shipped_state`` уже в порядке ``(entity_kind, uid)``: дайджест тот же,
+    что у сортировки всего состояния в памяти (§3.7)."""
+    import hashlib
+
+    from cod_doc.infra import sync_capture as cap
+
+    a, _b, _store = pair
+    _seed(a)
+    r.tag_doc(a, "spec", "второй")  # тег-таблица без колонки uid: сортируется в памяти
+    with transactional(a.sf, commit=False) as s:
+        stream = list(cap.shipped_state(s, a.project_id))
+    keys = [(table, uid) for table, uid, _ in stream]
+    assert keys == sorted(keys)
+    h = hashlib.sha256()
+    for table, uid, fields in sorted(stream):
+        h.update(digest._line(table, uid, fields))
+    assert _digest(a) == h.hexdigest()
