@@ -35,7 +35,10 @@
    и колонки ключа решения (``from_section_id``, ``to_doc_key``,
    ``to_section_id``): без них на другой реплике решение не к чему приложить.
    Строка с ``state = pending`` — ``row_is_local``: не решение (Q-017). Ключ
-   решения — ``deterministic_uid``.
+   решения — ``deterministic_uid``. Своя нерешённая подсказка на реплике —
+   та же строка, что и пришедшее решение (один ключ): применение пишет
+   решение поверх неё, гейт сверяется со строкой уже с решением
+   (``decision_columns``, CLO-025).
 5. **Полиморфные ссылки.** ``external_ref.entity_row_id`` и
    ``revision.entity_id`` ссылаются на ``row_id`` таблицы, выбранной колонкой
    ``entity_kind``; ``logical_fks: {колонка: таблица}`` такого не выражает. Они
@@ -142,6 +145,26 @@
     таблиц синхронизации (``replica``, ``sync_op``, ``changeset``,
     ``sync_ref``, ``sync_lease``, ``entity_alias``) — ``local``: это состояние
     реплики, а не проекта.
+19. **Журнал в changeset'е** (CLO-024, Q-010). ``revision`` уезжает
+    операцией ``upsert`` на вставку строки; адрес операции —
+    ``revision_id`` (``JOURNAL_IDS``), колонки ``uid`` у журнала нет.
+    Применение — объединение по этому id: ``parent_revision_id`` переписывает
+    реплика (локальная голова сущности), поэтому в дайджест он не входит.
+    Ревизия сущности без колонки ``uid`` (``EntityKind.LINK`` — derived
+    ``link``) — local: адресовать её на другой реплике не через что.
+    **Ревизия уезжает, только если её сущность уезжает целиком**
+    (security review CLO-024): ``diff`` повторяет значения сущности, и
+    ревизия сценария, привязанного к restricted-документу, унесла бы
+    ``doc_key``/``doc_content_hash``, которые реестр у самого сценария
+    придерживает. Захват кладёт вердикт под ``ENTITY_SHIPS_KEY``: строка
+    сущности есть, ``row_is_local`` её выпускает и ``withheld_columns`` пуст.
+    Нет ключа (сущность удалена, не найдена) — ревизия local (fail-closed).
+    Ключи local-колонок сущности захват вычищает из JSON-``diff``.
+    ``activity_event`` в ``JOURNAL_IDS`` нет: события ``sync.*`` пишет сам
+    обмен (``sync.pushed`` после CAS дал бы новую операцию после каждого
+    push), а лента событий — телеметрия реплики, а не данные проекта. Класс
+    таблицы остаётся ``journal``: перечень уезжающих колонок готов на случай,
+    если события поедут.
 """
 
 from __future__ import annotations
@@ -402,8 +425,16 @@ def _undecided_suggestion(row: Mapping[str, object]) -> bool:
     return type(state) is not str or state not in _DECIDED_STATES
 
 
+#: Ключ гейт-строки ревизии: сущность ревизии уезжает целиком (решение 19).
+ENTITY_SHIPS_KEY = "entity_id.ships"
+
+
 def _local_revision(row: Mapping[str, object]) -> bool:
-    return _parse_entity_kind(row.get("entity_kind")) is None
+    kind = _parse_entity_kind(row.get("entity_kind"))
+    # Ревизия сущности без uid (derived ``link``) не адресуема на другой реплике.
+    if kind is None or ENTITY_KIND_TABLES.get(kind) not in UID_TABLES:
+        return True
+    return row.get(ENTITY_SHIPS_KEY) is not True
 
 
 def _local_event(row: Mapping[str, object]) -> bool:
@@ -824,6 +855,10 @@ ENTITY_KIND_TABLES: Mapping[EntityKind, str] = MappingProxyType(
     }
 )
 
+#: Journal-таблицы, которые уезжают в changeset'ах, → колонка глобального id:
+#: адрес операции (``entity_uid``) и ключ объединения при применении (решение 19).
+JOURNAL_IDS: Mapping[str, str] = MappingProxyType({"revision": "revision_id"})
+
 #: Значение ``to_kind`` → таблица с арендованным номером, на который указывает
 #: ``to_ref``. Виды, которых здесь нет (document, section, code, url, …),
 #: ссылаются не на арендованный номер, и закрепление их не переписывает.
@@ -1234,6 +1269,20 @@ def row_class(table: str, row: Mapping[str, object]) -> SyncClass:
     if spec.row_is_local is not None and spec.row_is_local(row):
         return _ROW_CLASS_WHEN_HELD.get(table, SyncClass.LOCAL)
     return spec.cls
+
+
+def decision_columns(table: str) -> frozenset[str]:
+    """Authored-колонки derived-таблицы вне ключа строки: само решение (Q-017).
+
+    У ``link_suggestion`` — ``state``. Своя derived-строка до решения local
+    (``row_is_local``), и remote пишет решение поверх неё: применение
+    сверяет гейт со строкой, в которую уже подставлены эти колонки
+    (CLO-025). У authored-таблиц решений нет — пусто.
+    """
+    spec = spec_for(table)
+    if spec.cls is not SyncClass.DERIVED:
+        return frozenset()
+    return spec.authored_columns - frozenset(spec.deterministic_uid or ())
 
 
 def human_ref_target(table: str, column: str, row: Mapping[str, object]) -> str | None:

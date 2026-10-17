@@ -281,7 +281,9 @@ def test_overlapping_edits_conflict_keep_ours_and_converge_after_resolve(tmp_pat
         assert t.signatures(u.a) == t.signatures(u.b) == set()
         t.assert_converged(u)
     assert signatures[0] == signatures[1]  # тот же конфликт при любом порядке
-    assert len({t.digest_of(rep) for u in universes for rep in u.replicas}) == 1
+    # Ревизия разрешения у каждой вселенной своя (CLO-024): между вселенными —
+    # без журнала, внутри вселенной полный дайджест сверил assert_converged.
+    assert len({t.authored_digest_of(rep) for u in universes for rep in u.replicas}) == 1
     t.dispose(*universes)
 
 

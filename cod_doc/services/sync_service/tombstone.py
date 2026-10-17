@@ -306,7 +306,14 @@ def before_delete(session: Session, ctx: Context, table: str, row_id: int, op: O
     hits = [o for o in tail if (o.entity_kind, o.entity_uid) in entities]
     if not hits:
         return
-    session.execute(delete(SyncOpModel).where(SyncOpModel.op_id.in_([o.op_id for o in hits])))
+    # Свои ревизии поддерева (journal, CLO-024) тоже не уезжают: ревизия удалённой
+    # сущности local на любой реплике, а правка, которую она описывает, — в снимке.
+    uids = {uid for _table, uid in entities}
+    revisions = [
+        o for o in tail if o.entity_kind in reg.JOURNAL_IDS and o.fields.get("entity_id") in uids
+    ]
+    dropped = [o.op_id for o in (*hits, *revisions)]
+    session.execute(delete(SyncOpModel).where(SyncOpModel.op_id.in_(dropped)))
     session.flush()
     snapshot: dict[str, FieldValue] = {
         "root": {"table": table, "uid": op.entity_uid},

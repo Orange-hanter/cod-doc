@@ -13,12 +13,15 @@ B создан ровно один sync_conflict»). Поэтому uid конф
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import sqlite3
 import time
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from cod_doc.infra import sync_capture as cap
+from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services.sync_service import conflicts, digest, pull, push
@@ -116,6 +119,21 @@ def tick() -> None:
 def digest_of(rep: r.Replica) -> str:
     with transactional(rep.sf, commit=False) as s:
         return digest.compute(s, rep.project_id)
+
+
+def authored_digest_of(rep: r.Replica) -> str:
+    """Дайджест без journal-таблиц — для сравнения МЕЖДУ вселенными (CLO-024).
+
+    Разрешение конфликта — новая запись человека в каждой вселенной: ревизия
+    получает свой ``revision_id``, и состав журнала у вселенных законно разный.
+    Внутри вселенной ревизии сходятся — там сравнивается полный ``digest_of``.
+    """
+    h = hashlib.sha256()
+    with transactional(rep.sf, commit=False) as s:
+        for table, uid, fields in cap.shipped_state(s, rep.project_id):
+            if table not in reg.JOURNAL_IDS:
+                h.update(digest._line(table, uid, fields))
+    return h.hexdigest()
 
 
 def open_conflicts(rep: r.Replica) -> list[dict[str, object]]:

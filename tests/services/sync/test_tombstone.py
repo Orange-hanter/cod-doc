@@ -206,6 +206,7 @@ def test_scn_092_delete_wins_and_resolve_theirs_restores_the_subtree(pair: tuple
     resolved = _resolve(b, str(conflict["uid"]), "theirs")  # шаг 4
 
     assert resolved["status"] == "resolved"
+    assert resolved["revision_id"] is not None  # ревизия на восстановленном корне
     assert _sections(b) == {**SECTIONS, EDITED: "правка B"}
     with transactional(b.sf, commit=False) as s:
         doc = s.scalars(select(DocumentModel).where(DocumentModel.doc_key == DOC)).one()

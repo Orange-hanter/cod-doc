@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import select, update
 
+from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ChangesetModel, SyncOpModel
@@ -267,7 +268,12 @@ def _check_divergence(
     own_ids = {op.op_id for sha, cs in changesets if sha in own for op in cs.ops}
     foreign = [op for sha, cs in changesets if sha not in own for op in cs.ops]
     mine = [op for op in tail if op.op_id not in own_ids]
-    merge.check(foreign, mine)
+    # Журнал не сливается — объединяется по id (§3.7, CLO-024): его операции
+    # не пересекаются с хвостом ни правкой, ни удалением.
+    merge.check(
+        [op for op in foreign if op.entity_kind not in reg.JOURNAL_IDS],
+        [op for op in mine if op.entity_kind not in reg.JOURNAL_IDS],
+    )
     return bool(mine)
 
 

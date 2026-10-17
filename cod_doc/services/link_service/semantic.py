@@ -123,6 +123,26 @@ def _upsert_suggestion(
     return True
 
 
+def _rejected_keys(session: Session, from_section_id: int) -> set[tuple[str, int | None]]:
+    """Ключи ``(to_doc_key, to_section_id)`` отклонённых подсказок секции-источника.
+
+    Ключ решения — ``(секция-источник, to_doc_key, секция-цель | NULL)``, тот же,
+    из которого реестр синхронизации собирает uid решения (Q-017): на любой
+    реплике пересчёт находит решение, сделанное на другой.
+    """
+    from sqlalchemy import select
+
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+
+    rows = session.execute(
+        select(LinkSuggestionModel.to_doc_key, LinkSuggestionModel.to_section_id).where(
+            LinkSuggestionModel.from_section_id == from_section_id,
+            LinkSuggestionModel.state == "rejected",
+        )
+    )
+    return {(doc_key, target) for doc_key, target in rows}
+
+
 def suggest_for_section(
     session: Session,
     section_id: int,
@@ -237,11 +257,17 @@ def suggest_for_section(
             }
         )
 
-    # 4. Sort and cap
+    # 4. Решения по ключу (Q-017, CLO-025): отклонённая подсказка — человеком
+    # на этой реплике или приехавшая pull'ом — не всплывает снова и не
+    # занимает место в top_n. Принятая остаётся: её строку пересчёт не трогает.
+    rejected = _rejected_keys(session, section_id)
+    suggestions = [s for s in suggestions if (s["to_doc_key"], s["to_section_id"]) not in rejected]
+
+    # 5. Sort and cap
     suggestions.sort(key=lambda s: s["score"], reverse=True)
     suggestions = suggestions[:top_n]
 
-    # 5. Persist
+    # 6. Persist
     if not dry_run:
         for s in suggestions:
             _upsert_suggestion(

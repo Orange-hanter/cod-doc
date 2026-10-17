@@ -399,11 +399,23 @@ def test_unknown_or_restricted_journal_and_row_values_do_not_ship(
 
 
 def test_cleared_journal_rows_ship() -> None:
+    ships = {reg.ENTITY_SHIPS_KEY: True}
     assert (
-        row_class("revision", _doc_ref_row("entity_id", "internal", entity_kind="document"))
+        row_class(
+            "revision",
+            _doc_ref_row("entity_id", "internal", entity_kind="document") | ships,
+        )
         is SyncClass.JOURNAL
     )
-    assert row_class("revision", {"entity_kind": "task", "entity_id": 1}) is SyncClass.JOURNAL
+    assert (
+        row_class("revision", {"entity_kind": "task", "entity_id": 1} | ships) is SyncClass.JOURNAL
+    )
+    # Сущность ревизии не уезжает или не проверена — ревизия local (CLO-024).
+    assert row_class("revision", {"entity_kind": "task", "entity_id": 1}) is SyncClass.LOCAL
+    assert (
+        row_class("revision", {"entity_kind": "task", "entity_id": 1, reg.ENTITY_SHIPS_KEY: False})
+        is SyncClass.LOCAL
+    )
     assert (
         row_class("activity_event", {"kind": "task.created", "scope_kind": "task", "scope_id": "T"})
         is SyncClass.JOURNAL
@@ -481,6 +493,8 @@ def test_reference_to_restricted_document_never_ships(table: str, column: str) -
         "state": "accepted",
         "path": "docs/a.md",
         "sensitivity": "internal",
+        # Ревизия: сущность уезжает целиком (CLO-024) — проверяется только метка.
+        reg.ENTITY_SHIPS_KEY: True,
     }
     if ref.kind_column is not None:
         base[ref.kind_column] = sorted(ref.kinds)[0]

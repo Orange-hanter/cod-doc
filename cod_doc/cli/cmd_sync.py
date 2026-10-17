@@ -1,14 +1,14 @@
 """CLI синхронизации с remote (RFC 29 §10.8; CLO-015).
 
 Верхние команды ``remote add/list/remove``, ``fetch``, ``pull``, ``push`` и
-группа ``sync status/log/verify``. ``-p/--project`` обязателен. ``--json``
+группа ``sync status/log/verify/conflicts/resolve`` (конфликты — CLO-026). ``-p/--project`` обязателен. ``--json``
 печатается через ``click.echo`` (ADO-176), импорты ``infra``/``services`` —
 в телах команд (ADO-179). Ошибки — ``click.ClickException`` (exit 1) с
 сообщением, начинающимся с кода ``SYNC-NNN`` (§10.10).
 
 Команды поздних секций ещё не выставлены: ``remote login``, ``clone``,
-``sync conflicts/resolve``, ``sync export-pending``, ``member``, ``token`` —
-их сервисов пока нет (CLO-026, CLO-029, CLO-032, CLO-038).
+``sync export-pending``, ``member``, ``token`` — их сервисов пока нет
+(CLO-029, CLO-032, CLO-038).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
@@ -336,3 +337,107 @@ def sync_verify(ctx: click.Context, project: str, remote_name: str, as_json: boo
         )
     if not result.equal:
         ctx.exit(1)
+
+
+def _project_id(session: Session, project: str) -> int:
+    from cod_doc.services.project_lookup import require_project_id
+
+    try:
+        return require_project_id(session, project)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _conflict_target(c: dict[str, object]) -> str:
+    target = f"{c['entity_kind']} {c['entity_uid']}"
+    return f"{target}.{c['field']}" if c["field"] else target
+
+
+@sync.command("conflicts")
+@_project_opt
+@click.option(
+    "--status",
+    type=click.Choice(("open", "resolved", "all")),
+    default="open",
+    show_default=True,
+)
+@_json_opt
+@click.pass_context
+def sync_conflicts(ctx: click.Context, project: str, status: str, as_json: bool) -> None:
+    """Конфликты слияния: в БД «наше», «их» лежит в конфликте (RFC 29 §3.7)."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services.sync_service.conflicts import list_conflicts
+
+    sf = _factory(ctx, project)
+    with _sync_errors(), transactional(sf, commit=False) as session:
+        items = list_conflicts(session, _project_id(session, project), status=status)
+    if as_json:
+        _echo_json(items)
+        return
+    if not items:
+        console.print(f"конфликтов ({status}) нет", markup=False)
+        return
+    for c in items:
+        console.print(
+            printable(f"{c['uid']}  {c['status']}  {c['kind']}  {_conflict_target(c)}"),
+            markup=False,
+        )
+    if status != "resolved":
+        console.print(
+            f"разрешить: cod-doc sync resolve UID -p {printable(project)} --take ours|theirs",
+            markup=False,
+        )
+
+
+@sync.command("resolve")
+@click.argument("conflict_uid")
+@_project_opt
+@click.option("--take", type=click.Choice(("ours", "theirs")), help="Чья версия остаётся")
+@click.option(
+    "--text-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Свой текст из файла (только конфликт text)",
+)
+@click.option("--reason", default=None, help="Причина в ревизии")
+@_author_opt
+@_json_opt
+@click.pass_context
+def sync_resolve(
+    ctx: click.Context,
+    conflict_uid: str,
+    project: str,
+    take: str | None,
+    text_file: Path | None,
+    reason: str | None,
+    author: str,
+    as_json: bool,
+) -> None:
+    """Разрешить конфликт: значение, операция, ревизия и событие — уедут push'ем."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services.sync_service.conflicts import resolve_conflict
+
+    if (take is None) == (text_file is None):
+        raise click.UsageError("нужно ровно одно из --take ours|theirs и --text-file F")
+    chosen = take if text_file is None else text_file.read_text(encoding="utf-8")
+    assert chosen is not None
+    sf = _factory(ctx, project)
+    with _sync_errors(), transactional(sf) as session:
+        out = resolve_conflict(
+            session,
+            _project_id(session, project),
+            conflict_uid,
+            take=chosen,
+            author=author,
+            reason=reason,
+        )
+    if as_json:
+        _echo_json(out)
+        return
+    label = take or "свой текст"
+    console.print(
+        printable(
+            f"конфликт {conflict_uid} разрешён ({label}): {_conflict_target(out)}; "
+            f"ревизия {out['revision_id'] or '—'}; уедет следующим push"
+        ),
+        markup=False,
+    )

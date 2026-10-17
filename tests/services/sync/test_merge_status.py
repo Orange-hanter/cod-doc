@@ -184,7 +184,9 @@ def test_forbidden_pair_opens_a_status_conflict_and_converges_after_resolve(
         assert t.signatures(u.a) == t.signatures(u.b) == set()
         t.assert_converged(u)
     assert signatures[0] == signatures[1]
-    assert len({t.digest_of(rep) for u in universes for rep in u.replicas}) == 1
+    # Ревизия разрешения у каждой вселенной своя (CLO-024): между вселенными —
+    # без журнала, внутри вселенной полный дайджест сверил assert_converged.
+    assert len({t.authored_digest_of(rep) for u in universes for rep in u.replicas}) == 1
     t.dispose(*universes)
 
 

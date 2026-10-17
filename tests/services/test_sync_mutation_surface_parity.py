@@ -15,7 +15,9 @@ RFC 29 §3.9, §10.6: гейты паритета расширяются на ``
 Вне детектора, по построению: ``fetch``, ``status``, ``log``, ``verify``
 только читают (``fetch`` пишет одну local-строку ``sync_ref`` без события);
 ``remotes.add``/``remove`` пишут ``config.yaml``, а не БД, и выставлены в CLI
-— в MCP их нет намеренно (§10.7).
+— в MCP их нет намеренно (§10.7). ``resolve_conflict`` выставлен как
+``sync resolve`` в CLI и ``sync_resolve`` в MCP (CLO-026); ``open_conflict``
+— внутренний: конфликт открывает слияние внутри pull.
 """
 
 from __future__ import annotations
@@ -72,12 +74,6 @@ SPEC = ServiceSpec(
         "resolve_key": (
             "стратегия склейки ключей (CLO-023) зовётся из apply внутри pull; "
             "событие sync.alias_created/relettered пишется в транзакции changeset'а"
-        ),
-    },
-    surface_debt={
-        "resolve_conflict": (
-            frozenset({"mcp", "cli"}),
-            "сервис — CLO-017; поверхности sync resolve / sync_resolve — CLO-026 (RFC 29 §11.2)",
         ),
     },
 )

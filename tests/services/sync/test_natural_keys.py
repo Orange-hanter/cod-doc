@@ -560,8 +560,8 @@ def test_f2_end_to_end_two_machines_after_project_add(
 ) -> None:
     """Аудит секции B §8 без обходного шага: рутины и дерево B не удаляются.
 
-    B — свой ``project add``, затем uid проекта A и пустой журнал (так её оставил
-    бы clone). Его строки рутин и разделов — те же натуральные ключи, другой uid;
+    B — свой ``project add``, затем uid проекта A и пустой журнал — операции и
+    ревизии (так её оставил бы clone). Его строки рутин и разделов — те же натуральные ключи, другой uid;
     pull склеивает их с приехавшими с A вместо ``IntegrityError``.
     """
     url = (tmp_path / "remote").as_uri()
@@ -573,7 +573,9 @@ def test_f2_end_to_end_two_machines_after_project_add(
     _run("remote", "add", "origin", url, "-p", r.SLUG)
     _machine(homes["b"], monkeypatch)
     with transactional(_factory()) as s:
+        # Журнал реплики после clone пуст: и операции, и ревизии (journal с CLO-024).
         s.execute(text("DELETE FROM sync_op"))
+        s.execute(text("DELETE FROM revision"))
         s.execute(text("UPDATE project SET uid = :u WHERE slug = :s"), {"u": uid, "s": r.SLUG})
     _run("remote", "add", "origin", url, "-p", r.SLUG)
     seeded = _cli_counts()

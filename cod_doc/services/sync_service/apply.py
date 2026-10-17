@@ -50,7 +50,7 @@
    обычной записи: ``link_service.sync_section`` + ``resolve_section`` по
    секциям, ``search_service.index_*`` по документам, задачам, историям, ADR,
    находкам и вопросам (§3.6, «пересборка derived»).
-6. **Журнал.** Чужие операции ложатся в ``sync_op`` с ``changeset = sha``: не
+6. **Журнал операций.** Чужие операции ложатся в ``sync_op`` с ``changeset = sha``: не
    хвост (push их не упакует), а история, на которую встанет LWW по полю
    секции C. Часы реплики видят ``hlc_max`` (``observe``): следующая своя
    операция будет позже применённых.
@@ -61,6 +61,9 @@
    совпадение натурального ключа при вставке — ``merge.key_collision``. Поле
    вне ``SHIPPED_COLUMNS`` отвергается до слияния: отброшенное слиянием поле
    всё равно проходит гейт недоверенного ввода.
+8. **Journal-таблицы** (``revision``, CLO-024) не сливаются: операцию
+   применяет ``journal.apply_op`` — объединение по ``revision_id``, родитель —
+   локальная голова сущности (Q-010).
 """
 
 from __future__ import annotations
@@ -379,6 +382,8 @@ def entity_by_uid(
 ) -> tuple[object, cap.TableInfo] | None:
     """ORM-строка таблицы с uid в проекте (чужой проект — SYNC-102) и её ``TableInfo``.
 
+    uid склеенной сущности резолвится через ``entity_alias``.
+
     Только для таблиц с колонкой ``uid``; у тег-таблиц строка адресуется
     концами ребра (``_find``).
     """
@@ -388,6 +393,14 @@ def entity_by_uid(
         raise ObjectMissingError(msg)
     model = mapper.class_
     obj = session.scalars(select(model).where(getattr(model, info.attr(_UID)) == uid)).one_or_none()
+    if obj is None:
+        # Проигравший uid склейки (CLO-023): ревизии и ссылки, собранные до
+        # склейки, указывают на него — сущность одна.
+        alias = alias_target(session, project.row_id, table, uid)
+        if alias is None:
+            return None
+        stmt = select(model).where(getattr(model, info.attr(_UID)) == alias)
+        obj = session.scalars(stmt).one_or_none()
     if obj is None:
         return None
     _require_own(session, project, table, _row_of(info, obj), f"uid {uid}")
@@ -414,6 +427,7 @@ def _require_shipped(
     obj: object,
     uid: str,
     written: Mapping[str, object] | None,
+    incoming: Mapping[str, object] | None = None,
 ) -> None:
     """Remote не пишет строку, которую реестр этой реплики держит local.
 
@@ -424,8 +438,14 @@ def _require_shipped(
     local-строки, ни новая строка под restricted-документом, ни колонка, которую
     реестр для этой строки придерживает.
     """
+    row = _row_of(info, obj)
+    if written is None and incoming:
+        # Своя нерешённая подсказка local до решения; решение remote ложится
+        # поверх неё (Q-017, CLO-025) — гейт по строке уже с решением.
+        decision = reg.decision_columns(info.table)
+        row |= {c: v for c, v in incoming.items() if c in decision}
     try:
-        allowed = cap.shipped_fields(session, info.table, _row_of(info, obj))
+        allowed = cap.shipped_fields(session, info.table, row)
     except cap.SyncCaptureError as exc:
         msg = f"{info.table} {uid}: {exc}"
         raise ObjectMissingError(msg) from exc
@@ -692,6 +712,37 @@ def _create(
     return obj
 
 
+def _fresh_row_id(session: Session, info: cap.TableInfo, obj: object) -> None:
+    """``row_id`` новой строки — выше всех, на какие ссылаются ревизии этой реплики.
+
+    ``row_id`` у ``section`` и соседей без AUTOINCREMENT: SQLite отдаёт новой
+    строке номер удалённой, и её осиротевшие ревизии прирастают к чужой строке.
+    Ревизия удалённой сущности — local (решение 19 реестра), а приросшая уезжает
+    в дайджест — на одной реплике да, на другой нет. Строка, которую создаёт
+    pull или восстановление снимка (CLO-022), получает номер, на который не
+    ссылается ни одна ревизия.
+    """
+    kind = _ENTITY_KIND_OF.get(info.table)
+    if kind is None:
+        return
+    tbl = Base.metadata.tables[info.table]
+    rev = Base.metadata.tables["revision"]
+    top_row = session.execute(select(func.max(tbl.c.row_id))).scalar_one_or_none() or 0
+    top_rev = (
+        session.execute(
+            select(func.max(rev.c.entity_id)).where(rev.c.entity_kind == kind)
+        ).scalar_one_or_none()
+        or 0
+    )
+    setattr(obj, info.attr(_ROW_ID), max(int(top_row), int(top_rev)) + 1)
+
+
+#: Таблица → ``EntityKind`` ревизий (адрес ревизии — ``(entity_kind, entity_id)``).
+_ENTITY_KIND_OF: Final[Mapping[str, str]] = {
+    table: str(kind.value) for kind, table in reg.ENTITY_KIND_TABLES.items()
+}
+
+
 def finish_row(
     session: Session,
     project: ProjectRef,
@@ -721,6 +772,7 @@ def create_row(
     values = _translate(session, project, info, fields, None)
     obj = _create(mapper, info, uid, values)
     _fill_local(session, mapper, info, obj)
+    _fresh_row_id(session, info, obj)
     session.add(obj)
     finish_row(session, project, info, obj, uid or table, fields)
     return obj
@@ -737,6 +789,12 @@ def _through_alias(session: Session, project: ProjectRef, info: cap.TableInfo, o
 def _apply_op(
     session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
 ) -> None:
+    if op.entity_kind in reg.JOURNAL_IDS:
+        # Журнал — объединение по глобальному id, без слияния (§3.7, CLO-024).
+        from cod_doc.services.sync_service import journal
+
+        journal.apply_op(session, project, op)
+        return
     mapper, info = _info(op.entity_kind)
     if op.entity_kind == _PROJECT and (op.entity_uid != project.uid or op.kind == "delete"):
         msg = f"операция над проектом {op.entity_uid} в changeset'е проекта {project.uid}"
@@ -748,7 +806,7 @@ def _apply_op(
     _require_known_columns(info, op.fields)
     obj = _find(session, project, mapper, info, op.entity_uid, op.fields)
     if obj is not None:
-        _require_shipped(session, info, obj, op.entity_uid, None)
+        _require_shipped(session, info, obj, op.entity_uid, None, op.fields)
     if not merge.allow(session, ctx, op):
         return
     if obj is None and op.base and _absorbed(session, ctx, op):
@@ -802,6 +860,7 @@ def _insert(
             _note(touched, info.table, survivor, deleted=False, base=op.base)
         return
     _fill_local(session, mapper, info, obj)
+    _fresh_row_id(session, info, obj)
     session.add(obj)
     finish_row(session, project, info, obj, op.entity_uid, op.fields)
     _note(touched, info.table, obj, deleted=False, base=op.base)
