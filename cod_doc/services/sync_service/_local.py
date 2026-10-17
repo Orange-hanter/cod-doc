@@ -159,19 +159,16 @@ def open_store(project: str, remote: str) -> RemoteStore:
     """Транспорт remote проекта из ``~/.cod-doc/config.yaml`` (§10.12).
 
     ``ProjectEntry.remotes`` — ``{name: {url, kind}}``; запись заводит
-    ``cod-doc remote add`` (CLO-015). Нет записи — ``SYNC-110``.
+    ``cod-doc remote add`` (``remotes.add``, CLO-015). Нет записи — ``SYNC-110``.
     """
-    from cod_doc.config import Config
     from cod_doc.infra.remote.base import open_remote
+    from cod_doc.services.sync_service import remotes
 
-    entry = Config.load().get_project(project)
-    remotes = (entry.model_extra or {}).get("remotes") if entry is not None else None
-    spec = remotes.get(remote) if isinstance(remotes, dict) else None
-    url = spec.get("url") if isinstance(spec, dict) else None
-    if not isinstance(url, str) or not url:
-        msg = f"remote {remote!r} у проекта {project!r} не настроен"
+    spec = remotes.get(project, remote)
+    if spec is None:
+        msg = f"remote {remote!r} у проекта {project!r} не настроен — cod-doc remote add"
         raise RemoteConfigError(msg)
-    return open_remote(url)
+    return open_remote(spec.url)
 
 
 def _payload(row: SyncOpModel, column: str) -> dict[str, object]:

@@ -331,6 +331,54 @@ class Config(BaseSettings):
                 return ProjectEntry(**project)
         raise KeyError(name)
 
+    def project_remotes(self, name: str) -> dict[str, dict[str, str]]:
+        """``remotes`` проекта из реестра (RFC 29 §10.12): ``{имя: {url, kind}}``.
+
+        Ключ живёт в ``extra`` записи (``ProjectEntry`` — ``extra="allow"``),
+        а не полем модели: поле с дефолтом ``{}`` дописало бы ``remotes: {}``
+        к каждому проекту при любом ``save``. Битая запись (не словарь)
+        пропускается.
+        """
+        for project in self.projects:
+            if project.get("name") == name:
+                raw = project.get("remotes")
+                if not isinstance(raw, dict):
+                    return {}
+                return {
+                    str(k): {str(f): str(v) for f, v in spec.items()}
+                    for k, spec in raw.items()
+                    if isinstance(spec, dict)
+                }
+        raise KeyError(name)
+
+    def set_project_remote(self, name: str, remote: str, spec: dict[str, str]) -> None:
+        """Записать remote проекта; проекта нет в ``config.yaml`` — ``KeyError``."""
+        for project in self.projects:
+            if project.get("name") == name:
+                remotes = project.get("remotes")
+                remotes = dict(remotes) if isinstance(remotes, dict) else {}
+                remotes[remote] = dict(spec)
+                project["remotes"] = remotes
+                self.save()
+                return
+        raise KeyError(name)
+
+    def remove_project_remote(self, name: str, remote: str) -> bool:
+        """Удалить remote проекта; ``False`` — такого remote не было."""
+        for project in self.projects:
+            if project.get("name") == name:
+                remotes = project.get("remotes")
+                if not isinstance(remotes, dict) or remote not in remotes:
+                    return False
+                remotes = {k: v for k, v in remotes.items() if k != remote}
+                if remotes:
+                    project["remotes"] = remotes
+                else:
+                    project.pop("remotes", None)
+                self.save()
+                return True
+        raise KeyError(name)
+
     def list_projects(self) -> list[ProjectEntry]:
         projects = [ProjectEntry(**p) for p in self.projects]
         seen = {p.name for p in projects}

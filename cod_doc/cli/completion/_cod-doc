@@ -383,6 +383,7 @@ _cod-doc() {
         (ctx)        _cod_doc_ctx && ret=0 ;;
         (doc)        _cod_doc_doc && ret=0 ;;
         (embed)      _cod_doc_embed && ret=0 ;;
+        (fetch)      _cod_doc_fetch && ret=0 ;;
         (finding)    _cod_doc_finding && ret=0 ;;
         (hash)       _cod_doc_hash && ret=0 ;;
         (hub)        _cod_doc_hub && ret=0 ;;
@@ -393,8 +394,11 @@ _cod-doc() {
         (obligation) _cod_doc_obligation && ret=0 ;;
         (plan)       _cod_doc_plan && ret=0 ;;
         (project)    _cod_doc_project && ret=0 ;;
+        (pull)       _cod_doc_pull && ret=0 ;;
+        (push)       _cod_doc_push && ret=0 ;;
         (question)   _cod_doc_question && ret=0 ;;
         (reindex)    _cod_doc_reindex && ret=0 ;;
+        (remote)     _cod_doc_remote && ret=0 ;;
         (revision)   _cod_doc_revision && ret=0 ;;
         (routine)    _cod_doc_routine && ret=0 ;;
         (runtime)    _cod_doc_runtime && ret=0 ;;
@@ -403,6 +407,7 @@ _cod-doc() {
         (serve)      _cod_doc_serve && ret=0 ;;
         (story)      _cod_doc_story && ret=0 ;;
         (structure)  _cod_doc_structure && ret=0 ;;
+        (sync)       _cod_doc_sync && ret=0 ;;
         (task)       _cod_doc_task && ret=0 ;;
         (tui)        _cod_doc_tui && ret=0 ;;
         (update)     _cod_doc_update && ret=0 ;;
@@ -428,6 +433,7 @@ _cod-doc() {
     'ctx:Контекст проекта для внешних потребителей (docs / drift / search /…'
     'doc:Manage documents (create, rename, export, drift, import).'
     'embed:Провайдер эмбеддингов; статус, живая проверка, каталог, сброс индек…'
+    'fetch:Скачать и проверить новые changeset'\''ы, не применяя.'
     'finding:Inspect and manage external findings.'
     'hash:Утилиты хэширования.'
     'hub:Управление глобальной hub-БД (мультипроектный реестр).'
@@ -438,8 +444,11 @@ _cod-doc() {
     'obligation:Documented obligations for the structure protocol.'
     'plan:Inspect and query plans (progress, ready tasks, audit, export).'
     'project:Управление проектами.'
+    'pull:Fetch + fast-forward; применить чужие changeset'\''ы.'
+    'push:Упаковать неотправленные операции и сдвинуть refs/main remote.'
     'question:Open questions — DB entity with options and links; never projected…'
     'reindex:Rebuild repo-level indexes (files / symbols / imports).'
+    'remote:Remotes проекта в ~/.cod-doc/config.yaml (RFC 29 §10.12).'
     'revision:Inspect and revert revision history.'
     'routine:Inspect and run routines (scheduled health checks).'
     'runtime:Рантайм сервисов и демоны launchd (замена cod-doc-services.sh).'
@@ -448,6 +457,7 @@ _cod-doc() {
     'serve:Запустить REST API сервер (production).'
     'story:Manage user stories (create, status, link, coverage).'
     'structure:Code structure snapshots, drift, triage and waivers (not projection…'
+    'sync:Состояние синхронизации с remote (RFC 29 §3.9).'
     'task:Manage tasks (create, status, complete, list).'
     'tui:(DEPRECATED) Запустить TUI. Используйте `cod-doc web` вместо.'
     'update:Обновить установку cod-doc; рантайм, схему, сервисы и состояние про…'
@@ -1827,6 +1837,18 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_fetch] )) || _cod_doc_fetch() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--remote)--remote=[Remote name]:remote-name' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_finding] )) || _cod_doc_finding() {
   local curcontext="$curcontext" state line ret=1
   typeset -A opt_args
@@ -2683,6 +2705,34 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_pull] )) || _cod_doc_pull() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--remote)--remote=[Remote name]:remote-name' \
+    '(--author)--author=:author' \
+    '(--dry-run)--dry-run[Показать, что применится, ничего не записывая]' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_push] )) || _cod_doc_push() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--remote)--remote=[Remote name]:remote-name' \
+    '(--author)--author=:author' \
+    '(--no-retry)--no-retry[Не повторять через pull при отказе CAS]' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_question] )) || _cod_doc_question() {
   local curcontext="$curcontext" state line ret=1
   typeset -A opt_args
@@ -3009,6 +3059,75 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--max-files)--max-files=:max-files' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_remote] )) || _cod_doc_remote() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_remote_commands' \
+    '*:: :->cod_doc_remote_cmd' && ret=0
+
+  case $state in
+    (cod_doc_remote_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-remote-$words[1]:"
+      case $words[1] in
+        (add)    _cod_doc_remote_add && ret=0 ;;
+        (list)   _cod_doc_remote_list && ret=0 ;;
+        (remove) _cod_doc_remote_remove && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_remote_commands] )) || _cod_doc_remote_commands() {
+  local -a cmds
+  cmds=(
+    'add:Добавить (или заменить) remote NAME → URL.'
+    'list:Перечислить remotes проекта.'
+    'remove:Удалить remote NAME из конфига проекта (состояние БД не трогается).'
+  )
+  _describe -t cod-doc-remote-commands 'cod-doc remote command' cmds
+}
+
+(( $+functions[_cod_doc_remote_add] )) || _cod_doc_remote_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--kind)--kind=[Вид remote; auto — по схеме URL]:kind:(auto file s3 https)' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' \
+    '2:url' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_remote_list] )) || _cod_doc_remote_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_remote_remove] )) || _cod_doc_remote_remove() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
   return ret
 }
 
@@ -3982,6 +4101,75 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
     '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_sync] )) || _cod_doc_sync() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_sync_commands' \
+    '*:: :->cod_doc_sync_cmd' && ret=0
+
+  case $state in
+    (cod_doc_sync_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-sync-$words[1]:"
+      case $words[1] in
+        (log)    _cod_doc_sync_log && ret=0 ;;
+        (status) _cod_doc_sync_status && ret=0 ;;
+        (verify) _cod_doc_sync_verify && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_sync_commands] )) || _cod_doc_sync_commands() {
+  local -a cmds
+  cmds=(
+    'log:Changeset'\''ы истории реплики; автор, реплика, число операций.'
+    'status:Голова, ahead/behind, неотправленные операции, restricted-документы.'
+    'verify:Сверить дайджест реплики с дайджестом головы remote; расхождение —…'
+  )
+  _describe -t cod-doc-sync-commands 'cod-doc sync command' cmds
+}
+
+(( $+functions[_cod_doc_sync_log] )) || _cod_doc_sync_log() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-n)-n+:limit' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_sync_status] )) || _cod_doc_sync_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--remote)--remote=[Remote name]:remote-name' \
+    '(--verify)--verify[Сверить дайджест с remote]' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_sync_verify] )) || _cod_doc_sync_verify() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--remote)--remote=[Remote name]:remote-name' \
+    '(--json)--json[Machine-readable JSON output]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }
