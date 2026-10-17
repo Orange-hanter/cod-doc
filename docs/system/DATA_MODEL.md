@@ -588,6 +588,7 @@ CREATE TABLE scenario_link (
 | Structure platform | `code_structure_snapshot`, `code_entity`, `code_edge`, `code_boundary`, `code_contract`, `doc_code_claim`, `structure_*` | `0031_structure_platform` |
 | Дерево документации | `doc_node`, `doc_node_suggestion`, `document.node_id` | `0035_doc_nodes` |
 | Репликация (RFC 29, секция A) | `uid` в authored-таблицах, `rank`/`node_rank`, `replica`, `sync_op`, `changeset`, `sync_ref`, `sync_lease`, `entity_alias` — см. §3.18 | `0049_sync_identity`, `0050_sync_rank` |
+| Конфликты слияния (RFC 29, секция C) | `sync_conflict` (local) — см. §3.18 | `0051_sync_conflict` |
 
 Таблицы `agent_definition` и `actor` из capability-доков в схеме **нет** — это
 целевые спеки (ARCHITECTURE §12.2, agents-and-skills §1.1).
@@ -747,6 +748,22 @@ CREATE TABLE entity_alias (                   -- провизорный ID ил�
   created      DATETIME NOT NULL,
   PRIMARY KEY (project_id, entity_kind, alias)
 );
+
+-- 0051_sync_conflict (CLO-017): то, что слияние не свело само; local
+CREATE TABLE sync_conflict (
+  uid          TEXT PRIMARY KEY,              -- uuid7: порядок по uid = порядок открытия
+  project_id   INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  entity_kind  TEXT NOT NULL,
+  entity_uid   TEXT NOT NULL,
+  field        TEXT,                          -- NULL у delete_edit и склейки ключей
+  kind         TEXT NOT NULL CHECK (kind IN ('field','text','status','delete_edit',
+                                             'key_merge','double_checkout')),
+  ours         TEXT, theirs TEXT, base TEXT,  -- канонический JSON значения (§10.4)
+  theirs_op    TEXT NOT NULL,                 -- op_id чужой операции
+  status       TEXT NOT NULL CHECK (status IN ('open','resolved')),
+  resolved_by  TEXT, resolved_at DATETIME
+);
+CREATE INDEX ix_sync_conflict_status ON sync_conflict(project_id, status);
 ```
 
 - **Кто пишет `sync_op`.** Хук `cod_doc/infra/sync_capture.py`, который

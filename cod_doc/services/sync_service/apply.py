@@ -352,6 +352,37 @@ def _find(
     return session.scalars(stmt).one_or_none()
 
 
+def entity_by_uid(
+    session: Session, project: ProjectRef, table: str, uid: str
+) -> tuple[object, cap.TableInfo] | None:
+    """ORM-строка таблицы с uid в проекте (чужой проект — SYNC-102) и её ``TableInfo``.
+
+    Только для таблиц с колонкой ``uid``; у тег-таблиц строка адресуется
+    концами ребра (``_find``).
+    """
+    mapper, info = _info(table)
+    if not info.has_uid:
+        msg = f"{table}: строка без колонки uid адресуется концами ребра"
+        raise ObjectMissingError(msg)
+    model = mapper.class_
+    obj = session.scalars(select(model).where(getattr(model, info.attr(_UID)) == uid)).one_or_none()
+    if obj is None:
+        return None
+    _require_own(session, project, table, _row_of(info, obj), f"uid {uid}")
+    return obj, info
+
+
+def orm_values(
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    payload: Mapping[str, object],
+    existing: object | None,
+) -> dict[str, object]:
+    """Поля в форме changeset'а → значения ORM-атрибутов (FK uid → row_id, время)."""
+    return _translate(session, project, info, payload, existing)
+
+
 # --- гейт реестра -----------------------------------------------------------------
 
 
