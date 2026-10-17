@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-27
-last_updated: 2026-10-15
+last_updated: 2026-10-17
 related_docs:
   - ../ARCHITECTURE.md
   - ../DATA_MODEL.md
@@ -22,19 +22,20 @@ audience: [contributors, agents]
 > набор равноправных реплик. Реплики обмениваются журналом операций через
 > remote по модели git: `clone` / `pull` / `push`.
 
-> ⚠️ **Намечено, реализовано частично (на 2026-10-15).** Спецификация по
+> ⚠️ **Намечено, реализовано частично (на 2026-10-17).** Спецификация по
 > RFC 29 (принят 2026-10-11). Решения — ADR-016 (топология) и ADR-017
 > (идентичность и захват операций), оба приняты. План `cloud-remote-2026-10`:
 > секция A (идентичность и журнал) закрыта 2026-10-15
-> ([аудит](../audit/2026-10-15-cloud-remote-section-a.md)), секции B–F не
-> начаты. Пользователю пока не видно ничего: remote, `push`, `pull` нет.
-> Контракт ниже — цель; детали схемы и протокола — в
-> [RFC 29](../../../proposals/29-cloud-remote-sync.md).
+> ([аудит](../audit/2026-10-15-cloud-remote-section-a.md)), секция B
+> (changeset, file-remote, push/pull) — 2026-10-17
+> ([аудит](../audit/2026-10-17-cloud-remote-section-b.md)), секции C–F не
+> начаты. Работает только `file://` remote и только fast-forward pull;
+> `clone`, слияния и конфликтов нет. Контракт ниже — цель; детали схемы и
+> протокола — в [RFC 29](../../../proposals/29-cloud-remote-sync.md).
 
-## 0. As implemented (2026-10-15)
+## 0. As implemented (2026-10-17)
 
-Секция A плана (CLO-001…009) — фундамент репликации внутри одной БД;
-видимого поведения она не добавляет:
+Секция A плана (CLO-001…009) — фундамент репликации внутри одной БД:
 
 - **Реестр классов** `cod_doc/infra/sync_registry.py`: каждая таблица — ровно
   один класс из §3 (authored / journal / derived / local), уезжающие колонки
@@ -49,10 +50,31 @@ audience: [contributors, agents]
   операцию `sync_op` на каждую запись в authored-данные — с HLC своей реплики,
   автором и только уезжающими полями. Журнал копится всегда, даже без remote.
 
-Чего нет: `changeset` и `sync_ref` пусты, команд `remote`, `clone`, `pull`,
-`push`, `sync` нет (секция B), слияния и конфликтов нет (секция C),
-аутентификации нет ни в REST API, ни в MCP (секция E). Проект по-прежнему живёт
-в одной `<project>/.cod-doc/state.db` в `.gitignore`.
+Секция B (CLO-010…016, [аудит](../audit/2026-10-17-cloud-remote-section-b.md))
+— обмен между репликами через `file://` remote:
+
+- **Changeset v1** (`sync_service/changeset.py`): каноническая форма §10.4,
+  адрес — sha256, на проводе `CDC1` + zstd; объект с remote разбирается как
+  недоверенный вход (`SYNC-102`).
+- **`FileRemote`** (`cod_doc/infra/remote/file.py`): CAS ref'ов под `flock`,
+  спуск по каталогу `openat`/`O_NOFOLLOW`, потолки чтения.
+- **`push`**: упаковка хвоста журнала в один changeset, CAS `refs/main` только
+  когда remote на локальной голове, до трёх повторов через pull, дальше
+  `SYNC-103`.
+- **`pull`**: только fast-forward; changeset проверяется до первой записи
+  (схема — `SYNC-104`, проект, уезжающие поля, штампы HLC, каскад в restricted)
+  и применяется своей транзакцией. Правка той же сущности на обеих сторонах —
+  `MergeRequiredError` («секция C»).
+- **Дайджест и `verify`**: sha256 уезжающего состояния проекта без `row_id`,
+  `position`, restricted и journal; две реплики после fast-forward равны.
+- **Поверхности**: CLI `cod-doc remote add|list|remove`, `fetch`, `pull
+  [--dry-run]`, `push [--no-retry]`, `sync status [--verify]|log|verify`; MCP
+  `sync_status`, `sync_pull`, `sync_push` (профили `standard`/`full`).
+
+Чего нет: `clone` (CLO-029) — вторая реплика заводится эмуляцией (рецепт —
+[аудит секции B §8](../audit/2026-10-17-cloud-remote-section-b.md)); S3 и умный
+remote (`SYNC-110` до CLO-028/035); слияние, конфликты и синхронизация ревизий
+(секция C); аутентификация ни в REST API, ни в MCP (секция E).
 
 ## 1. Зачем
 
