@@ -395,8 +395,14 @@ def _require_shipped(
     restricted-документом, ни колонка, которую реестр для этой строки
     придерживает.
     """
+    row = _row_of(info, obj)
+    if not written:
+        # Своя нерешённая подсказка local до решения; решение remote ложится
+        # поверх неё (Q-017, CLO-025) — гейт по строке уже с решением.
+        decision = reg.decision_columns(info.table)
+        row |= {c: v for c, v in op.fields.items() if c in decision}
     try:
-        allowed = cap.shipped_fields(session, info.table, _row_of(info, obj))
+        allowed = cap.shipped_fields(session, info.table, row)
     except cap.SyncCaptureError as exc:
         msg = f"{info.table} {op.entity_uid}: {exc}"
         raise ObjectMissingError(msg) from exc

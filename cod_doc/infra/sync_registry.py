@@ -35,7 +35,10 @@
    и колонки ключа решения (``from_section_id``, ``to_doc_key``,
    ``to_section_id``): без них на другой реплике решение не к чему приложить.
    Строка с ``state = pending`` — ``row_is_local``: не решение (Q-017). Ключ
-   решения — ``deterministic_uid``.
+   решения — ``deterministic_uid``. Своя нерешённая подсказка на реплике —
+   та же строка, что и пришедшее решение (один ключ): применение пишет
+   решение поверх неё, гейт сверяется со строкой уже с решением
+   (``decision_columns``, CLO-025).
 5. **Полиморфные ссылки.** ``external_ref.entity_row_id`` и
    ``revision.entity_id`` ссылаются на ``row_id`` таблицы, выбранной колонкой
    ``entity_kind``; ``logical_fks: {колонка: таблица}`` такого не выражает. Они
@@ -1252,6 +1255,20 @@ def row_class(table: str, row: Mapping[str, object]) -> SyncClass:
     if spec.row_is_local is not None and spec.row_is_local(row):
         return _ROW_CLASS_WHEN_HELD.get(table, SyncClass.LOCAL)
     return spec.cls
+
+
+def decision_columns(table: str) -> frozenset[str]:
+    """Authored-колонки derived-таблицы вне ключа строки: само решение (Q-017).
+
+    У ``link_suggestion`` — ``state``. Своя derived-строка до решения local
+    (``row_is_local``), и remote пишет решение поверх неё: применение
+    сверяет гейт со строкой, в которую уже подставлены эти колонки
+    (CLO-025). У authored-таблиц решений нет — пусто.
+    """
+    spec = spec_for(table)
+    if spec.cls is not SyncClass.DERIVED:
+        return frozenset()
+    return spec.authored_columns - frozenset(spec.deterministic_uid or ())
 
 
 def human_ref_target(table: str, column: str, row: Mapping[str, object]) -> str | None:
