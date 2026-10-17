@@ -29,6 +29,7 @@ from __future__ import annotations
 import importlib
 import json
 import shutil
+import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1438,6 +1439,101 @@ def _(w: World) -> Expect:
 NO_AUTHOR_PARAM: tuple[str, ...] = ("routine_service.",)
 
 
+# sync_service (CLO-016) -------------------------------------------------------------
+#
+# push и pull — мутации по детектору паритета (пишут sync.pushed / sync.pulled),
+# но authored-данные не трогают: push только помечает хвост changeset'ом, pull
+# применяет чужие операции под ``suspended``. Правильный ответ — «операций нет».
+
+
+def _sync_store(w: World) -> Any:
+    from cod_doc.infra.remote.file import FileRemote
+
+    root = w.root / "remote"
+    root.mkdir(exist_ok=True)
+    return FileRemote(root)
+
+
+def _push_world(w: World, store: Any) -> None:
+    from cod_doc.services.sync_service import push
+
+    w.commit()  # подготовка случая не держит транзакцию: push пишет своими
+    engine = make_engine(w.db_url)
+    try:
+        push.push(make_session_factory(engine), "w", author=AUTHOR, store=store)
+    finally:
+        engine.dispose()
+
+
+@case("sync_service.push")
+def _(w: World) -> Expect:
+    _push_world(w, _sync_store(w))
+    return []
+
+
+NO_OPS["sync_service.push"] = (
+    cap.CAPTURED_TABLES,
+    "упаковка помечает уже записанный хвост changeset'ом, новых операций не пишет",
+)
+
+
+@case("sync_service.pull")
+def _(w: World) -> Expect:
+    import uuid
+
+    from sqlalchemy import text
+
+    from cod_doc.services.sync_service import pull, push
+
+    store = _sync_store(w)
+    _push_world(w, store)
+    # Вторая реплика — копия БД после push со своей реплик-идентичностью.
+    # backup, а не copyfile: свежий commit push'а может лежать ещё в -wal.
+    other = w.root / "other.db"
+    with (
+        sqlite3.connect(w.db_url.removeprefix("sqlite:///")) as src,
+        sqlite3.connect(other) as dst,
+    ):
+        src.backup(dst)
+    engine = make_engine(f"sqlite:///{other}")
+    try:
+        sf = make_session_factory(engine)
+        with sf() as s:
+            s.execute(
+                text("UPDATE replica SET uid = :u WHERE is_self = 1"), {"u": str(uuid.uuid7())}
+            )
+            s.commit()
+        with sf() as s:
+            task_service.update_description(
+                s,
+                project_id=w.pid,
+                task_id="PLN-001",
+                new_description="с другой реплики",
+                author=AUTHOR,
+            )
+            s.commit()
+        push.push(sf, "w", author=AUTHOR, store=store)
+    finally:
+        engine.dispose()
+    engine = make_engine(w.db_url)
+    try:
+        result = pull.pull(make_session_factory(engine), "w", author=AUTHOR, store=store)
+    finally:
+        engine.dispose()
+    assert result.ops > 0
+    return []
+
+
+#: Случаи, после которых в ``sync_op`` законно появляются чужие операции с
+#: ``changeset`` — история применённых changeset'ов, а не захват (RFC 29 B14).
+FOREIGN_HISTORY: frozenset[str] = frozenset({"sync_service.pull"})
+
+NO_OPS["sync_service.pull"] = (
+    cap.CAPTURED_TABLES,
+    "чужие операции применяются под suspended: эха в журнале нет (§10.6)",
+)
+
+
 @case("project_service.init_project")
 def _(w: World) -> Expect:
     from cod_doc.config import ProjectEntry
@@ -1575,6 +1671,11 @@ def test_write_path_writes_sync_op(world: World, name: str) -> None:
     expected = CASES[name](world)
     session.commit()
     fresh = _fresh_ops(session, before)
+    if name in FOREIGN_HISTORY:
+        # Чужие операции ложатся в журнал историей — с changeset, не хвостом (B14).
+        # Эхо (операция без changeset) ловит NO_OPS ниже.
+        assert any(op.changeset is not None for op in fresh), "pull не записал историю"
+        fresh = [op for op in fresh if op.changeset is None]
 
     for op in fresh:
         fields, base = json.loads(op.fields), json.loads(op.base)
