@@ -76,9 +76,17 @@ FORMAT_VERSION: Final = 1
 FORMAT_MAGIC: Final = b"CDC1"
 #: Потолок распакованного объекта: защита от zstd-бомбы с чужого remote.
 MAX_CANONICAL_BYTES = 64 * 1024 * 1024
+#: Потолок вложенности JSON. Свой changeset глубже 4 уровней (объект → ops →
+#: операция → fields) плюс вложенность значений колонок, а те плоские или
+#: неглубокие; 64 — с запасом. Без потолка глубокий массив с чужого remote
+#: роняет json.loads и _normalize RecursionError'ом вместо SYNC-102.
+MAX_JSON_DEPTH = 64
 
 OP_KINDS: Final = frozenset({"upsert", "delete"})
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
+#: Строковый литерал JSON: скобки внутри строк в глубину не считаются.
+_JSON_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_JSON_BRACKET_RE = re.compile(r"[\[\]{}]")
 _CHANGESET_KEYS: Final = frozenset(
     {
         "v",
@@ -187,7 +195,7 @@ class Op:
         for name in ("op_id", "entity_kind", "entity_uid", "author"):
             _require_text(getattr(self, name), name)
         _require_hlc(self.hlc, "hlc")
-        if self.kind not in OP_KINDS:
+        if not isinstance(self.kind, str) or self.kind not in OP_KINDS:
             msg = f"kind: ожидается одно из {sorted(OP_KINDS)}, получено {self.kind!r}"
             raise ValueError(msg)
         # Время и кортежи приводятся к JSON сразу: тогда Op, собранный из журнала,
@@ -379,6 +387,24 @@ def _inflate(payload: bytes) -> bytes:
     return raw
 
 
+def _check_depth(text: str) -> None:
+    """Отказать до json.loads, если вложенность больше ``MAX_JSON_DEPTH``."""
+    depth = 0
+    limit = MAX_JSON_DEPTH
+    for bracket in _JSON_BRACKET_RE.findall(_JSON_STRING_RE.sub('""', text)):
+        depth += 1 if bracket in "[{" else -1
+        if depth > limit:
+            msg = f"вложенность JSON больше {limit}"
+            raise ValueError(msg)
+
+
+#: Всё, чем разбор и проверка недоверенного объекта могут упасть. Сверх
+#: ValueError (UnicodeDecodeError, JSONDecodeError, лимит цифр int, проверки
+#: §10.4) — страховка: исключение из кода разбора не должно уронить pull
+#: сырым трейсбеком вместо SYNC-102.
+_PARSE_ERRORS = (ValueError, TypeError, KeyError, OverflowError, RecursionError)
+
+
 def decode(data: bytes, expected_sha: str) -> Changeset:
     """Прочитать объект с remote; ``ObjectMissingError`` (SYNC-102), если он непригоден."""
     if data[: len(FORMAT_MAGIC)] != FORMAT_MAGIC:
@@ -399,9 +425,11 @@ def decode(data: bytes, expected_sha: str) -> Changeset:
         raise ObjectMissingError(msg)
 
     try:
-        cs = from_dict(json.loads(raw.decode("utf-8")))
+        text = raw.decode("utf-8")
+        _check_depth(text)
+        cs = from_dict(json.loads(text))
         canonical = canonical_bytes(cs)
-    except ValueError as exc:  # UnicodeDecodeError и JSONDecodeError — тоже ValueError
+    except _PARSE_ERRORS as exc:
         msg = f"объект {expected_sha}: не changeset v{FORMAT_VERSION}: {exc}"
         raise ObjectMissingError(msg) from exc
     # sha сошёлся, но байты не канонические: тот же changeset имел бы другой

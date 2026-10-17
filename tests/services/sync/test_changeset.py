@@ -8,6 +8,7 @@ Golden-тест держит каноническую форму: любая п�
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 from compression import zstd
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -209,15 +210,11 @@ def test_decode_rejects_trailing_garbage() -> None:
 
 
 def test_decode_rejects_non_canonical_bytes_even_with_matching_sha() -> None:
-    import hashlib
-
     loose = json.dumps(json.loads(GOLDEN_CANONICAL), indent=1, ensure_ascii=False).encode()
     _assert_sync_102(FORMAT_MAGIC + zstd.compress(loose), hashlib.sha256(loose).hexdigest())
 
 
 def test_decode_rejects_invalid_structure_with_matching_sha() -> None:
-    import hashlib
-
     raw = json.loads(GOLDEN_CANONICAL)
     raw["v"] = 2
     body = json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -322,3 +319,111 @@ def test_empty_ops_allowed_for_merge_changeset() -> None:
 def test_parents_order_is_kept() -> None:
     cs = dataclasses.replace(_golden(), parents=("b" * 64, _PARENT))
     assert json.loads(canonical_bytes(cs))["parents"] == ["b" * 64, _PARENT]
+
+
+# --- недоверенный вход: любой сбой разбора — SYNC-102, не сырое исключение -------
+
+
+def _addressed(body: bytes) -> tuple[bytes, str]:
+    return FORMAT_MAGIC + zstd.compress(body), hashlib.sha256(body).hexdigest()
+
+
+def _canonical(raw: object) -> bytes:
+    return json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def test_decode_rejects_deep_nesting_before_parsing() -> None:
+    _assert_sync_102(*_addressed(b"[" * 200_000 + b"]" * 200_000))
+
+
+def test_decode_rejects_deep_nesting_inside_fields() -> None:
+    raw = json.loads(GOLDEN_CANONICAL)
+    deep: object = 1
+    for _ in range(cs_mod.MAX_JSON_DEPTH):
+        deep = [deep]
+    raw["ops"][0]["fields"]["deep"] = deep
+    _assert_sync_102(*_addressed(_canonical(raw)))
+
+
+def test_depth_guard_ignores_brackets_inside_strings() -> None:
+    raw = json.loads(GOLDEN_CANONICAL)
+    raw["ops"][0]["fields"]["title"] = '[{"\\' * 500
+    data, address = _addressed(_canonical(raw))
+    assert decode(data, address).ops[0].fields["title"] == '[{"\\' * 500
+
+
+def test_decode_stops_inflating_zstd_bomb(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cs_mod, "MAX_CANONICAL_BYTES", 1024 * 1024)
+    bomb = FORMAT_MAGIC + zstd.compress(b"0" * (32 * 1024 * 1024))
+    assert len(bomb) < 64 * 1024
+    _assert_sync_102(bomb, "0" * 64)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"[]", b'"changeset"', b"null", b"42", b"\xff\xfe", b"{", b"NaN"],
+    ids=["list", "string", "null", "int", "not-utf8", "truncated-json", "nan"],
+)
+def test_decode_rejects_non_object_top_level(body: bytes) -> None:
+    _assert_sync_102(*_addressed(body))
+
+
+def test_decode_rejects_huge_int() -> None:
+    raw = GOLDEN_CANONICAL.replace(b'"estimate":1.5', b'"estimate":' + b"9" * 10_000)
+    _assert_sync_102(*_addressed(raw))
+
+
+def test_decode_rejects_float_overflow() -> None:
+    raw = GOLDEN_CANONICAL.replace(b'"estimate":1.5', b'"estimate":1e999')
+    _assert_sync_102(*_addressed(raw))
+
+
+_WRONG_TYPES: list[tuple[str, object]] = [
+    ("v", "1"),
+    ("v", True),
+    ("project", 7),
+    ("parents", "a" * 64),
+    ("parents", [1]),
+    ("parents", {"a": 1}),
+    ("replica", None),
+    ("actor", ["dakh"]),
+    ("epoch", {}),
+    ("schema_head", 1.5),
+    ("hlc_max", 1760000000002),
+    ("digest", ["d" * 64]),
+    ("ops", {"0": {}}),
+    ("ops", ["op"]),
+    ("ops", [None]),
+]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), _WRONG_TYPES, ids=[f"{f}={v!r}"[:40] for f, v in _WRONG_TYPES]
+)
+def test_decode_rejects_wrong_type_per_field(field: str, value: object) -> None:
+    raw = json.loads(GOLDEN_CANONICAL)
+    raw[field] = value
+    _assert_sync_102(*_addressed(_canonical(raw)))
+
+
+_WRONG_OP_TYPES: list[tuple[str, object]] = [
+    ("op_id", 1),
+    ("hlc", None),
+    ("entity_kind", []),
+    ("entity_uid", {}),
+    ("kind", ["upsert"]),
+    ("kind", {"upsert": 1}),
+    ("fields", []),
+    ("fields", "status=done"),
+    ("base", None),
+    ("author", False),
+]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), _WRONG_OP_TYPES, ids=[f"{f}={v!r}"[:40] for f, v in _WRONG_OP_TYPES]
+)
+def test_decode_rejects_wrong_type_per_op_field(field: str, value: object) -> None:
+    raw = json.loads(GOLDEN_CANONICAL)
+    raw["ops"][0][field] = value
+    _assert_sync_102(*_addressed(_canonical(raw)))
