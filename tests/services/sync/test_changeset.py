@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import time
 from compression import zstd
 from datetime import UTC, date, datetime, timedelta, timezone
 
@@ -350,6 +351,33 @@ def test_depth_guard_ignores_brackets_inside_strings() -> None:
     raw["ops"][0]["fields"]["title"] = '[{"\\' * 500
     data, address = _addressed(_canonical(raw))
     assert decode(data, address).ops[0].fields["title"] == '[{"\\' * 500
+
+
+_ADVERSARIAL: list[bytes] = [
+    b'"' + b"\\\\" * 200_000,  # незакрытая строка из пар обратных слэшей
+    b'"' * 200_001,  # нечётная серия кавычек
+    # каждая экранированная кавычка — новое начало незакрытого литерала: на
+    # регулярке '"(?:[^"\\]|\\.)*"' это n попыток по n символов
+    b'"' + b'\\"' * 100_000,
+    b"[" * 100_000,
+    b'["' + b"\\" * 400_001,  # нечётная серия слэшей без закрывающей кавычки
+]
+
+
+@pytest.mark.parametrize(
+    "body", _ADVERSARIAL, ids=["backslashes", "quotes", "escaped-quotes", "brackets", "odd"]
+)
+def test_depth_scan_is_linear_on_adversarial_input(body: bytes) -> None:
+    data, address = _addressed(body)
+    started = time.perf_counter()
+    _assert_sync_102(data, address)
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize("char", [b"\x00", b"\n", b"\x1f"])
+def test_decode_rejects_raw_control_chars(char: bytes) -> None:
+    raw = GOLDEN_CANONICAL.replace(b'"actor":"dakh"', b'"actor":"da' + char + b'kh"')
+    _assert_sync_102(*_addressed(raw))
 
 
 def test_decode_stops_inflating_zstd_bomb(monkeypatch: pytest.MonkeyPatch) -> None:

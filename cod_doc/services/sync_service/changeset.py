@@ -84,9 +84,12 @@ MAX_JSON_DEPTH = 64
 
 OP_KINDS: Final = frozenset({"upsert", "delete"})
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
-#: Строковый литерал JSON: скобки внутри строк в глубину не считаются.
-_JSON_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
-_JSON_BRACKET_RE = re.compile(r"[\[\]{}]")
+#: Символы, меняющие состояние сканера глубины. Класс из одиночных символов —
+#: поиск линейный, без возвратов.
+_JSON_SCAN_RE = re.compile(r'["\\\[\]{}]')
+#: Сырые управляющие символы: в канонической форме их нет ни внутри строк
+#: (json.dumps экранирует их), ни снаружи (разделители без пробелов).
+_CONTROL_RE = re.compile(r"[\x00-\x1f]")
 _CHANGESET_KEYS: Final = frozenset(
     {
         "v",
@@ -388,14 +391,40 @@ def _inflate(payload: bytes) -> bytes:
 
 
 def _check_depth(text: str) -> None:
-    """Отказать до json.loads, если вложенность больше ``MAX_JSON_DEPTH``."""
-    depth = 0
+    """Отказать до json.loads, если вложенность больше ``MAX_JSON_DEPTH``.
+
+    Один линейный проход по ``"``, ``\\`` и скобкам с состоянием «внутри
+    строки» / «следующий символ экранирован»; скобки внутри строк не считаются,
+    отказ — сразу при превышении. Регулярка на строковые литералы здесь не
+    годится: на незакрытой строке или длинной серии обратных слэшей она
+    квадратична и обесценивает потолок размера.
+    """
+    if _CONTROL_RE.search(text) is not None:
+        msg = "сырой управляющий символ: объект не в канонической форме"
+        raise ValueError(msg)
     limit = MAX_JSON_DEPTH
-    for bracket in _JSON_BRACKET_RE.findall(_JSON_STRING_RE.sub('""', text)):
-        depth += 1 if bracket in "[{" else -1
-        if depth > limit:
-            msg = f"вложенность JSON больше {limit}"
-            raise ValueError(msg)
+    depth = 0
+    in_string = False
+    escaped_at = -1
+    for match in _JSON_SCAN_RE.finditer(text):
+        pos = match.start()
+        if pos == escaped_at:
+            continue
+        char = match.group()
+        if in_string:
+            if char == "\\":
+                escaped_at = pos + 1
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > limit:
+                msg = f"вложенность JSON больше {limit}"
+                raise ValueError(msg)
+        elif char in "]}":
+            depth -= 1
 
 
 #: Всё, чем разбор и проверка недоверенного объекта могут упасть. Сверх
