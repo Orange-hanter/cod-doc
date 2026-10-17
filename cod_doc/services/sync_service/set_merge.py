@@ -78,7 +78,7 @@ def _current(
 ) -> dict[str, FieldValue] | None:
     """Уезжающие поля строки ребра на этой реплике (форма журнала); нет строки — ``None``."""
     mapper, info = apply._info(op.entity_kind)
-    obj = apply._find(session, project, mapper, info, op, key)
+    obj = apply._find(session, project, mapper, info, op.entity_uid, key)
     if obj is None:
         return None
     fields = cap.shipped_fields(session, op.entity_kind, apply._row_of(info, obj))

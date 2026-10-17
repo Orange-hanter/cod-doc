@@ -37,7 +37,7 @@ from ._surface_parity import (
 
 SPEC = ServiceSpec(
     name="sync_service",
-    known_mutations=frozenset({"push", "pull", "open_conflict", "resolve_conflict"}),
+    known_mutations=frozenset({"push", "pull", "open_conflict", "resolve_conflict", "resolve_key"}),
     known_reads=frozenset(
         {
             # pull.py, status.py, digest.py
@@ -71,6 +71,10 @@ SPEC = ServiceSpec(
             "конфликт открывает слияние внутри pull (merge), а не пользователь; "
             "событие sync.conflict_opened пишется в транзакции применения changeset'а"
         ),
+        "resolve_key": (
+            "стратегия склейки ключей (CLO-023) зовётся из apply внутри pull; "
+            "событие sync.alias_created/relettered пишется в транзакции changeset'а"
+        ),
     },
 )
 
@@ -102,6 +106,7 @@ def test_discovered_mutations_exact() -> None:
         "pull",
         "open_conflict",
         "resolve_conflict",
+        "resolve_key",
     }
 
 

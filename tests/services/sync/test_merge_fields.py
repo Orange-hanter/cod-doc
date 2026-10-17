@@ -39,7 +39,6 @@ from cod_doc.infra.models import (
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import checkout_service, scenario_service, task_service
 from cod_doc.services.sync_service import conflicts, digest, merge, pull, push
-from cod_doc.services.sync_service.errors import MergeRequiredError
 from tests.services.sync import _replicas as r
 
 if TYPE_CHECKING:
@@ -341,10 +340,11 @@ def test_inserts_between_the_same_neighbours_order_identically(pair: tuple) -> N
     _assert_converged(a, b, store)
 
 
-# --- границы следующих задач ----------------------------------------------------------
+# --- удаление против правки и совпавший ключ (CLO-022, CLO-023) -----------------------
 
 
-def test_delete_against_edit_waits_for_clo_022(pair: tuple) -> None:
+def test_delete_against_edit_is_won_by_the_delete(pair: tuple) -> None:
+    """Удаление против правки — стратегия CLO-022: удаление выигрывает, правка — в конфликт."""
     a, b, store = pair
     _common_task(a, b, store)
     with transactional(a.sf) as s:
@@ -352,23 +352,29 @@ def test_delete_against_edit_waits_for_clo_022(pair: tuple) -> None:
         s.delete(s.scalars(select(TaskModel).where(TaskModel.task_id == TASK)).one())
     _push(a, store)
     _set(b, title="правка под удалением")
-    before = r.authored_state(b)
 
-    with pytest.raises(MergeRequiredError, match="CLO-022"):
-        _pull(b, store)
+    pulled = _pull(b, store)
 
-    assert r.authored_state(b) == before
+    assert len(pulled.conflicts) == 1
+    assert r.task_description(b, TASK) is None  # задачи нет
+    _push(b, store)
+    _pull(a, store)
+    _assert_converged(a, b, store)
 
 
-def test_natural_key_twin_waits_for_clo_023_instead_of_integrity_error(pair: tuple) -> None:
-    """Один doc_key, созданный на обеих репликах, — склейка (F2 секции B), а не IntegrityError."""
+def test_natural_key_twin_is_glued_instead_of_integrity_error(pair: tuple) -> None:
+    """Один doc_key, созданный на обеих репликах, — склейка CLO-023 (F2 секции B)."""
     a, b, store = pair
     r.make_doc(a, "guide/same", {"intro": "A"})
     _push(a, store)
     r.make_doc(b, "guide/same", {"intro": "B"})
 
-    with pytest.raises(MergeRequiredError, match="CLO-023"):
-        _pull(b, store)
+    pulled = _pull(b, store)
+
+    assert len(pulled.conflicts) == 1  # тела секции intro разошлись
+    _push(b, store)
+    _pull(a, store)
+    _assert_converged(a, b, store)
 
 
 # --- точки расширения ---------------------------------------------------------------
