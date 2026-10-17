@@ -9,7 +9,8 @@ tmp; общая история заведена на A и разошлась п�
 раундов: каждая реплика офлайн делает случайные правки всех видов слияния —
 LWW поля, вставки по rank, текст (diff3), статус и checkout, рёбра и тег-связи,
 удаление против правки, двойники натурального ключа (документ, секция,
-тег, буква секции плана). Затем картина копируется в несколько «вселенных»
+тег, буква секции плана), сценарии на restricted-документе своей реплики
+(ссылка и ``group_key`` придержаны, F8) и правки их заголовка с других реплик. Затем картина копируется в несколько «вселенных»
 (все три БД и remote), и в каждой синхронизация идёт своей случайной
 перестановкой ``push``/``pull`` (push без повтора: отказ CAS — тоже шаг
 перестановки), пока система не затихнет: хвостов нет, все три головы равны
@@ -60,13 +61,21 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy import select
 
-from cod_doc.domain.entities import Priority, ScenarioKind, TaskType
+from cod_doc.domain.entities import (
+    DocumentStatus,
+    DocumentType,
+    Priority,
+    ScenarioKind,
+    Sensitivity,
+    TaskType,
+)
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import (
     DependencyModel,
     DocumentTagModel,
     PlanSectionModel,
+    ScenarioModel,
     TagModel,
     TaskModel,
 )
@@ -87,6 +96,7 @@ LOCK_TASK = "DEM-003"
 MAIN_DOC = "spec/main"
 DOOMED_DOC = "spec/doomed"
 TAG = "remote"
+SECRET_DOC = "secret/vault"
 LINES = 6
 STATUSES = ("backlog", "todo", "in_progress", "blocked", "review", "done", "cancelled")
 ROUNDS = 2
@@ -94,6 +104,7 @@ UNIVERSES = 3
 RANDOM_STEPS = 14
 MAX_SETTLE = 12
 MAX_RESOLVE = 6
+MAX_STATUS_WRITERS = 2
 
 type Signature = tuple[str, str, str | None, str]
 type Edit = Callable[[r.Replica, random.Random, int], None]
@@ -208,11 +219,28 @@ def _delete_doomed(rep: r.Replica, _rng: random.Random, _n: int) -> None:
         doc_service.delete(s, project_id=rep.project_id, doc_key=DOOMED_DOC, author=r.AUTHOR)
 
 
+#: Кто в текущем раунде писал статус задачи: не больше двух реплик на задачу.
+_STATUS_WRITERS: dict[str, set[str]] = {}
+
+
 def _set_status(rep: r.Replica, rng: random.Random, _n: int) -> None:
-    """Статус через ORM: пара значений любая — слияние проверяет переход само."""
+    """Статус через ORM: пара значений любая — слияние проверяет переход само.
+
+    Статус одной задачи в раунде пишут не больше двух реплик, по разу каждая.
+    Проверка перехода попарная (CLO-020): у трёх записей (три реплики или две
+    записи одной) промежуточная может проиграть допустимым переходом и не
+    уехать, и кто какую пару судил, зависит от порядка — множество конфликтов
+    ``status`` тоже (аудит, F11).
+    """
+    task_id = rng.choice(TASKS[:2])
+    writers = _STATUS_WRITERS.setdefault(task_id, set())
+    if rep.name in writers or len(writers) >= MAX_STATUS_WRITERS:
+        msg = f"{task_id}: статус в раунде уже писали {sorted(writers)}"
+        raise RuntimeError(msg)
+    writers.add(rep.name)
     with transactional(rep.sf) as s:
         cap.set_author(s, r.AUTHOR)
-        _task_row(s, rng.choice(TASKS[:2])).status = rng.choice(STATUSES)
+        _task_row(s, task_id).status = rng.choice(STATUSES)
 
 
 def _checkout_or_release(rep: r.Replica, _rng: random.Random, _n: int) -> None:
@@ -322,6 +350,50 @@ def _plan_letter(rep: r.Replica, _rng: random.Random, n: int) -> None:
         )
 
 
+def _restricted_scenario(rep: r.Replica, rng: random.Random, n: int) -> None:
+    """Сценарий на restricted-документе своей реплики: ссылка и group_key придержаны.
+
+    Restricted-документ не уезжает, поэтому у каждой реплики свой; сценарий
+    уезжает без ``doc_key``/``document_id``/якоря/хэша/``group_key`` (F8).
+    """
+    offset = {"a": 600, "b": 700, "c": 800}[rep.name]
+    with transactional(rep.sf) as s:
+        if doc_service.get(s, rep.project_id, SECRET_DOC) is None:
+            doc_service.create(
+                s,
+                project_id=rep.project_id,
+                doc_key=SECRET_DOC,
+                type=DocumentType.MODULE_SPEC,
+                status=DocumentStatus.DRAFT,
+                title="vault",
+                author=r.AUTHOR,
+                path=f"docs/{SECRET_DOC}.md",
+                sensitivity=Sensitivity.RESTRICTED,
+                reindex=False,
+            )
+        scenario_service.create(
+            s,
+            project_id=rep.project_id,
+            title=f"тайный {rep.name} {n}",
+            kind=ScenarioKind.INVARIANT,
+            preconditions="p",
+            expected="e",
+            author=r.AUTHOR,
+            scenario_id=f"SCN-{offset + n % 100}",
+            doc_key=SECRET_DOC,
+            group_key=rng.choice([None, "vault-group"]),
+            steps=["шаг"],
+        )
+
+
+def _scenario_title(rep: r.Replica, rng: random.Random, n: int) -> None:
+    """Заголовок любого сценария — в том числе чужого, чья ссылка придержана."""
+    with transactional(rep.sf) as s:
+        cap.set_author(s, r.AUTHOR)
+        rows = list(s.scalars(select(ScenarioModel).order_by(ScenarioModel.scenario_id)))
+        rng.choice(rows).title = f"{rep.name}-{n}"
+
+
 def _new_task(rep: r.Replica, _rng: random.Random, n: int) -> None:
     """Новая задача со своим номером (двойники leased-ключа — CLO-030, вне генератора)."""
     offset = {"a": 100, "b": 200, "c": 300}[rep.name]
@@ -358,11 +430,14 @@ EDITS: tuple[tuple[Edit, int], ...] = (
     (_twin_tag, 1),
     (_plan_letter, 1),
     (_new_task, 1),
+    (_restricted_scenario, 1),
+    (_scenario_title, 1),
 )
 
 
 def _offline(reps: tuple[r.Replica, ...], rng: random.Random, rnd: int) -> None:
     """Правки раунда: на каждой реплике 2–5 случайных; checkout — у одной реплики."""
+    _STATUS_WRITERS.clear()
     edits = [e for e, _ in EDITS]
     weights = [w for _, w in EDITS]
     locker = reps[rnd % len(reps)]
@@ -462,10 +537,16 @@ def _digest(rep: r.Replica) -> str:
         return digest.compute(s, rep.project_id)
 
 
+def _state(rep: r.Replica) -> list[bytes]:
+    """Строки дайджеста: ровно то, что хешируется (придержанное — значением приёмника)."""
+    with transactional(rep.sf, commit=False) as s:
+        return [digest._line(*line) for line in cap.shipped_state(s, rep.project_id)]
+
+
 def _assert_converged(u: Universe, where: str) -> None:
     digests = {rep.name: _digest(rep) for rep in u.reps}
     assert len(set(digests.values())) == 1, f"{where}: дайджесты разошлись {digests}"
-    states = [r.authored_state(rep) for rep in u.reps]
+    states = [_state(rep) for rep in u.reps]
     assert states[0] == states[1] == states[2], f"{where}: состояние разошлось"
     for rep in u.reps:
         assert digest.verify(rep.sf, r.SLUG, store=u.store).equal, f"{where}: verify {rep.name}"
@@ -722,27 +803,54 @@ def test_twin_creation_rekeyed_onto_an_existing_row_is_not_a_text_conflict(
     _dispose(u)
 
 
-def test_conflict_on_a_row_deleted_later_can_still_be_resolved(tmp_path: Path) -> None:
-    """Сид 280: A и C правят одну строку секции, B удаляет документ.
-
-    C сливает правку A — конфликт ``text`` на секции; B сливает обе правки
-    против своего удаления — ``delete_edit``. Удаление B приходит на C, и
-    конфликт ``text`` остаётся на строке, которой нет, и ``sync resolve`` отвечал ``SYNC-302: … в проекте
-    больше нет`` — конфликт висел в очереди куратора навсегда.
-    """
+def _text_conflict_on_doomed(tmp_path: Path) -> Universe:
+    """A и C правят одну строку секции обречённого документа; C сливает — ``text``."""
     u = _three(tmp_path)
-    a, b, c = u.reps
+    a, _b, c = u.reps
     time.sleep(TICK)
     _edit_section(a, random.Random(0), 1, DOOMED_DOC, "d0")
     time.sleep(TICK)
     _edit_section(c, random.Random(0), 2, DOOMED_DOC, "d0")
+    _synced(u, a, c)
+    assert {sig[3] for sig in _signatures(c)} == {"text"}
+    return u
+
+
+def test_foreign_delete_closes_conflicts_on_the_rows_it_removes(tmp_path: Path) -> None:
+    """Сид 447: удаление B доходит до C, у которой открыт ``text`` на секции документа.
+
+    Хвост C уже уехал, пересечения нет — секция уходит молча, а ``text``
+    оставался на строке, которой нет. В перестановке, где удаление приходит к
+    C раньше правки A, конфликта ``text`` нет вовсе: множество подписей
+    зависело от порядка. Удаление закрывает конфликты на снесённых строках.
+    """
+    u = _text_conflict_on_doomed(tmp_path)
+    a, b, c = u.reps
     time.sleep(TICK)
     _delete_doomed(b, random.Random(0), 1)
 
-    _synced(u, a, c, b)
-    _pull(c, u.store)
-    assert {sig[3] for sig in _signatures(c)} == {"text"}  # секции на C уже нет
-    assert {sig[3] for sig in _signatures(b)} == {"delete_edit"}
+    _synced(u, b, c, a)
+
+    assert _signatures(c) == set()
+    with transactional(c.sf, commit=False) as s:
+        (closed,) = conflicts.list_conflicts(s, c.project_id, status="resolved")
+    assert (closed["kind"], closed["resolved_by"]) == ("text", "sync:deleted")
+    _resolve_everything(u, random.Random(0))
+    _assert_converged(u, "удаление закрыло конфликт")
+    _dispose(u)
+
+
+def test_conflict_on_a_row_deleted_locally_can_still_be_resolved(tmp_path: Path) -> None:
+    """Сид 280: конфликт на строке, которой больше нет, ``sync resolve`` не закрывал.
+
+    Ответ был ``SYNC-302: … в проекте больше нет`` — пункт висел в очереди
+    куратора навсегда. Так бывает и после своего удаления: его захват
+    конфликты не трогает.
+    """
+    u = _text_conflict_on_doomed(tmp_path)
+    c = u.reps[2]
+    time.sleep(TICK)
+    _delete_doomed(c, random.Random(0), 1)
 
     _resolve_everything(u, random.Random(0))
     _assert_converged(u, "конфликт на удалённой строке")
@@ -767,4 +875,61 @@ def test_local_row_does_not_inherit_revisions_of_a_deleted_row(tmp_path: Path) -
 
     assert _quiet(u)
     _assert_converged(u, "номер удалённой строки")
+    _dispose(u)
+
+
+@pytest.mark.parametrize("group_key", [None, "vault-group"])
+def test_withheld_columns_hash_the_same_on_owner_and_receivers(
+    tmp_path: Path, group_key: str | None
+) -> None:
+    """F8: у владельца сценария на restricted-документе дайджест был свой.
+
+    Владелец не хешировал придержанные колонки (ссылка, якорь, хэш,
+    group_key), приёмники хешировали то, что у них лежит: NULL и заглушку.
+    ``sync verify`` — равен у A, не равен у B и C; на main до этого PR так же.
+    """
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    rng = random.Random(0 if group_key is None else 1)
+    _restricted_scenario(a, rng, 1)
+    with transactional(a.sf) as s:
+        scenario_service.update(
+            s,
+            project_id=a.project_id,
+            scenario_id="SCN-601",
+            author=r.AUTHOR,
+            section_anchor="body",
+        )
+
+    _synced(u, a, b, c)
+
+    for rep in u.reps:
+        assert digest.verify(rep.sf, r.SLUG, store=u.store).equal, rep.name
+    _assert_converged(u, "придержанные колонки")
+    time.sleep(TICK)
+    _scenario_title(b, random.Random(5), 9)  # приёмник правит чужой сценарий
+    _synced(u, b, a, c)
+    _assert_converged(u, "правка приёмником")
+    _dispose(u)
+
+
+@pytest.mark.parametrize("order", ["abc", "cba", "bca"])
+def test_three_sections_claiming_one_letter_get_the_same_letters_everywhere(
+    tmp_path: Path, order: str
+) -> None:
+    """Сид 9: A, B и C завели секцию плана с одной буквой.
+
+    Вторая секция брала следующую свободную букву в момент прихода, и у трёх
+    заявителей ответ зависел от порядка: на A и B — b=L, c=M, на C — b=M, c=L.
+    """
+    u = _three(tmp_path)
+    reps = {rep.name: rep for rep in u.reps}
+    for rep in u.reps:
+        time.sleep(TICK)
+        _plan_letter(rep, random.Random(0), 1)
+
+    _synced(u, *(reps[x] for x in order + order))
+
+    assert _quiet(u)
+    _assert_converged(u, f"три заявки на букву, порядок {order}")
     _dispose(u)
