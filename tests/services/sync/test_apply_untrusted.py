@@ -29,13 +29,18 @@ from cod_doc.infra.models import (
     DocumentModel,
     DocumentTagModel,
     ProjectModel,
+    SyncOpModel,
     TagModel,
     TaskModel,
 )
 from cod_doc.services import doc_service
-from cod_doc.services.sync_service import apply, pull, push
+from cod_doc.services.sync_service import _local, apply, pull, push
 from cod_doc.services.sync_service.changeset import decode
-from cod_doc.services.sync_service.errors import ObjectMissingError
+from cod_doc.services.sync_service.errors import (
+    ObjectMissingError,
+    RemoteConfigError,
+    SchemaMismatchError,
+)
 from tests.services.sync import _replicas as r
 
 if TYPE_CHECKING:
@@ -419,3 +424,76 @@ def test_delete_of_a_task_takes_its_local_affected_file_along(pair: tuple) -> No
     assert r.task_description(b, "DEM-001") is None
     with Session(b.engine) as s:
         assert s.scalars(select(AffectedFileModel)).all() == []
+
+
+# --- «свой» changeset ----------------------------------------------------------------
+
+
+def test_forged_changeset_reusing_a_local_op_id_is_not_taken_as_own(pair: tuple) -> None:
+    """op_id своей неотправленной операции + чужое содержимое — подделка, не «свой»."""
+    a, b, store = pair
+    r.set_description(a, "DEM-001", "правка A, ещё не отправлена")
+    with transactional(a.sf) as s:
+        mine = s.scalars(select(SyncOpModel.op_id).where(SyncOpModel.changeset.is_(None))).all()
+        me = self_replica(s, a.project_id)
+    assert mine
+    task_uid = _uid(b, TaskModel, task_id="DEM-001")
+    _forge(
+        a,
+        store,
+        [
+            {
+                "op_id": op_id,
+                "entity_kind": "task",
+                "entity_uid": task_uid,
+                "fields": {"description": "подмена"},
+                "base": {"description": "old"},
+            }
+            for op_id in mine
+        ],
+        replica=me,
+    )
+    tail = r.pending(a)
+
+    with pytest.raises(ObjectMissingError, match="подделка") as err:
+        pull.pull(a.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+    assert err.value.code == "SYNC-102"
+    assert r.pending(a) == tail  # хвост A не помечен отправленным
+    assert r.task_description(a, "DEM-001") == "правка A, ещё не отправлена"
+
+
+def test_malformed_time_in_a_foreign_op_is_sync_102(pair: tuple) -> None:
+    a, b, store = pair
+    op = _task_op(b)
+    op["fields"] = {"last_updated": "вчера вечером"}
+    _forge(a, store, [op])
+
+    _refused(b, store, "не время ISO-8601")
+
+
+def test_unknown_local_schema_fails_closed() -> None:
+    with pytest.raises(SchemaMismatchError, match="незнакома коду"):
+        _local.schema_is_newer("0050_sync_rank", "0000_not_a_revision")
+    assert _local.schema_is_newer("0099_from_the_future", "0050_sync_rank") is True
+    assert _local.schema_is_newer("0049_sync_identity", "0050_sync_rank") is False
+
+
+@pytest.mark.parametrize(
+    ("url", "ok"),
+    [("file:///tmp/remote", True), ("https://sync.example", False), ("s3://b/p", False)],
+)
+def test_open_store_allows_only_implemented_schemes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, ok: bool
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("COD_DOC_HOME", str(home))
+    entry = {"name": "demo", "path": str(tmp_path), "remotes": {"origin": {"url": url}}}
+    (home / "config.yaml").write_text(json.dumps({"projects": [entry]}))
+    if ok:
+        assert _local.open_store("demo", "origin") is not None
+        return
+    with pytest.raises(RemoteConfigError) as err:
+        _local.open_store("demo", "origin")
+    assert err.value.code == "SYNC-110"

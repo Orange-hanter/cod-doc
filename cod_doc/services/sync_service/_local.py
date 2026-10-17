@@ -21,15 +21,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 
+from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ChangesetModel, ProjectModel, SyncOpModel, SyncRefModel
+from cod_doc.infra.sync_capture import SyncCaptureError
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import Changeset, Op
-from cod_doc.services.sync_service.errors import RemoteConfigError
+from cod_doc.services.sync_service.errors import RemoteConfigError, SchemaMismatchError
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.infra.remote.base import RefValue, RemoteStore
 
@@ -43,6 +46,10 @@ EPOCH: Final = "0050_sync_rank"
 #: ``digest`` обязателен в формате §10.4, а считает его CLO-014. До него
 #: changeset несёт нулевой дайджест — «не посчитан»; pull его не сверяет.
 DIGEST_PENDING: Final = "0" * 64
+#: Порог ``IN (...)``: SQLite старше 3.32 держит 999 параметров.
+_CHUNK: Final = 500
+#: Потолок обхода локальной истории (предок ли голова remote).
+MAX_HISTORY: Final = 100_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,22 +122,37 @@ def schema_head(session: Session) -> str:
 
 @functools.cache
 def _revision_order() -> dict[str, int]:
-    """Ревизии поставляемых миграций → порядковый номер от корня."""
-    from importlib.resources import files
+    """Ревизии поставляемых миграций → порядковый номер от корня.
+
+    Каталог миграций берётся через ``as_file``: у ``files()`` из wheel или zip
+    ``str()`` — не путь на ФС, и ``ScriptDirectory`` молча увидел бы пустую
+    цепочку. Пустая цепочка — отказ, а не «всё новее».
+    """
+    from importlib.resources import as_file, files
 
     from alembic.script import ScriptDirectory
 
-    script = ScriptDirectory(str(files("cod_doc.infra.migrations")))
-    chain = [rev.revision for rev in script.walk_revisions()]
+    with as_file(files("cod_doc.infra.migrations")) as path:
+        chain = [rev.revision for rev in ScriptDirectory(str(path)).walk_revisions()]
+    if not chain:
+        msg = "цепочка миграций не прочитана — порядок схем неизвестен"
+        raise SchemaMismatchError(msg)
     return {rev: i for i, rev in enumerate(reversed(chain))}
 
 
 def schema_is_newer(remote_head: str, local: str) -> bool:
-    """``remote_head`` новее ``local``: незнакомая коду ревизия — заведомо новее."""
+    """``remote_head`` новее ``local``: незнакомая коду ревизия — заведомо новее.
+
+    Голова самой БД, которой код не знает, — отказ (fail closed): сравнить не
+    с чем, а «всё новее» молча отвергло бы и законные changeset'ы.
+    """
     order = _revision_order()
+    if local not in order:
+        msg = f"схема БД {local} незнакома коду — порядок с remote не определить"
+        raise SchemaMismatchError(msg)
     if remote_head not in order:
         return True
-    return order[remote_head] > order.get(local, -1)
+    return order[remote_head] > order[local]
 
 
 def open_store(project: str, remote: str) -> RemoteStore:
@@ -152,6 +174,28 @@ def open_store(project: str, remote: str) -> RemoteStore:
     return open_remote(url)
 
 
+def _payload(row: SyncOpModel, column: str) -> dict[str, object]:
+    raw = json.loads(getattr(row, column))
+    if not isinstance(raw, dict):
+        msg = f"sync_op {row.op_id}.{column}: не JSON-объект ({type(raw).__name__})"
+        raise SyncCaptureError(msg)
+    return raw
+
+
+def op_of(row: SyncOpModel) -> Op:
+    """Операция журнала в форме changeset'а: время по §10.4."""
+    return Op(
+        op_id=row.op_id,
+        hlc=row.hlc,
+        entity_kind=row.entity_kind,
+        entity_uid=row.entity_uid,
+        kind=row.kind,
+        fields=to_wire(row.entity_kind, _payload(row, "fields")),
+        base=to_wire(row.entity_kind, _payload(row, "base")),
+        author=row.author,
+    )
+
+
 def pending_ops(session: Session, project_id: int) -> list[Op]:
     """Неупакованные операции проекта по ``(hlc, op_id)``, время — в форме §10.4."""
     rows = session.scalars(
@@ -159,19 +203,73 @@ def pending_ops(session: Session, project_id: int) -> list[Op]:
         .where(SyncOpModel.project_id == project_id, SyncOpModel.changeset.is_(None))
         .order_by(SyncOpModel.hlc, SyncOpModel.op_id)
     )
-    return [
-        Op(
-            op_id=row.op_id,
-            hlc=row.hlc,
-            entity_kind=row.entity_kind,
-            entity_uid=row.entity_uid,
-            kind=row.kind,
-            fields=to_wire(row.entity_kind, json.loads(row.fields)),
-            base=to_wire(row.entity_kind, json.loads(row.base)),
-            author=row.author,
+    return [op_of(row) for row in rows]
+
+
+def journal_ops(session: Session, op_ids: list[str]) -> dict[str, tuple[Op, str | None]]:
+    """Операции журнала по ``op_id`` (любого проекта и статуса) → (операция, changeset)."""
+    out: dict[str, tuple[Op, str | None]] = {}
+    for i in range(0, len(op_ids), _CHUNK):
+        rows = session.scalars(
+            select(SyncOpModel).where(SyncOpModel.op_id.in_(op_ids[i : i + _CHUNK]))
         )
-        for row in rows
-    ]
+        out.update({row.op_id: (op_of(row), row.changeset) for row in rows})
+    return out
+
+
+def ensure_local_head(session_factory: sessionmaker[Session], project_id: int) -> None:
+    """Строка головы (``sha`` пуст) — чтобы её сдвигал CAS; гонку вставки гасит PK."""
+    try:
+        with transactional(session_factory) as session:
+            if _ref_row(session, project_id, LOCAL_REMOTE, MAIN) is None:
+                _upsert_ref(session, project_id, LOCAL_REMOTE, None, None)
+    except IntegrityError:
+        pass  # вставил параллельный pull — строка есть
+
+
+def cas_local_head(session: Session, project_id: int, expected: str | None, new: str) -> bool:
+    """Сдвинуть голову с ``expected`` на ``new`` одним UPDATE; ``False`` — голова ушла.
+
+    UPDATE — первая запись транзакции: на SQLite он берёт замок записи, и всё
+    дальнейшее в транзакции видит состояние после параллельного pull.
+    """
+    cur = SyncRefModel.sha
+    match = cur.is_(None) if expected is None else cur == expected
+    result = session.execute(
+        update(SyncRefModel)
+        .where(
+            SyncRefModel.project_id == project_id,
+            SyncRefModel.remote == LOCAL_REMOTE,
+            SyncRefModel.name == MAIN,
+            match,
+        )
+        .values(sha=new, fetched_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    return bool(getattr(result, "rowcount", 0))
+
+
+def is_applied(session: Session, sha: str) -> bool:
+    row = session.get(ChangesetModel, sha)
+    return row is not None and row.applied_at is not None
+
+
+def is_ancestor(session: Session, sha: str, head: str | None) -> bool:
+    """``sha`` — ``head`` или его предок по локальному индексу ``changeset``."""
+    seen: set[str] = set()
+    queue = [head] if head else []
+    while queue and len(seen) <= MAX_HISTORY:
+        cur = queue.pop()
+        if cur == sha:
+            return True
+        if cur in seen:
+            continue
+        seen.add(cur)
+        row = session.get(ChangesetModel, cur)
+        if row is not None:
+            parents = json.loads(row.parents)
+            queue.extend(p for p in parents if isinstance(p, str))
+    return False
 
 
 def record_changeset(session: Session, project: ProjectRef, sha: str, cs: Changeset) -> None:

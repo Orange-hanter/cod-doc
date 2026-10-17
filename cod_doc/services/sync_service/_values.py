@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy import Date, DateTime
 
 from cod_doc.infra.models import Base
+from cod_doc.infra.sync_capture import SyncCaptureError
 from cod_doc.services.sync_service.changeset import FieldValue, format_time
+from cod_doc.services.sync_service.errors import ObjectMissingError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -37,8 +39,12 @@ def _time_columns(table: str) -> tuple[frozenset[str], frozenset[str]]:
     return stamps, days
 
 
-def _parse_stamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value)
+def _parse_stamp(value: str, where: str, error: type[Exception]) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        msg = f"{where}: не время ISO-8601: {value[:40]!r}"
+        raise error(msg) from exc
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
@@ -48,7 +54,8 @@ def to_wire(table: str, payload: Mapping[str, object]) -> dict[str, FieldValue]:
     out: dict[str, FieldValue] = {}
     for column, value in payload.items():
         if column in stamps and isinstance(value, str):
-            out[column] = format_time(_parse_stamp(value))
+            # Журнал local: битое время — ошибка захвата (SYNC-001), не remote.
+            out[column] = format_time(_parse_stamp(value, f"{table}.{column}", SyncCaptureError))
         else:
             # Из json.loads журнала: JSON-значение, то есть FieldValue.
             out[column] = cast("FieldValue", value)
@@ -60,8 +67,13 @@ def from_wire(table: str, column: str, value: object) -> object:
     if not isinstance(value, str):
         return value
     stamps, days = _time_columns(table)
+    where = f"{table}.{column}"
     if column in stamps:
-        return _parse_stamp(value)
+        return _parse_stamp(value, where, ObjectMissingError)  # changeset с remote: SYNC-102
     if column in days:
-        return date.fromisoformat(value)
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            msg = f"{where}: не дата ISO-8601: {value[:40]!r}"
+            raise ObjectMissingError(msg) from exc
     return value

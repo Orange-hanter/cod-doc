@@ -106,7 +106,14 @@ def _pack(
 
 
 def _exchange(store: RemoteStore, packed: _Packed) -> RefValue | None:
-    """Загрузить объект и сдвинуть ref; ``None`` — remote не на нашей голове."""
+    """Загрузить объект и сдвинуть ref; ``None`` — remote не на нашей голове.
+
+    Объект, который ``has_objects`` уже видит под этим sha, не перезаливается
+    и не сверяется здесь: адрес — sha256 содержимого, а каждый читатель
+    проверяет sha при ``decode`` (SYNC-102). Подложенный под наш адрес чужой
+    объект поэтому не применится ни на одной реплике — он сломает fetch, но не
+    подменит данные.
+    """
     uid = packed.project.uid
     current = store.get_ref(uid, _local.MAIN)
     if (None if current is None else current.sha) != packed.parent:
@@ -185,7 +192,11 @@ def push(
             raise PushRejectedError(f"{_BEHIND}{suffix}")
         retries += 1
         try:
-            pull_mod.pull(sf, project, remote=remote, author=author, store=store)
+            pulled = pull_mod.pull(sf, project, remote=remote, author=author, store=store)
         except MergeRequiredError as exc:
             msg = f"{_BEHIND}, но pull не сводится fast-forward'ом: {exc}"
             raise PushRejectedError(msg) from exc
+        if pulled.head == head:
+            # Pull не сдвинул голову — следующая упаковка даст тот же отказ CAS.
+            msg = f"{_BEHIND}; pull не сдвинул голову реплики, повтор бесполезен"
+            raise PushRejectedError(msg)

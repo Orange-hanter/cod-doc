@@ -302,3 +302,28 @@ def test_network_runs_outside_db_transactions(pair: tuple) -> None:
 
     assert {"get_ref", "has_objects", "put_object", "cas_ref"} <= set(probe_a.calls)
     assert {"get_ref", "get_object"} <= set(probe_b.calls)
+
+
+class _AlwaysReject(FileRemote):
+    """CAS всегда отвергнут, а remote при этом не уходит вперёд."""
+
+    def __init__(self, inner: FileRemote) -> None:
+        super().__init__(inner.root)
+        self.cas_calls = 0
+
+    def cas_ref(
+        self, project_uid: str, name: str, expected: RefValue | None, new_sha: str
+    ) -> RefValue | None:
+        self.cas_calls += 1
+        return None
+
+
+def test_retry_stops_when_pull_does_not_move_the_head(pair: tuple) -> None:
+    a, _b, store = pair
+    r.make_task(a, "DEM-001")
+    spy = _AlwaysReject(store)
+
+    with pytest.raises(PushRejectedError, match="повтор бесполезен"):
+        push.push(a.sf, r.SLUG, author=r.AUTHOR, store=spy)
+
+    assert spy.cas_calls == 1

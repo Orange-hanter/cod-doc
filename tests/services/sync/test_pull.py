@@ -10,6 +10,7 @@ Acceptance: «Применение под sync_capture.suspended, трансля
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 import pytest
@@ -27,6 +28,7 @@ from cod_doc.infra.models import (
     SyncRefModel,
     TaskModel,
 )
+from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import doc_service
 from cod_doc.services.sync_service import pull, push
 from cod_doc.services.sync_service.changeset import Changeset, Op, decode, encode, sha
@@ -36,7 +38,7 @@ from tests.services.sync import _replicas as r
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from cod_doc.infra.remote.file import FileRemote
+    from cod_doc.infra.remote.base import RefValue
 
 
 @pytest.fixture
@@ -210,6 +212,22 @@ def test_tail_touching_the_same_entity_is_left_to_section_c(pair: tuple) -> None
     assert r.task_description(b, "DEM-001") == "B"
 
 
+def test_dry_run_reports_the_would_be_head_and_writes_nothing(pair: tuple) -> None:
+    a, b, store = pair
+    r.make_task(a, "DEM-001")
+    first = _push(a, store)
+    r.make_task(a, "DEM-002")
+    second = _push(a, store)
+    before = r.authored_state(b)
+
+    result = _pull(b, store, dry_run=True)
+
+    assert result.applied == [first.head, second.head]
+    assert result.head == second.head
+    assert result.ops == first.ops + second.ops
+    assert r.authored_state(b) == before
+
+
 def test_fetch_records_remote_head_without_applying(pair: tuple) -> None:
     a, b, store = pair
     r.make_task(a, "DEM-001")
@@ -334,3 +352,59 @@ def test_scn_085_changeset_with_newer_schema_is_refused_without_partial_apply(
     with transactional(b.sf) as s:
         assert s.scalars(select(ChangesetModel)).all() == []
         assert s.get(SyncRefModel, (b.project_id, "@local", "main")) is None
+
+
+# --- конкурентные pull ------------------------------------------------------------
+
+
+class _Rendezvous(FileRemote):
+    """Первые два ``get_ref`` ждут друг друга: оба pull скачивают цепочку до записи."""
+
+    def __init__(self, inner: FileRemote) -> None:
+        super().__init__(inner.root)
+        self.barrier = threading.Barrier(2)
+        self.lock = threading.Lock()
+        self.calls = 0
+
+    def get_ref(self, project_uid: str, name: str) -> RefValue | None:
+        with self.lock:
+            self.calls += 1
+            wait = self.calls <= 2
+        if wait:
+            self.barrier.wait(timeout=10)
+        return super().get_ref(project_uid, name)
+
+
+def test_concurrent_pulls_apply_each_changeset_once(pair: tuple) -> None:
+    a, b, store = pair
+    r.make_task(a, "DEM-001")
+    first = _push(a, store)
+    r.make_task(a, "DEM-002")
+    second = _push(a, store)
+    gate = _Rendezvous(store)
+    results: list[pull.PullResult] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            results.append(pull.pull(b.sf, r.SLUG, author=r.AUTHOR, store=gate))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert errors == []
+    applied = [sha for res in results for sha in res.applied]
+    assert sorted(applied) == sorted([first.head, second.head])
+    assert r.authored_state(b) == r.authored_state(a)
+    with transactional(b.sf) as s:
+        head = s.get_one(SyncRefModel, (b.project_id, "@local", "main"))
+        events = s.scalars(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "sync.pulled")
+        ).all()
+    assert head.sha == second.head
+    assert sum(len(e.payload["applied"]) for e in events) == 2

@@ -710,17 +710,24 @@ def _dumps(payload: Mapping[str, object]) -> str:
 # --- часы -----------------------------------------------------------------------
 
 
-def check_clock(cs: Changeset, *, self_replica_uid: str, now_ms: int | None = None) -> None:
+def check_clock(
+    cs: Changeset, *, self_replica_uid: str, own: bool = False, now_ms: int | None = None
+) -> None:
     """Штампы чужого changeset'а до первой записи: иначе remote отравит часы реплики.
 
     ``hlc_max`` — максимум штампов операций (это проверяет и ``Changeset``);
     реплика каждой операции — реплика changeset'а; не своя реплика (remote не
     выдаёт себя за эту машину); не дальше ``MAX_DRIFT_MS`` впереди стенных
-    часов. Нарушение — SYNC-102: объект непригоден.
+    часов. Нарушение — SYNC-102: объект непригоден. ``own`` — свой changeset,
+    узнанный ``pull._own``: его реплика обязана быть этой.
     """
     now = wall_ms() if now_ms is None else now_ms
-    if cs.replica == self_replica_uid:
-        msg = f"changeset от реплики {cs.replica} — это uid этой реплики"
+    if (cs.replica == self_replica_uid) != own:
+        msg = (
+            f"changeset от реплики {cs.replica} — это uid этой реплики"
+            if not own
+            else f"свой changeset от чужой реплики {cs.replica}"
+        )
         raise ObjectMissingError(msg)
     stamps = [Hlc.parse(op.hlc) for op in cs.ops]
     if stamps and str(max(stamps)) != cs.hlc_max:
