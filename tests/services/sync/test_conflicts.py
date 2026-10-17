@@ -13,6 +13,7 @@ SYNC-302 на неизвестный/разрешённый.»
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -35,6 +36,8 @@ from cod_doc.services.sync_service.errors import (
     MergeRequiredError,
 )
 from tests.services.sync import _replicas as r
+
+_MINUTE = 60
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -269,3 +272,31 @@ def test_double_checkout_waits_for_clo_031(rep: r.Replica) -> None:
 def test_unknown_status_filter_is_rejected(rep: r.Replica) -> None:
     with transactional(rep.sf) as s, pytest.raises(ValueError, match="status"):
         conflicts.list_conflicts(s, rep.project_id, status="closed")
+
+
+def test_created_is_the_uuid7_moment_in_seconds(rep: r.Replica) -> None:
+    """uuid7 несёт миллисекунды: время открытия — сейчас, а не год ~50000."""
+    uid = _open(rep)
+    with transactional(rep.sf) as s:
+        (row,) = conflicts.list_conflicts(s, rep.project_id)
+    assert row["uid"] == uid
+    created = datetime.fromisoformat(str(row["created"]))
+    assert abs((datetime.now(UTC) - created).total_seconds()) < _MINUTE
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "ffffffff-ffff-7fff-bfff-ffffffffffff",  # uuid7 с временем за 9999 годом
+        "0192-не-uuid",
+        "01a14b29-22cb-43f7-9a9f-1ba7976d61db",  # uuid4: времени нет
+    ],
+)
+def test_malformed_conflict_uid_does_not_break_the_listing(rep: r.Replica, bad: str) -> None:
+    uid = _open(rep)
+    with transactional(rep.sf) as s:
+        row = s.get_one(SyncConflictModel, uid)
+        row.uid = bad
+    with transactional(rep.sf) as s:
+        (listed,) = conflicts.list_conflicts(s, rep.project_id)
+    assert (listed["uid"], listed["created"]) == (bad, None)

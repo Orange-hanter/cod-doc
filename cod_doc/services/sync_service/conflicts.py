@@ -166,14 +166,23 @@ def open_conflict(session: Session, project_id: int, spec: ConflictSpec, *, auth
 
 
 def _created(uid: str) -> str | None:
-    """Момент открытия из uid (uuid7 несёт миллисекунды Unix, RFC 9562)."""
+    """Момент открытия из uid (uuid7 несёт миллисекунды Unix, RFC 9562).
+
+    ``None`` — uid не uuid7 или его время не представимо (48 бит миллисекунд
+    дотягиваются до 10889 года, ``datetime`` — до 9999): кривая строка не роняет
+    ``list_conflicts``.
+    """
     try:
         parsed = uuid.UUID(uid)
     except ValueError:
         return None
     if parsed.version != _UUID7:
         return None
-    return datetime.fromtimestamp((parsed.int >> _UUID7_MS_SHIFT) / _MS_PER_S, UTC).isoformat()
+    seconds = (parsed.int >> _UUID7_MS_SHIFT) / _MS_PER_S
+    try:
+        return datetime.fromtimestamp(seconds, UTC).isoformat()
+    except ValueError, OverflowError, OSError:
+        return None
 
 
 def _as_dict(row: SyncConflictModel) -> dict[str, object]:
