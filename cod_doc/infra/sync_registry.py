@@ -152,6 +152,14 @@
     реплика (локальная голова сущности), поэтому в дайджест он не входит.
     Ревизия сущности без колонки ``uid`` (``EntityKind.LINK`` — derived
     ``link``) — local: адресовать её на другой реплике не через что.
+    **Ревизия уезжает, только если её сущность уезжает целиком**
+    (security review CLO-024): ``diff`` повторяет значения сущности, и
+    ревизия сценария, привязанного к restricted-документу, унесла бы
+    ``doc_key``/``doc_content_hash``, которые реестр у самого сценария
+    придерживает. Захват кладёт вердикт под ``ENTITY_SHIPS_KEY``: строка
+    сущности есть, ``row_is_local`` её выпускает и ``withheld_columns`` пуст.
+    Нет ключа (сущность удалена, не найдена) — ревизия local (fail-closed).
+    Ключи local-колонок сущности захват вычищает из JSON-``diff``.
     ``activity_event`` в ``JOURNAL_IDS`` нет: события ``sync.*`` пишет сам
     обмен (``sync.pushed`` после CAS дал бы новую операцию после каждого
     push), а лента событий — телеметрия реплики, а не данные проекта. Класс
@@ -417,10 +425,16 @@ def _undecided_suggestion(row: Mapping[str, object]) -> bool:
     return type(state) is not str or state not in _DECIDED_STATES
 
 
+#: Ключ гейт-строки ревизии: сущность ревизии уезжает целиком (решение 19).
+ENTITY_SHIPS_KEY = "entity_id.ships"
+
+
 def _local_revision(row: Mapping[str, object]) -> bool:
     kind = _parse_entity_kind(row.get("entity_kind"))
     # Ревизия сущности без uid (derived ``link``) не адресуема на другой реплике.
-    return kind is None or ENTITY_KIND_TABLES.get(kind) not in UID_TABLES
+    if kind is None or ENTITY_KIND_TABLES.get(kind) not in UID_TABLES:
+        return True
+    return row.get(ENTITY_SHIPS_KEY) is not True
 
 
 def _local_event(row: Mapping[str, object]) -> bool:

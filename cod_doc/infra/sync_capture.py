@@ -59,7 +59,11 @@ authored-полями (``fields``) и их прежними значениями
 10. **Журнал** (``JOURNAL_IDS`` реестра, CLO-024). Ревизия даёт одну операцию
     ``upsert`` на вставку: адрес — ``revision_id``, поля — уезжающие колонки
     без него. Правка и удаление строки журнала операций не дают: журнал
-    дописывается, а удаляет его только каскад удалённого проекта.
+    дописывается, а удаляет его только каскад удалённого проекта. Ревизия
+    уезжает, только если её сущность уезжает целиком (вердикт под
+    ``ENTITY_SHIPS_KEY``, решение 19 реестра); из JSON-``diff`` вычищаются
+    ключи local-колонок сущности (``sanitize_diff``) — и в операции, и в
+    дайджесте, так что реплики сходятся.
 """
 
 from __future__ import annotations
@@ -422,13 +426,96 @@ def _label(
 def gating_row(
     lookup: _Lookup, table: str, row: Mapping[str, object], project_id: object
 ) -> dict[str, object]:
-    """Строка для гейта реестра: все колонки плюс метки документов ссылок."""
+    """Строка для гейта реестра: все колонки плюс метки документов ссылок.
+
+    У ревизии — ещё вердикт по её сущности (``ENTITY_SHIPS_KEY``).
+    """
     out = dict(row)
     for ref in reg.DOC_REFS.get(table, ()):
         label = _label(lookup, DOC_REF_TARGETS[(table, ref.column)], row, ref.column, project_id)
         if label is not None:
             out[reg.sensitivity_key(ref.column)] = label
+    if table in reg.JOURNAL_IDS:
+        out[reg.ENTITY_SHIPS_KEY] = _entity_ships(lookup, row)
     return out
+
+
+def _journal_entity_table(row: Mapping[str, object]) -> str | None:
+    try:
+        kind = EntityKind(str(row.get("entity_kind")))
+    except ValueError:
+        return None
+    table = reg.ENTITY_KIND_TABLES.get(kind)
+    return table if table in reg.UID_TABLES else None
+
+
+def _entity_ships(lookup: _Lookup, row: Mapping[str, object]) -> bool:
+    """Сущность ревизии уезжает целиком: строка есть, гейт выпускает, ничего не придержано.
+
+    Fail-closed: сущности нет (удалена), вид без uid — ``False``.
+    """
+    table = _journal_entity_table(row)
+    entity_id = row.get("entity_id")
+    entity = lookup.row(table, entity_id) if table is not None and entity_id is not None else None
+    if table is None or entity is None:
+        return False
+    gate = gating_row(lookup, table, entity, lookup.project_id(table, entity))
+    return _ships(table, gate) and not reg.withheld_columns(table, gate)
+
+
+#: Ключи значений поля в diff вида ``{"field": f, "old": …, "new": …}``.
+_DIFF_VALUE_KEYS = frozenset({"old", "new", "value", "from", "to", "before", "after"})
+
+
+def _local_columns(table: str) -> frozenset[str]:
+    mapper = _mapper_for(table)
+    if mapper is None:
+        return frozenset()
+    return frozenset(
+        c.name
+        for c in _table(mapper).columns
+        if reg.column_class(table, c.name) is reg.SyncClass.LOCAL
+    )
+
+
+def _strip(node: object, local: frozenset[str]) -> tuple[object, bool]:
+    if isinstance(node, list):
+        items = [_strip(item, local) for item in node]
+        return [v for v, _ in items], any(c for _, c in items)
+    if not isinstance(node, dict):
+        return node, False
+    hidden = node.get("field") in local
+    out: dict[str, object] = {}
+    changed = False
+    for key, value in node.items():
+        if key in local or (hidden and key in _DIFF_VALUE_KEYS):
+            changed = True
+            continue
+        out[key], sub = _strip(value, local)
+        changed = changed or sub
+    return out, changed
+
+
+def sanitize_diff(entity_kind: object, diff: object) -> object:
+    """``diff`` ревизии без значений local-колонок её сущности (решение 19 реестра).
+
+    JSON-объект или массив: убираются ключи — local-колонки таблицы сущности
+    (``position``, ``projection_hash``, ``row_id``…), и значения у записи
+    ``{"field": <local-колонка>, "old"/"new"/…}``. Остальное (unified diff
+    тела, скаляр) — как есть: тело секции уезжает и так. Ничего не убрано —
+    строка возвращается байт в байт; убрано — пересобирается JSON. Повторный
+    вызов ничего не меняет, поэтому дайджест реплики-источника и
+    реплики-приёмника совпадает.
+    """
+    if not isinstance(diff, str) or diff.lstrip()[:1] not in ("{", "["):
+        return diff
+    table = _journal_entity_table({"entity_kind": entity_kind})
+    try:
+        parsed = json.loads(diff)
+    except json.JSONDecodeError:
+        return diff
+    stripped, changed = _strip(parsed, _local_columns(table) if table else frozenset())
+    return json.dumps(stripped, ensure_ascii=False) if changed else diff
 
 
 def _ships(table: str, row: Mapping[str, object]) -> bool:
@@ -467,6 +554,8 @@ def _serialize(info: TableInfo, column: str, row: Mapping[str, object], lookup: 
     value = row.get(column)
     if value is None:
         return None
+    if info.identity is not None and column == "diff":
+        return sanitize_diff(row.get("entity_kind"), value)
     if column in info.fk_targets:
         target = info.fk_targets[column]
         if column in info.logical and lookup.row(target, value) is None:
