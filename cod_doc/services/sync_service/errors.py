@@ -27,6 +27,7 @@ __all__ = [
     "ConflictNotFoundError",
     "ConflictResolveError",
     "EpochPassedError",
+    "MergeRequiredError",
     "ObjectMissingError",
     "PendingOpsError",
     "PushRejectedError",
@@ -85,3 +86,19 @@ class ConflictNotFoundError(SyncError, LookupError):
     """SYNC-302: конфликт не найден или уже разрешён."""
 
     code = "SYNC-302"
+
+
+class MergeRequiredError(NotImplementedError):
+    """Расхождение историй, которое разрешает только слияние — секция C RFC 29.
+
+    Не код §10.10, а граница реализации: pull секции B умеет fast-forward
+    (чужие changeset'ы поверх своей головы; свой неупакованный хвост не трогает
+    тех же сущностей), а LWW по полю, 3-way merge текстов, tombstone против
+    правки и склейка натуральных ключей — CLO-018…CLO-024. Исключение уйдёт
+    вместе с этой границей, поэтому кода у него нет (DoD §11.1 п. 6: новый код
+    сначала вписывается в RFC). ``NotImplementedError``, а не ``SyncError``:
+    ловить его как штатную ошибку синхронизации незачем.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(f"{message} — слияние расходящейся истории: секция C (CLO-018…CLO-024)")
