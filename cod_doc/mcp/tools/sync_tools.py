@@ -1,4 +1,5 @@
-"""MCP tools: ``sync_status``, ``sync_pull``, ``sync_push`` (RFC 29 §10.7; CLO-016).
+"""MCP tools: ``sync_status``, ``sync_pull``, ``sync_push``, ``sync_conflicts``,
+``sync_resolve`` (RFC 29 §10.7; CLO-016, CLO-026).
 
 Профили ``standard`` / ``full``; в ``agent`` нет — куратор узнаёт об
 отставании от remote через ``curator_next`` (§3.9). ``agent`` и ``minimal``
@@ -9,10 +10,11 @@
 секции B — расхождение историй, которое разрешает только слияние, — тоже
 ``ValueError``, но без кода: у неё кода нет (``MergeRequiredError``).
 
-``remote add``, ``clone``, ``member``, ``token`` в MCP нет намеренно (§10.7);
-``sync_conflicts`` / ``sync_resolve`` появятся с секцией C (CLO-026).
-Активность (ADO-040) пишут сами ``push``/``pull`` — ``sync.pushed`` /
-``sync.pulled``; обёртки второго события не пишут.
+``remote add``, ``clone``, ``member``, ``token`` в MCP нет намеренно (§10.7).
+Активность (ADO-040) пишут сами сервисы — ``sync.pushed`` / ``sync.pulled``
+/ ``sync.conflict_resolved`` (с ревизией сущности); обёртки второго события
+не пишут. Резолв проекта (``session_factory``) тоже идёт под
+``_as_value_error`` (находка F7 аудита секции B).
 """
 
 from __future__ import annotations
@@ -21,11 +23,13 @@ import dataclasses
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.infra.db import transactional
 from cod_doc.infra.sync_capture import SyncCaptureError
-from cod_doc.mcp.tools._db import session_factory
+from cod_doc.mcp.tools._db import require_project_id, session_factory
 from cod_doc.services.sync_service import pull as pull_mod
 from cod_doc.services.sync_service import push as push_mod
 from cod_doc.services.sync_service import status as status_mod
+from cod_doc.services.sync_service.conflicts import list_conflicts, resolve_conflict
 from cod_doc.services.sync_service.errors import MergeRequiredError, SyncError
 
 if TYPE_CHECKING:
@@ -72,8 +76,8 @@ def register(mcp: FastMCP) -> None:
             ``null``, если такого remote у проекта нет; ``verify`` —
             ``{local, remote, equal}`` или ``null``.
         """
-        sf, _entry = session_factory(project)
         with _as_value_error():
+            sf, _entry = session_factory(project)
             return _to_dict(status_mod.status(sf, project, remote=remote, verify=verify))
 
     @mcp.tool(name="sync_pull")
@@ -95,8 +99,8 @@ def register(mcp: FastMCP) -> None:
             ``PullResult``: ``{applied, ops, fast_forward, conflicts, aliases,
             head}``.
         """
-        sf, _entry = session_factory(project)
         with _as_value_error():
+            sf, _entry = session_factory(project)
             result = pull_mod.pull(sf, project, remote=remote, author=author, dry_run=dry_run)
         return _to_dict(result)
 
@@ -114,7 +118,61 @@ def register(mcp: FastMCP) -> None:
         Returns:
             ``PushResult``: ``{changesets, ops, head, retries, pinned}``.
         """
-        sf, _entry = session_factory(project)
         with _as_value_error():
+            sf, _entry = session_factory(project)
             result = push_mod.push(sf, project, remote=remote, author=author)
         return _to_dict(result)
+
+    @mcp.tool(name="sync_conflicts")
+    def sync_conflicts(project: str, status: str = "open") -> list[dict[str, Any]]:
+        """RFC 29 §3.7: конфликты слияния проекта — в БД «наше», «их» лежит здесь.
+
+        Args:
+            project: cod-doc project slug.
+            status: ``open`` (по умолчанию), ``resolved`` или ``all``.
+
+        Returns:
+            ``[{uid, created, entity_kind, entity_uid, kind, field, ours,
+            theirs, base, theirs_op, status, resolved_by, resolved_at}]`` —
+            старые раньше. Значения — в форме changeset'а (FK — uid конца).
+        """
+        with _as_value_error():
+            sf, _entry = session_factory(project)
+            with transactional(sf, commit=False) as session:
+                return list_conflicts(session, require_project_id(session, project), status=status)
+
+    @mcp.tool(name="sync_resolve")
+    def sync_resolve(
+        project: str,
+        conflict_uid: str,
+        take: str,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """RFC 29 §3.7: разрешить конфликт — значение, операция, ревизия, событие.
+
+        Запись уезжает следующим push'ем. ``SYNC-302`` — конфликта нет или он
+        уже разрешён; ``SYNC-301`` — свой текст у конфликта не ``text``.
+
+        Args:
+            project: cod-doc project slug.
+            conflict_uid: uid из ``sync_conflicts``.
+            take: ``ours``, ``theirs`` или свой текст (только конфликт ``text``).
+            author: автор ревизии и события ``sync.conflict_resolved``.
+            reason: причина в ревизии; по умолчанию ``sync resolve --take …``.
+
+        Returns:
+            Конфликт после разрешения (поля ``sync_conflicts``) плюс
+            ``revision_id`` ревизии сущности (``null`` у таблиц без ревизий).
+        """
+        with _as_value_error():
+            sf, _entry = session_factory(project)
+            with transactional(sf) as session:
+                return resolve_conflict(
+                    session,
+                    require_project_id(session, project),
+                    conflict_uid,
+                    take=take,
+                    author=author,
+                    reason=reason,
+                )
