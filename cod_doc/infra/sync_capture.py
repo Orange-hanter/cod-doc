@@ -1198,8 +1198,16 @@ def _shipped_line(
     entity_uid = _entity_uid(info, row, lookup)
     if entity_uid is None:
         raise SyncCaptureError(f"{table}.uid: пуст")
-    wanted = info.shipped - reg.withheld_columns(table, gate)
-    return entity_uid, _dumps(_columns_payload(info, wanted, row, lookup))
+    withheld = reg.withheld_columns(table, gate) & info.shipped
+    payload = _columns_payload(info, info.shipped - withheld, row, lookup)
+    # Придержанная колонка входит в дайджест тем, что окажется у приёмника:
+    # ``NULL`` или заглушка ``WITHHELD_FILL`` (CLO-027, F8). Приёмник не знает,
+    # что колонку придержали, — он хеширует то, что лежит в строке; отправитель
+    # хеширует то же самое вместо настоящего значения. Без этого ``sync verify``
+    # у всех приёмников проекта с придержанной ссылкой показывал расхождение.
+    for column in sorted(withheld):
+        payload[column] = reg.WITHHELD_FILL.get((table, column))
+    return entity_uid, _dumps(payload)
 
 
 def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str, str]]:
@@ -1209,7 +1217,8 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
     выпускает: поля — ровно как их сериализует хук (``shipped_fields``: FK —
     uid конца, придержанные колонки выброшены), в той же JSON-форме, что
     ``sync_op.fields``. Строки ``row_is_local`` (restricted и всё под ним) не
-    выдаются.
+    выдаются. Придержанная колонка (``withheld_columns``) выдаётся значением,
+    которое окажется у приёмника: ``NULL`` или ``sync_registry.WITHHELD_FILL``.
 
     **Порядок — ``(таблица, uid)``**, ровно тот, что нужен дайджесту, и
     выдача потоковая: таблицы по имени, строки таблицы с колонкой ``uid`` —
