@@ -20,11 +20,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.infra import sync_capture as cap
 from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, HybridClock, clock_for, self_replica, wall_ms
-from cod_doc.infra.models import ChangesetModel, DocumentModel, ProjectModel, TagModel, TaskModel
+from cod_doc.infra.models import (
+    AffectedFileModel,
+    ChangesetModel,
+    DocumentModel,
+    DocumentTagModel,
+    ProjectModel,
+    TagModel,
+    TaskModel,
+)
 from cod_doc.services import doc_service
-from cod_doc.services.sync_service import pull, push
+from cod_doc.services.sync_service import apply, pull, push
 from cod_doc.services.sync_service.changeset import decode
 from cod_doc.services.sync_service.errors import ObjectMissingError
 from tests.services.sync import _replicas as r
@@ -327,3 +336,86 @@ def test_observe_never_moves_the_clock_past_the_drift_ceiling() -> None:
 
     assert seen.ms <= 1_000 + MAX_DRIFT_MS
     assert clock.now().ms <= 1_000 + MAX_DRIFT_MS
+
+
+# --- каскад удаления ---------------------------------------------------------------
+
+
+def test_every_schema_cascade_from_a_shipped_table_is_classified() -> None:
+    """Новая каскадная FK роняет тест, пока её не классифицируют в CASCADE_PATHS."""
+    edges = {
+        edge
+        for edge in apply.cascade_edges()
+        if edge[0] != "project" and edge[0] in cap.CAPTURED_TABLES
+    }
+
+    assert edges == set(apply.CASCADE_PATHS)
+    for (_, child, _), kind in apply.CASCADE_PATHS.items():
+        assert (kind == apply.GATED) == apply.is_gated(child), child
+
+
+def _restricted_doc(b: r.Replica) -> int:
+    with Session(b.engine) as s:  # restricted-документ только на B, мимо захвата
+        doc = doc_service.create(
+            s,
+            project_id=b.project_id,
+            doc_key="secret",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="secret",
+            author=r.AUTHOR,
+            path="docs/secret.md",
+            sensitivity=Sensitivity.RESTRICTED,
+            reindex=False,
+        )
+        s.get_one(DocumentModel, doc.row_id).uid = str(uuid.uuid7())
+        s.commit()
+        return doc.row_id
+
+
+def _delete_on_a(a: r.Replica, model: Any, **where: object) -> None:
+    with transactional(a.sf) as s:
+        cap.set_author(s, r.AUTHOR)
+        stmt = select(model)
+        for column, value in where.items():
+            stmt = stmt.where(getattr(model, column) == value)
+        s.delete(s.scalars(stmt).one())
+
+
+def test_delete_cascading_into_a_restricted_row_is_refused(pair: tuple) -> None:
+    a, b, store = pair
+    r.tag_doc(a, "spec", "shared")
+    push.push(a.sf, r.SLUG, author=r.AUTHOR, store=store)
+    pull.pull(b.sf, r.SLUG, author=r.AUTHOR, store=store)
+    secret = _restricted_doc(b)
+    with Session(b.engine) as s:  # тег на restricted-документе — local на B
+        tag = s.scalars(select(TagModel).where(TagModel.name == "shared")).one()
+        s.add(DocumentTagModel(document_id=secret, tag_id=tag.row_id))
+        s.commit()
+    _delete_on_a(a, TagModel, name="shared")
+    push.push(a.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+    with pytest.raises(ObjectMissingError, match="держит local") as err:
+        pull.pull(b.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+    assert err.value.code == "SYNC-102"
+    with Session(b.engine) as s:
+        assert s.scalars(select(TagModel).where(TagModel.name == "shared")).one()
+        assert len(s.scalars(select(DocumentTagModel)).all()) == 2
+
+
+def test_delete_of_a_task_takes_its_local_affected_file_along(pair: tuple) -> None:
+    a, b, store = pair
+    with Session(b.engine) as s:  # машинный путь — local на B, принадлежит задаче
+        task = s.scalars(select(TaskModel).where(TaskModel.task_id == "DEM-001")).one()
+        s.add(AffectedFileModel(task_id=task.row_id, path="/Users/b/src/x.py", kind="source"))
+        s.commit()
+    _delete_on_a(a, TaskModel, task_id="DEM-001")
+    push.push(a.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+    result = pull.pull(b.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+    assert len(result.applied) == 1
+    assert r.task_description(b, "DEM-001") is None
+    with Session(b.engine) as s:
+        assert s.scalars(select(AffectedFileModel)).all() == []

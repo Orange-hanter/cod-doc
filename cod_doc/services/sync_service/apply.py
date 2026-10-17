@@ -32,7 +32,18 @@
    Правка строки, которой у реплики нет (непустой ``base``), — ``SYNC-102``:
    её создание было до журнала, это работа clone и снапшота (CLO-029).
 4. **Удаление** идемпотентно: строки нет (снёс ORM-каскад родителя этого же
-   changeset'а) — пропуск.
+   changeset'а) — пропуск. Удаление родителя — одна операция, поддерево
+   уходит каскадом на каждой реплике (Q-008); до ``session.delete``
+   поддерево обходится по ``CASCADE_PATHS``. Отказ (SYNC-102), если каскад
+   снёс бы строку другого проекта или строку, которую реестр держит local по
+   метке документа (пути ``gated``: ``section``, ``doc_comment``,
+   ``document_tag`` restricted-документа, ``story_link``/``scenario_link``/
+   ``open_question_link`` на него, ``approval_doc_revision_link`` его
+   ревизии, ``plan_section``). Пути ``owned`` уходят с родителем, даже если
+   ребёнок local: ``affected_file``/``module_code`` с машинным путём,
+   ``task_metrics``, ``trace_call``, ``routine_run``, ``finding_source_run``,
+   derived ``link`` и ``doc_node_suggestion``. Tombstone со снимком
+   поддерева и конфликт «правка под удалённым родителем» — CLO-022.
 5. **Derived** пересобирается по затронутым сущностям тем же кодом, что и на
    обычной записи: ``link_service.sync_section`` + ``resolve_section`` по
    секциям, ``search_service.index_*`` по документам, задачам, историям, ADR,
@@ -49,6 +60,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 from collections import defaultdict
@@ -370,6 +382,140 @@ def _require_shipped(
             raise ObjectMissingError(msg)
 
 
+# --- каскад удаления ----------------------------------------------------------------
+
+#: Каскадные пути от уезжающих таблиц (FK ``ON DELETE CASCADE`` и ORM-каскад
+#: ``delete``), кроме ``project`` — удаление проекта changeset'ом не применяется.
+#: ``gated`` — ребёнок может нести метку restricted-документа (``DOC_REFS``,
+#: ``document``): строка, которую реестр держит local по метке, каскадом не
+#: сносится — удаление родителя отвергается (SYNC-102). ``owned`` — ребёнок
+#: принадлежит родителю и уходит с ним, даже если он local (машинный путь
+#: ``affected_file``/``module_code``, метрики, derived ``link``, прогоны).
+#: Полноту сверяет ``tests/services/sync/test_apply_untrusted.py``: новая
+#: каскадная FK роняет тест, пока её здесь не классифицируют.
+CASCADE_PATHS: Final[Mapping[tuple[str, str, str], str]] = {
+    ("adr", "adr_diagram", "adr_id"): "owned",
+    ("adr", "adr_relation", "from_id"): "owned",
+    ("adr", "adr_relation", "to_id"): "owned",
+    ("adr", "adr_supersedes", "superseded_id"): "owned",
+    ("adr", "adr_supersedes", "superseding_id"): "owned",
+    ("adr", "adr_task", "adr_row_id"): "owned",
+    ("approval", "approval_doc_revision_link", "approval_id"): "gated",
+    ("approval", "approval_task_link", "approval_id"): "owned",
+    ("doc_node", "doc_node", "parent_id"): "owned",
+    ("doc_node", "doc_node_suggestion", "node_id"): "owned",
+    ("document", "doc_comment", "document_id"): "gated",
+    ("document", "doc_node_suggestion", "document_id"): "owned",
+    ("document", "document_tag", "document_id"): "gated",
+    ("document", "section", "document_id"): "gated",
+    ("finding", "finding_source_run", "finding_id"): "owned",
+    ("module", "module_code", "module_id"): "owned",
+    ("module", "module_dependency", "from_module"): "owned",
+    ("module", "module_dependency", "to_module"): "owned",
+    ("open_question", "open_question_link", "question_row_id"): "gated",
+    ("open_question", "open_question_option", "question_row_id"): "owned",
+    ("plan", "plan_section", "plan_id"): "gated",
+    ("plan", "task", "plan_id"): "owned",
+    ("plan_section", "task", "section_id"): "owned",
+    ("routine", "routine_run", "routine_id"): "owned",
+    ("scenario", "scenario_link", "scenario_row_id"): "gated",
+    ("scenario", "scenario_step", "scenario_row_id"): "owned",
+    ("section", "doc_comment", "section_id"): "gated",
+    ("section", "link", "from_section_id"): "owned",
+    ("tag", "document_tag", "tag_id"): "gated",
+    ("tag", "story_tag", "tag_id"): "owned",
+    ("tag", "task_tag", "tag_id"): "owned",
+    ("task", "affected_file", "task_id"): "owned",
+    ("task", "dependency", "from_task_id"): "owned",
+    ("task", "dependency", "to_task_id"): "owned",
+    ("task", "task_document", "task_id"): "owned",
+    ("task", "task_metrics", "task_id"): "owned",
+    ("task", "task_tag", "task_id"): "owned",
+    ("task", "trace_call", "task_id"): "owned",
+    ("user_story", "story_acceptance", "story_id"): "owned",
+    ("user_story", "story_link", "story_id"): "gated",
+    ("user_story", "story_tag", "story_id"): "owned",
+}
+GATED: Final = "gated"
+
+
+def is_gated(child: str) -> bool:
+    """Ребёнок может нести метку документа: его local-строка каскадом не сносится."""
+    return child == "document" or child in reg.DOC_REFS
+
+
+@functools.cache
+def cascade_edges() -> frozenset[tuple[str, str, str]]:
+    """Все каскадные пути схемы: (родитель, ребёнок, FK ребёнка)."""
+    import cod_doc.infra.models.link_suggestions  # noqa: F401 — полная metadata
+
+    edges: set[tuple[str, str, str]] = set()
+    for name, tbl in Base.metadata.tables.items():
+        for fk in tbl.foreign_keys:
+            if (fk.ondelete or "").upper() == "CASCADE":
+                edges.add((fk.column.table.name, name, fk.parent.name))
+    for mapper in Base.registry.mappers:
+        parent = cast("Table", mapper.local_table).name
+        for rel in mapper.relationships:
+            if rel.cascade.delete:
+                child = cast("Table", rel.mapper.local_table).name
+                edges.update((parent, child, column.name) for column in rel.remote_side)
+    return frozenset(edges)
+
+
+def _check_cascaded_row(
+    session: Session, project: ProjectRef, root: str, child: str, row: Mapping[str, object]
+) -> None:
+    owner = row.get(_PROJECT_ID) if _PROJECT_ID in row else None
+    if owner is None and child in cap.CAPTURED_TABLES:
+        owner = _project_of(session, child, row)
+    if owner is not None and owner != project.row_id:
+        msg = f"удаление {root} снесло бы каскадом строку {child} другого проекта"
+        raise ObjectMissingError(msg)
+    if not is_gated(child) or child not in cap.CAPTURED_TABLES:
+        return
+    try:
+        allowed = cap.shipped_fields(session, child, row)
+    except cap.SyncCaptureError:
+        allowed = None
+    if allowed is None:
+        msg = (
+            f"удаление {root} снесло бы каскадом строку {child}, которую реестр этой "
+            "реплики держит local (restricted)"
+        )
+        raise ObjectMissingError(msg)
+
+
+def _check_cascade(session: Session, project: ProjectRef, table: str, row_id: int) -> None:
+    """Обойти поддерево, которое снесёт удаление, до самого удаления (Q-008).
+
+    Обход — по ``cascade_edges``, запросом на путь и пачку родителей; цикл
+    (``doc_node.parent_id``) обрывает множество посещённых.
+    """
+    by_parent: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for parent, child, column in cascade_edges():
+        by_parent[parent].append((child, column))
+    seen: dict[str, set[int]] = defaultdict(set)
+    seen[table].add(row_id)
+    frontier: list[tuple[str, list[int]]] = [(table, [row_id])]
+    while frontier:
+        parent, ids = frontier.pop()
+        for child, column in sorted(by_parent.get(parent, ())):
+            tbl = Base.metadata.tables[child]
+            found: list[int] = []
+            for i in range(0, len(ids), _CHUNK):
+                stmt = select(tbl).where(tbl.c[column].in_(ids[i : i + _CHUNK]))
+                for raw in session.execute(stmt).mappings():
+                    row = dict(raw)
+                    _check_cascaded_row(session, project, table, child, row)
+                    child_id = row.get(_ROW_ID)
+                    if isinstance(child_id, int) and child_id not in seen[child]:
+                        seen[child].add(child_id)
+                        found.append(child_id)
+            if found:
+                frontier.append((child, found))
+
+
 # --- создание ---------------------------------------------------------------------
 
 
@@ -417,6 +563,9 @@ def _apply_op(session: Session, project: ProjectRef, op: Op, touched: Touched) -
         obj = _find(session, project, mapper, info, op, op.base)
         if obj is not None:
             _require_shipped(session, info, obj, op, written=False)
+            row_id = getattr(obj, _ROW_ID, None)
+            if isinstance(row_id, int):
+                _check_cascade(session, project, info.table, row_id)
             _note(touched, info.table, obj, deleted=True, op=op)
             session.delete(obj)
         return
