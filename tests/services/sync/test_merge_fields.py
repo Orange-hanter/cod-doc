@@ -39,8 +39,6 @@ from cod_doc.infra.models import (
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import checkout_service, scenario_service, task_service
 from cod_doc.services.sync_service import conflicts, digest, merge, pull, push
-from cod_doc.services.sync_service.changeset import Op
-from cod_doc.services.sync_service.errors import MergeRequiredError
 from tests.services.sync import _replicas as r
 
 if TYPE_CHECKING:
@@ -342,35 +340,7 @@ def test_inserts_between_the_same_neighbours_order_identically(pair: tuple) -> N
     _assert_converged(a, b, store)
 
 
-# --- границы следующих задач ----------------------------------------------------------
-
-
-def test_concurrent_text_edits_wait_for_clo_019(pair: tuple) -> None:
-    a, b, store = pair
-    _common_task(a, b, store)
-    r.set_description(a, TASK, "A")
-    _push(a, store)
-    r.set_description(b, TASK, "B")
-    before = r.authored_state(b)
-
-    with pytest.raises(MergeRequiredError, match="CLO-019"):
-        _pull(b, store)
-
-    assert r.authored_state(b) == before
-
-
-def test_status_changed_on_both_sides_waits_for_clo_020(pair: tuple) -> None:
-    a, b, store = pair
-    _common_task(a, b, store)
-    _set(a, status="blocked")
-    _push(a, store)
-    _set(b, status="cancelled")
-    before = r.authored_state(b)
-
-    with pytest.raises(MergeRequiredError, match="CLO-020"):
-        _pull(b, store)
-
-    assert r.authored_state(b) == before
+# --- удаление против правки и совпавший ключ (CLO-022, CLO-023) -----------------------
 
 
 def test_delete_against_edit_is_won_by_the_delete(pair: tuple) -> None:
@@ -390,24 +360,6 @@ def test_delete_against_edit_is_won_by_the_delete(pair: tuple) -> None:
     _push(b, store)
     _pull(a, store)
     _assert_converged(a, b, store)
-
-
-def test_edge_delete_against_its_own_upsert_waits_for_clo_021() -> None:
-    def op(kind: str, fields: dict[str, object], base: dict[str, object]) -> Op:
-        return Op(
-            op_id="01J0000000000000000000000" + kind[0].upper(),
-            hlc="1760000000000.0000.r",
-            entity_kind="dependency",
-            entity_uid="edge",
-            kind=kind,
-            fields=fields,  # type: ignore[arg-type]
-            base=base,  # type: ignore[arg-type]
-            author=r.AUTHOR,
-        )
-
-    ends = {"from_task_id": "t1", "to_task_id": "t2", "kind": "blocks"}
-    with pytest.raises(MergeRequiredError, match="CLO-021"):
-        merge.check([op("delete", {}, ends)], [op("upsert", ends, {})])
 
 
 def test_natural_key_twin_is_glued_instead_of_integrity_error(pair: tuple) -> None:
