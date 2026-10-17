@@ -197,7 +197,7 @@ def push(
         try:
             pulled = pull_mod.pull(sf, project, remote=remote, author=author, store=store)
         except MergeRequiredError as exc:
-            msg = f"{_BEHIND}, но pull не сводится fast-forward'ом: {exc}"
+            msg = f"{_BEHIND}, но pull упёрся в несведённый случай: {exc}"
             raise PushRejectedError(msg) from exc
         if pulled.head == head:
             # Pull не сдвинул голову — следующая упаковка даст тот же отказ CAS.

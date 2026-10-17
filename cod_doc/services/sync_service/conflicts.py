@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, Literal, cast
 
@@ -54,6 +53,7 @@ from cod_doc.services.sync_service.errors import (
     ConflictResolveError,
     MergeRequiredError,
 )
+from cod_doc.services.sync_service.merge import ConflictSpec
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import InstanceState, Session
@@ -82,32 +82,6 @@ DEFERRED_KINDS: Final = {
     "double_checkout": "CLO-031",
 }
 _ENTITY_KINDS: Final = {table: kind for kind, table in reg.ENTITY_KIND_TABLES.items()}
-
-
-@dataclass(frozen=True, slots=True)
-class ConflictSpec:
-    """Что открыть: сущность, поле, вид и три значения в форме changeset'а."""
-
-    entity_kind: str
-    entity_uid: str
-    #: ``None`` — у ``delete_edit`` и склейки ключей.
-    field: str | None
-    kind: str
-    ours: FieldValue
-    theirs: FieldValue
-    base: FieldValue
-    #: ``op_id`` чужой операции.
-    theirs_op: str
-
-    def __post_init__(self) -> None:
-        if self.kind not in KINDS:
-            msg = f"вид конфликта {self.kind!r} не из {sorted(KINDS)}"
-            raise ValueError(msg)
-        if (self.field is None) == (self.kind in FIELD_KINDS):
-            msg = (
-                f"конфликт {self.kind!r}: поле {'обязательно' if self.field is None else 'лишнее'}"
-            )
-            raise ValueError(msg)
 
 
 def _encode(value: FieldValue) -> str:
