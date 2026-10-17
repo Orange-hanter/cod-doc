@@ -4117,10 +4117,12 @@ _cod-doc() {
     (cod_doc_sync_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-sync-$words[1]:"
       case $words[1] in
-        (log)    _cod_doc_sync_log && ret=0 ;;
-        (status) _cod_doc_sync_status && ret=0 ;;
-        (verify) _cod_doc_sync_verify && ret=0 ;;
-        (*)      _default && ret=0 ;;
+        (conflicts) _cod_doc_sync_conflicts && ret=0 ;;
+        (log)       _cod_doc_sync_log && ret=0 ;;
+        (resolve)   _cod_doc_sync_resolve && ret=0 ;;
+        (status)    _cod_doc_sync_status && ret=0 ;;
+        (verify)    _cod_doc_sync_verify && ret=0 ;;
+        (*)         _default && ret=0 ;;
       esac
       ;;
   esac
@@ -4130,11 +4132,25 @@ _cod-doc() {
 (( $+functions[_cod_doc_sync_commands] )) || _cod_doc_sync_commands() {
   local -a cmds
   cmds=(
+    'conflicts:Конфликты слияния; в БД «наше», «их» лежит в конфликте (RFC 29 §3.7…'
     'log:Changeset'\''ы истории реплики; автор, реплика, число операций.'
+    'resolve:Разрешить конфликт; значение, операция, ревизия и событие — уедут p…'
     'status:Голова, ahead/behind, неотправленные операции, restricted-документы.'
     'verify:Сверить дайджест реплики с дайджестом головы remote; расхождение —…'
   )
   _describe -t cod-doc-sync-commands 'cod-doc sync command' cmds
+}
+
+(( $+functions[_cod_doc_sync_conflicts] )) || _cod_doc_sync_conflicts() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--status)--status=:status:(open resolved all)' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
 }
 
 (( $+functions[_cod_doc_sync_log] )) || _cod_doc_sync_log() {
@@ -4146,6 +4162,22 @@ _cod-doc() {
     '(-n)-n+:limit' \
     '(--json)--json[Machine-readable JSON output]' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_sync_resolve] )) || _cod_doc_sync_resolve() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--take)--take=[Чья версия остаётся]:take:(ours theirs)' \
+    '(--text-file)--text-file=[Свой текст из файла (только конфликт text)]:text-file:_files' \
+    '(--reason)--reason=[Причина в ревизии]:reason' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:conflict-uid' && ret=0
   return ret
 }
 

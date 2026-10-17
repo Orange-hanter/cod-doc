@@ -48,7 +48,7 @@
    обычной записи: ``link_service.sync_section`` + ``resolve_section`` по
    секциям, ``search_service.index_*`` по документам, задачам, историям, ADR,
    находкам и вопросам (§3.6, «пересборка derived»).
-6. **Журнал.** Чужие операции ложатся в ``sync_op`` с ``changeset = sha``: не
+6. **Журнал операций.** Чужие операции ложатся в ``sync_op`` с ``changeset = sha``: не
    хвост (push их не упакует), а история, на которую встанет LWW по полю
    секции C. Часы реплики видят ``hlc_max`` (``observe``): следующая своя
    операция будет позже применённых.
@@ -59,6 +59,9 @@
    совпадение натурального ключа при вставке — ``merge.key_collision``. Поле
    вне ``SHIPPED_COLUMNS`` отвергается до слияния: отброшенное слиянием поле
    всё равно проходит гейт недоверенного ввода.
+8. **Journal-таблицы** (``revision``, CLO-024) не сливаются: операцию
+   применяет ``journal.apply_op`` — объединение по ``revision_id``, родитель —
+   локальная голова сущности (Q-010).
 """
 
 from __future__ import annotations
@@ -392,8 +395,14 @@ def _require_shipped(
     restricted-документом, ни колонка, которую реестр для этой строки
     придерживает.
     """
+    row = _row_of(info, obj)
+    if not written:
+        # Своя нерешённая подсказка local до решения; решение remote ложится
+        # поверх неё (Q-017, CLO-025) — гейт по строке уже с решением.
+        decision = reg.decision_columns(info.table)
+        row |= {c: v for c, v in op.fields.items() if c in decision}
     try:
-        allowed = cap.shipped_fields(session, info.table, _row_of(info, obj))
+        allowed = cap.shipped_fields(session, info.table, row)
     except cap.SyncCaptureError as exc:
         msg = f"{info.table} {op.entity_uid}: {exc}"
         raise ObjectMissingError(msg) from exc
@@ -634,6 +643,12 @@ def _apply_delete(
 def _apply_op(
     session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
 ) -> None:
+    if op.entity_kind in reg.JOURNAL_IDS:
+        # Журнал — объединение по глобальному id, без слияния (§3.7, CLO-024).
+        from cod_doc.services.sync_service import journal
+
+        journal.apply_op(session, project, op)
+        return
     mapper, info = _info(op.entity_kind)
     if op.entity_kind == _PROJECT and (op.entity_uid != project.uid or op.kind == "delete"):
         msg = f"операция над проектом {op.entity_uid} в changeset'е проекта {project.uid}"

@@ -1,4 +1,5 @@
-"""CLO-016: MCP ``sync_status``, ``sync_pull``, ``sync_push`` (RFC 29 §10.7).
+"""CLO-016/026: MCP ``sync_status``, ``sync_pull``, ``sync_push``, ``sync_conflicts``,
+``sync_resolve`` (RFC 29 §10.7).
 
 Acceptance: «Тулы по RFC 29 §10.7 на профилях standard/full, не в agent;
 ошибки — ValueError с префиксом SYNC-NNN».
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _PROJECT = "synctool"
-_TOOLS = ("sync_status", "sync_pull", "sync_push")
+_TOOLS = ("sync_status", "sync_pull", "sync_push", "sync_conflicts", "sync_resolve")
 
 
 def _call(name: str, **kwargs: Any) -> dict[str, Any]:

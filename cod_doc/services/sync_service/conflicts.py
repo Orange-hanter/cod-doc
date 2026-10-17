@@ -82,6 +82,10 @@ DEFERRED_KINDS: Final = {
     "double_checkout": "CLO-031",
 }
 _ENTITY_KINDS: Final = {table: kind for kind, table in reg.ENTITY_KIND_TABLES.items()}
+_UUID7: Final = 7
+#: Сдвиг до 48 бит времени в начале uuid7: 128 − 48.
+_UUID7_MS_SHIFT: Final = 80
+_MS_PER_S: Final = 1000
 
 
 def _encode(value: FieldValue) -> str:
@@ -124,9 +128,21 @@ def open_conflict(session: Session, project_id: int, spec: ConflictSpec, *, auth
     return uid
 
 
+def _created(uid: str) -> str | None:
+    """Момент открытия из uid (uuid7 несёт миллисекунды Unix, RFC 9562)."""
+    try:
+        parsed = uuid.UUID(uid)
+    except ValueError:
+        return None
+    if parsed.version != _UUID7:
+        return None
+    return datetime.fromtimestamp((parsed.int >> _UUID7_MS_SHIFT) / _MS_PER_S, UTC).isoformat()
+
+
 def _as_dict(row: SyncConflictModel) -> dict[str, object]:
     return {
         "uid": row.uid,
+        "created": _created(row.uid),
         "entity_kind": row.entity_kind,
         "entity_uid": row.entity_uid,
         "field": row.field,
@@ -242,7 +258,11 @@ def resolve_conflict(
     author: str,
     reason: str | None = None,
 ) -> dict[str, object]:
-    """Разрешить открытый конфликт: значение, операция, ревизия, событие — одна транзакция."""
+    """Разрешить открытый конфликт: значение, операция, ревизия, событие — одна транзакция.
+
+    Возвращает конфликт после разрешения и ``revision_id`` записанной ревизии
+    (``None`` у таблиц без ``EntityKind``) — ответ ``sync_resolve`` (§10.7).
+    """
     row = _open_row(session, project_id, conflict_uid)
     value, label = _chosen(row, take)
     project = _project(session, project_id)
@@ -251,6 +271,7 @@ def resolve_conflict(
     payload: dict[str, object] = {"conflict_uid": row.uid, "kind": row.kind, "take": label}
     summary = f"конфликт {row.kind} {row.entity_kind}.{row.field}: {label}"
     entity_kind = _ENTITY_KINDS.get(row.entity_kind)
+    revision_id: str | None = None
     if entity_kind is not None:
         diff = {
             "op": "sync.resolve",
@@ -259,7 +280,7 @@ def resolve_conflict(
             "old": _jsonable(previous),
             "new": _jsonable(value),
         }
-        activity_service.write_revision_and_emit_event(
+        revision, _event = activity_service.write_revision_and_emit_event(
             session,
             project_id=project_id,
             entity_kind=EntityKind(entity_kind),
@@ -273,6 +294,7 @@ def resolve_conflict(
             activity_payload=payload,
             activity_summary=summary,
         )
+        revision_id = revision.revision_id
     else:
         activity_service.emit_for_write(
             session,
@@ -288,7 +310,7 @@ def resolve_conflict(
     row.resolved_by = author
     row.resolved_at = datetime.now(UTC)
     session.flush()
-    return _as_dict(row)
+    return {**_as_dict(row), "revision_id": revision_id}
 
 
 def _jsonable(value: object) -> object:

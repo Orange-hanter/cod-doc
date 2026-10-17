@@ -56,6 +56,14 @@ authored-полями (``fields``) и их прежними значениями
 9. **Каскад внутри БД** (``ON DELETE CASCADE`` без ORM-каскада) операций
    детей не даёт: на другой реплике тот же каскад сработает от удаления
    родителя.
+10. **Журнал** (``JOURNAL_IDS`` реестра, CLO-024). Ревизия даёт одну операцию
+    ``upsert`` на вставку: адрес — ``revision_id``, поля — уезжающие колонки
+    без него. Правка и удаление строки журнала операций не дают: журнал
+    дописывается, а удаляет его только каскад удалённого проекта. Ревизия
+    уезжает, только если её сущность уезжает целиком (вердикт под
+    ``ENTITY_SHIPS_KEY``, решение 19 реестра); из JSON-``diff`` вычищаются
+    ключи local-колонок сущности (``sanitize_diff``) — и в операции, и в
+    дайджесте, так что реплики сходятся.
 """
 
 from __future__ import annotations
@@ -105,13 +113,14 @@ _PROJECT_ID = "project_id"
 _SENSITIVITY = "sensitivity"
 _DOC_KINDS = frozenset({"document", "section"})
 
-#: Таблицы под захватом: authored плюс derived с authored-колонками
-#: (``link_suggestion.state``, Q-017).
+#: Таблицы под захватом: authored, derived с authored-колонками
+#: (``link_suggestion.state``, Q-017) и journal из ``JOURNAL_IDS`` (CLO-024).
 CAPTURED_TABLES: frozenset[str] = frozenset(
     t
     for t, spec in reg.REGISTRY.items()
-    if spec.cls is reg.SyncClass.AUTHORED or spec.authored_columns
+    if spec.cls is reg.SyncClass.AUTHORED or spec.authored_columns or t in reg.JOURNAL_IDS
 )
+_SHIPPED_CLASSES = frozenset({reg.SyncClass.AUTHORED, reg.SyncClass.JOURNAL})
 
 #: Как разрешить метку документа для каждой ссылки ``DOC_REFS`` захватываемых
 #: таблиц: ``document``/``section`` — FK, ``doc_key`` — ключ документа в проекте,
@@ -139,6 +148,7 @@ DOC_REF_TARGETS: Mapping[tuple[str, str], str] = MappingProxyType(
         ("link_suggestion", "from_section_id"): "section",
         ("link_suggestion", "to_section_id"): "section",
         ("link_suggestion", "to_doc_key"): "doc_key",
+        ("revision", "entity_id"): "entity_kind",
     }
 )
 
@@ -166,6 +176,8 @@ class TableInfo:
     nullable: frozenset[str]
     #: Ссылка, через которую ищется проект строки без ``project_id``.
     parent: tuple[str, str] | None
+    #: Колонка глобального id journal-таблицы (``JOURNAL_IDS``): адрес операции.
+    identity: str | None = None
 
     def attr(self, column: str) -> str:
         return dict(self.columns)[column]
@@ -182,11 +194,12 @@ def _table_info(mapper: Mapper[object]) -> TableInfo | None:
     if name not in CAPTURED_TABLES:
         return None
     spec = reg.spec_for(name)
+    identity = reg.JOURNAL_IDS.get(name)
     columns = tuple((c.name, mapper.get_property_by_column(c).key) for c in table.columns)
     shipped = frozenset(
         c.name
         for c in table.columns
-        if c.name != _UID and reg.column_class(name, c.name) is reg.SyncClass.AUTHORED
+        if c.name not in {_UID, identity} and reg.column_class(name, c.name) in _SHIPPED_CLASSES
     )
     fk_targets: dict[str, str] = {fk.parent.name: fk.column.table.name for fk in table.foreign_keys}
     fk_targets.update(spec.logical_fks)
@@ -206,6 +219,7 @@ def _table_info(mapper: Mapper[object]) -> TableInfo | None:
         has_uid=_UID in table.c,
         nullable=frozenset(c.name for c in table.columns if c.nullable),
         parent=parent,
+        identity=identity,
     )
 
 
@@ -412,13 +426,96 @@ def _label(
 def gating_row(
     lookup: _Lookup, table: str, row: Mapping[str, object], project_id: object
 ) -> dict[str, object]:
-    """Строка для гейта реестра: все колонки плюс метки документов ссылок."""
+    """Строка для гейта реестра: все колонки плюс метки документов ссылок.
+
+    У ревизии — ещё вердикт по её сущности (``ENTITY_SHIPS_KEY``).
+    """
     out = dict(row)
     for ref in reg.DOC_REFS.get(table, ()):
         label = _label(lookup, DOC_REF_TARGETS[(table, ref.column)], row, ref.column, project_id)
         if label is not None:
             out[reg.sensitivity_key(ref.column)] = label
+    if table in reg.JOURNAL_IDS:
+        out[reg.ENTITY_SHIPS_KEY] = _entity_ships(lookup, row)
     return out
+
+
+def _journal_entity_table(row: Mapping[str, object]) -> str | None:
+    try:
+        kind = EntityKind(str(row.get("entity_kind")))
+    except ValueError:
+        return None
+    table = reg.ENTITY_KIND_TABLES.get(kind)
+    return table if table in reg.UID_TABLES else None
+
+
+def _entity_ships(lookup: _Lookup, row: Mapping[str, object]) -> bool:
+    """Сущность ревизии уезжает целиком: строка есть, гейт выпускает, ничего не придержано.
+
+    Fail-closed: сущности нет (удалена), вид без uid — ``False``.
+    """
+    table = _journal_entity_table(row)
+    entity_id = row.get("entity_id")
+    entity = lookup.row(table, entity_id) if table is not None and entity_id is not None else None
+    if table is None or entity is None:
+        return False
+    gate = gating_row(lookup, table, entity, lookup.project_id(table, entity))
+    return _ships(table, gate) and not reg.withheld_columns(table, gate)
+
+
+#: Ключи значений поля в diff вида ``{"field": f, "old": …, "new": …}``.
+_DIFF_VALUE_KEYS = frozenset({"old", "new", "value", "from", "to", "before", "after"})
+
+
+def _local_columns(table: str) -> frozenset[str]:
+    mapper = _mapper_for(table)
+    if mapper is None:
+        return frozenset()
+    return frozenset(
+        c.name
+        for c in _table(mapper).columns
+        if reg.column_class(table, c.name) is reg.SyncClass.LOCAL
+    )
+
+
+def _strip(node: object, local: frozenset[str]) -> tuple[object, bool]:
+    if isinstance(node, list):
+        items = [_strip(item, local) for item in node]
+        return [v for v, _ in items], any(c for _, c in items)
+    if not isinstance(node, dict):
+        return node, False
+    hidden = node.get("field") in local
+    out: dict[str, object] = {}
+    changed = False
+    for key, value in node.items():
+        if key in local or (hidden and key in _DIFF_VALUE_KEYS):
+            changed = True
+            continue
+        out[key], sub = _strip(value, local)
+        changed = changed or sub
+    return out, changed
+
+
+def sanitize_diff(entity_kind: object, diff: object) -> object:
+    """``diff`` ревизии без значений local-колонок её сущности (решение 19 реестра).
+
+    JSON-объект или массив: убираются ключи — local-колонки таблицы сущности
+    (``position``, ``projection_hash``, ``row_id``…), и значения у записи
+    ``{"field": <local-колонка>, "old"/"new"/…}``. Остальное (unified diff
+    тела, скаляр) — как есть: тело секции уезжает и так. Ничего не убрано —
+    строка возвращается байт в байт; убрано — пересобирается JSON. Повторный
+    вызов ничего не меняет, поэтому дайджест реплики-источника и
+    реплики-приёмника совпадает.
+    """
+    if not isinstance(diff, str) or diff.lstrip()[:1] not in ("{", "["):
+        return diff
+    table = _journal_entity_table({"entity_kind": entity_kind})
+    try:
+        parsed = json.loads(diff)
+    except json.JSONDecodeError:
+        return diff
+    stripped, changed = _strip(parsed, _local_columns(table) if table else frozenset())
+    return json.dumps(stripped, ensure_ascii=False) if changed else diff
 
 
 def _ships(table: str, row: Mapping[str, object]) -> bool:
@@ -457,6 +554,8 @@ def _serialize(info: TableInfo, column: str, row: Mapping[str, object], lookup: 
     value = row.get(column)
     if value is None:
         return None
+    if info.identity is not None and column == "diff":
+        return sanitize_diff(row.get("entity_kind"), value)
     if column in info.fk_targets:
         target = info.fk_targets[column]
         if column in info.logical and lookup.row(target, value) is None:
@@ -598,8 +697,8 @@ def _new_op(
 
 
 def _entity_uid(info: TableInfo, row: Mapping[str, object], lookup: _Lookup) -> str | None:
-    if info.has_uid:
-        value = row.get(_UID)
+    if info.has_uid or info.identity is not None:
+        value = row.get(info.identity or _UID)
         return value if isinstance(value, str) and value else None
     return _edge_uid(info, row, lookup)
 
@@ -612,6 +711,8 @@ def _upsert_op(
     is_new: bool,
     lookup: _Lookup,
 ) -> PendingOp | None:
+    if info.identity is not None and not is_new:
+        return None  # журнал дописывается: правка строки журнала не уезжает (решение 10)
     changed = info.shipped if is_new else _changed(info, state)
     if not changed:
         return None
@@ -652,6 +753,8 @@ def _upsert_op(
 def _delete_op(
     session: Session, info: TableInfo, state: InstanceState[object], lookup: _Lookup
 ) -> PendingOp | None:
+    if info.identity is not None:
+        return None  # журнал не удаляется операцией (решение 10)
     before = {c: v for c, v in _row_before(info, state).items() if v is not NO_VALUE}
     project_id = lookup.project_id(info.table, before)
     gate = gating_row(lookup, info.table, before, project_id)
@@ -967,7 +1070,8 @@ def record(
     ``project_id`` сверх сигнатуры §10.3: ``sync_op.project_id`` обязателен,
     а вывести его из uid без запроса нельзя.
     """
-    if table not in CAPTURED_TABLES:
+    if table not in CAPTURED_TABLES or table in reg.JOURNAL_IDS:
+        # Журнал bulk-путей не имеет: ревизия пишется ORM и захватывается хуком.
         msg = f"sync_capture.record: {table!r} не захватывается"
         raise ValueError(msg)
     if kind not in _OP_KINDS:
@@ -1086,12 +1190,13 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
             stmt = stmt.where(tbl.c.row_id == project_id)
         elif _PROJECT_ID in tbl.c:
             stmt = stmt.where(tbl.c.project_id == project_id)
-        if info.has_uid:
-            stmt = stmt.order_by(tbl.c.uid.collate("C") if postgres else tbl.c.uid)
+        key = info.identity or (_UID if info.has_uid else None)
+        if key is not None:
+            stmt = stmt.order_by(tbl.c[key].collate("C") if postgres else tbl.c[key])
         rows = session.connection().execute(stmt).mappings()
         lines = (_shipped_line(lookup, info, dict(raw), project_id) for raw in rows)
         present = (line for line in lines if line is not None)
-        for uid, fields in present if info.has_uid else sorted(present):
+        for uid, fields in present if key is not None else sorted(present):
             yield table, uid, fields
 
 

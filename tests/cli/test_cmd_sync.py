@@ -102,11 +102,13 @@ def _as_clone_of(uid: str) -> None:
     Рутины и дерево документации, которые ``project add`` заводит на каждой
     машине, тоже убираются: они приедут с A, а две независимо заведённые
     строки с одним натуральным ключом — склейка секции C (CLO-023), не
-    fast-forward.
+    fast-forward. Ревизии этих строк — тоже: журнал уезжает с CLO-024, и
+    ревизии строк, которых на A нет, дали бы B лишние строки дайджеста.
     """
     sf = _factory()
     with transactional(sf) as s:
         s.execute(text("DELETE FROM sync_op"))
+        s.execute(text("DELETE FROM revision"))
         s.execute(text("DELETE FROM routine"))
         s.execute(text("UPDATE doc_node SET parent_id = NULL"))
         s.execute(text("DELETE FROM doc_node"))

@@ -53,8 +53,8 @@ _ADVISORY_KEYS_CAP = 10
 # --------------------------------------------------------------------- #
 # Порядок очереди. Числа — ранги сортировки, не «важность в процентах».  #
 # Шкала одна на все виды находок, поэтому и живёт одной таблицей:        #
-# missing > conflict > edited_in_place > LINK-BROKEN > hash BROKEN >     #
-# hash STALE > stale_export > finding.                                  #
+# missing > conflict > edited_in_place > LINK-BROKEN > sync_conflict >  #
+# hash BROKEN > hash STALE > stale_export > unplaced > finding.         #
 # --------------------------------------------------------------------- #
 _RANK_DRIFT_MISSING = 0
 # ACU-001: правки с обеих сторон. Выше edited_in_place: там import чинит
@@ -62,22 +62,27 @@ _RANK_DRIFT_MISSING = 0
 _RANK_DRIFT_CONFLICT = 1
 _RANK_DRIFT_EDITED = 2
 _RANK_LINK_BROKEN = 3
-_RANK_MASTER_BROKEN = 4
-_RANK_MASTER_STALE = 5
-_RANK_DRIFT_STALE_EXPORT = 6
+# CLO-026 (RFC 29 §3.7): открытые конфликты синхронизации — ниже битых
+# ссылок, выше Инбокса. В БД лежит «наше», «их» ждёт в конфликте: данные не
+# потеряны, но реплики расходятся, пока человек не выберет. Выше реестра
+# хэшей: тот лечится пересчётом без решения человека.
+_RANK_SYNC_CONFLICT = 4
+_RANK_MASTER_BROKEN = 5
+_RANK_MASTER_STALE = 6
+_RANK_DRIFT_STALE_EXPORT = 7
 # ADO-116: неразложенные документы. Ниже всего, что рвёт целостность, — они
 # находимы поиском и не теряются, — но выше внешних находок: пока корпус не
 # разложен, навигация по нему не работает, а RFC 25 §3.1 прямо относит
 # «неклассифицированный import» к работе куратора.
-_RANK_UNPLACED = 7
-_RANK_FINDING = 8
+_RANK_UNPLACED = 8
+_RANK_FINDING = 9
 # OQM-005: битая ссылка открытого вопроса рвёт навигацию так же, как битая
 # ссылка в документе, — тот же ранг. Застоявшийся вопрос — не поломка, а
 # напоминание: ниже всех внешних находок.
 _RANK_QUESTION_LINK_BROKEN = _RANK_LINK_BROKEN
 # OQM-010: задачи под вопрос закрыты, а вопрос открыт — почти наверняка
 # забытый ответ. Важнее «давно не трогали»: здесь есть что сделать прямо сейчас.
-_RANK_QUESTION_ANSWERED = 9
+_RANK_QUESTION_ANSWERED = 10
 # ACU-007 (RFC 28 §3.5): предложения, которые куратор оставил человеку
 # (approval и открытые вопросы автора `agent:curator`). Тот же ярус, что и
 # находки: ход за человеком, но целостность корпуса не страдает.
@@ -85,7 +90,7 @@ _RANK_PROPOSALS = _RANK_FINDING
 
 #: Автор, под которым фоновый куратор пишет предложения (RFC 28 §3.10 п.7).
 CURATOR_AUTHOR = "agent:curator"
-_RANK_QUESTION_STALE = 10
+_RANK_QUESTION_STALE = 11
 
 _DRIFT_RANK: dict[str, int] = {
     "missing": _RANK_DRIFT_MISSING,
@@ -498,12 +503,49 @@ def _proposals_priority(count: int, slug: str) -> tuple[int, dict[str, str]] | N
     }
 
 
+def _sync_conflicts(session: Session, project_id: int) -> list[dict[str, object]]:
+    """Открытые конфликты синхронизации проекта (RFC 29 §3.7, CLO-026)."""
+    from cod_doc.services.sync_service import conflicts
+
+    return conflicts.list_conflicts(session, project_id)
+
+
+def _sync_conflicts_priority(
+    open_conflicts: list[dict[str, object]], slug: str
+) -> tuple[int, dict[str, str]] | None:
+    """Один пункт на все открытые конфликты: команда — разрешить самый старый.
+
+    Пункт один, как у Инбокса: решение по каждому конфликту — человека, и
+    очередь из десятка одинаковых строк вытеснила бы всё остальное.
+    """
+    if not open_conflicts:
+        return None
+    first = open_conflicts[0]
+    count = len(open_conflicts)
+    target = f"{first['entity_kind']} {first['entity_uid']}"
+    if first["field"]:
+        target += f".{first['field']}"
+    return _RANK_SYNC_CONFLICT, {
+        "kind": "sync_conflict",
+        "ref": f"{count} open",
+        "reason": (
+            f"{count} конфликтов синхронизации ждут решения; первый — {first['kind']}: "
+            f"{target}. В БД «наше», «их» лежит в конфликте"
+        ),
+        "suggested_action": (
+            f"cod-doc sync conflicts -p {slug}; "
+            f"cod-doc sync resolve {first['uid']} -p {slug} --take ours|theirs"
+        ),
+    }
+
+
 def _build_priority(
     card: dict[str, Any],
     *,
     slug: str,
     master_rel: str,
     pending_proposals: int = 0,
+    sync_conflicts: list[dict[str, object]] | None = None,
 ) -> list[dict[str, str]]:
     """Свести четыре источника в одну очередь и отсортировать по рангу.
 
@@ -524,6 +566,9 @@ def _build_priority(
     proposals = _proposals_priority(pending_proposals, slug)
     if proposals is not None:
         ranked.append(proposals)
+    conflicts = _sync_conflicts_priority(sync_conflicts or [], slug)
+    if conflicts is not None:
+        ranked.append(conflicts)
     ranked.sort(key=lambda pair: pair[0])
     return [item for _rank, item in ranked]
 
@@ -599,7 +644,14 @@ def next(
         "questions": _questions_card(session, project_id),
     }
     pending = _pending_proposals(session, project_id)
-    priority = _build_priority(card, slug=slug, master_rel=master_rel, pending_proposals=pending)
+    open_conflicts = _sync_conflicts(session, project_id)
+    priority = _build_priority(
+        card,
+        slug=slug,
+        master_rel=master_rel,
+        pending_proposals=pending,
+        sync_conflicts=open_conflicts,
+    )
     # Очередь собрана по полным находкам (reason берётся из title); в самой
     # карточке title и path — повтор priority[].reason и doc_key.
     card["links"] = [
@@ -620,6 +672,7 @@ def next(
             "questions_stale": len(card["questions"]["stale"]),
             "questions_answered": len(card["questions"]["answered"]),
             "pending_proposals": pending,
+            "sync_conflicts": len(open_conflicts),
             "priority_total": len(priority),
         },
     }
