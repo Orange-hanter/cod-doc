@@ -40,7 +40,7 @@ from cod_doc.infra.models import SyncOpModel
 from cod_doc.services import activity_service
 from cod_doc.services.sync_service import _local
 from cod_doc.services.sync_service.changeset import Changeset, encode, sha
-from cod_doc.services.sync_service.errors import PushRejectedError
+from cod_doc.services.sync_service.errors import MergeRequiredError, PushRejectedError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -161,6 +161,10 @@ def push(
 
     ``store`` — транспорт вместо ``remotes`` из конфига проекта (тесты, clone).
     """
+    # pull зовёт только повтор; ленивый импорт держит push независимым от
+    # применения чужих операций (pull → apply → link/search-сервисы).
+    from cod_doc.services.sync_service import pull as pull_mod
+
     store = store if store is not None else _local.open_store(project, remote)
     retries = 0
     while True:
@@ -179,5 +183,9 @@ def push(
         if retries >= max_retries:
             suffix = f"; повторов: {max_retries}" if max_retries else ""
             raise PushRejectedError(f"{_BEHIND}{suffix}")
-        # Повтор идёт через pull (CLO-013): до него догонять remote нечем.
-        raise PushRejectedError(f"{_BEHIND}; pull ещё не реализован")
+        retries += 1
+        try:
+            pull_mod.pull(sf, project, remote=remote, author=author, store=store)
+        except MergeRequiredError as exc:
+            msg = f"{_BEHIND}, но pull не сводится fast-forward'ом: {exc}"
+            raise PushRejectedError(msg) from exc

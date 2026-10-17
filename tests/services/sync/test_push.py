@@ -3,8 +3,6 @@
 Acceptance: «Упаковка неупакованных sync_op в changeset, has_objects/put_object,
 cas_ref; отказ CAS → pull и повтор до 3 раз, дальше SYNC-103; сеть вне
 транзакции; событие sync.pushed; тест на SCN-083».
-
-Повтор через pull проверяется вместе с pull (CLO-013).
 """
 
 from __future__ import annotations
@@ -15,18 +13,18 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ActivityEventModel, ChangesetModel, ProjectModel, SyncOpModel
 from cod_doc.infra.remote.file import FileRemote
-from cod_doc.services.sync_service import push
+from cod_doc.services.sync_service import pull, push
 from cod_doc.services.sync_service.changeset import decode
 from cod_doc.services.sync_service.errors import PushRejectedError
 from tests.services.sync import _replicas as r
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from cod_doc.infra.remote.base import RefValue
@@ -45,6 +43,10 @@ def _push(rep: r.Replica, store: FileRemote, **kw: object) -> push.PushResult:
     return push.push(rep.sf, r.SLUG, author=r.AUTHOR, store=store, **kw)  # type: ignore[arg-type]
 
 
+def _pull(rep: r.Replica, store: FileRemote) -> pull.PullResult:
+    return pull.pull(rep.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+
 def _project_uid(rep: r.Replica) -> str:
     with transactional(rep.sf) as s:
         return str(s.get_one(ProjectModel, rep.project_id).uid)
@@ -53,6 +55,22 @@ def _project_uid(rep: r.Replica) -> str:
 def _remote_head(store: FileRemote, rep: r.Replica) -> str | None:
     ref = store.get_ref(_project_uid(rep), "main")
     return None if ref is None else ref.sha
+
+
+class _Spy(FileRemote):
+    """FileRemote с крючком перед каждым ``cas_ref``."""
+
+    def __init__(self, inner: FileRemote, before_cas: Callable[[int], None]) -> None:
+        super().__init__(inner.root)
+        self.before_cas = before_cas
+        self.cas_calls = 0
+
+    def cas_ref(
+        self, project_uid: str, name: str, expected: RefValue | None, new_sha: str
+    ) -> RefValue | None:
+        self.cas_calls += 1
+        self.before_cas(self.cas_calls)
+        return super().cas_ref(project_uid, name, expected, new_sha)
 
 
 # --- упаковка и fast-forward ------------------------------------------------------
@@ -121,7 +139,7 @@ def test_push_emits_sync_pushed(pair: tuple) -> None:
 
 def test_packed_changeset_carries_canonical_times(pair: tuple) -> None:
     """Находка B1: захват пишет ``isoformat()``, changeset — форму §10.4."""
-    a, _b, store = pair
+    a, b, store = pair
     r.make_task(a, "DEM-001")
     with transactional(a.sf) as s:
         # Операция, записанная захватом до правки: «+00:00» и без микросекунд.
@@ -143,17 +161,29 @@ def test_packed_changeset_carries_canonical_times(pair: tuple) -> None:
     assert all(CANONICAL_TIME.fullmatch(str(v)) for _, _, v in stamps), stamps
     task_op = next(op for op in cs.ops if op.entity_kind == "task")
     assert task_op.fields["created"] == "2026-10-17T12:00:00.000000Z"
+    # Обратно в БД реплики B — то же время.
+    _pull(b, store)
+    with transactional(b.sf) as s:
+        created = s.execute(text("SELECT created FROM task")).scalar_one()
+    assert str(created).startswith("2026-10-17 12:00:00")
 
 
-# --- SCN-083 ----------------------------------------------------------------------
+# --- SCN-083 и повторы ------------------------------------------------------------
+
+
+def _at_common_head(a: r.Replica, b: r.Replica, store: FileRemote) -> None:
+    r.make_task(a, "DEM-001")
+    r.make_task(a, "DEM-002")
+    _push(a, store)
+    _pull(b, store)
 
 
 def test_scn_083_push_that_missed_a_foreign_push_is_rejected(pair: tuple) -> None:
-    """Общая голова H — пустая история; A запушил поверх неё, B — нет."""
     a, b, store = pair
-    r.make_task(a, "DEM-001")
+    _at_common_head(a, b, store)
+    r.set_description(a, "DEM-001", "A")
     pushed_a = _push(a, store)
-    r.make_doc(b, "notes", {"intro": "B"})
+    r.set_description(b, "DEM-002", "B")
 
     with pytest.raises(PushRejectedError) as err:
         _push(b, store, max_retries=0)  # cod-doc push --no-retry
@@ -162,6 +192,61 @@ def test_scn_083_push_that_missed_a_foreign_push_is_rejected(pair: tuple) -> Non
     assert "remote ушёл вперёд — сделайте pull" in str(err.value)
     assert _remote_head(store, a) == pushed_a.head
     assert r.pending(b) > 0  # хвост B остался хвостом
+
+
+def test_cas_rejection_pulls_and_retries(pair: tuple) -> None:
+    a, b, store = pair
+    _at_common_head(a, b, store)
+    r.set_description(b, "DEM-002", "B")
+
+    def race(call: int) -> None:
+        if call == 1:  # A успевает запушить между упаковкой и CAS реплики B
+            r.set_description(a, "DEM-001", "A")
+            _push(a, store)
+
+    spy = _Spy(store, race)
+    result = push.push(b.sf, r.SLUG, author=r.AUTHOR, store=spy)
+
+    assert result.retries == 1
+    assert spy.cas_calls == 2
+    assert _remote_head(store, a) == result.head
+    assert r.task_description(b, "DEM-001") == "A"  # pull перед повтором
+    assert result.head is not None
+    cs = decode(store.get_object(_project_uid(b), result.head), result.head)
+    head_a = _pull(a, store).head
+    assert head_a == result.head
+    assert r.task_description(a, "DEM-002") == "B"
+    assert len(cs.parents) == 1
+    assert r.authored_state(a) == r.authored_state(b)
+
+
+def test_sync_103_after_three_retries(pair: tuple) -> None:
+    a, b, store = pair
+    _at_common_head(a, b, store)
+    r.set_description(b, "DEM-002", "B")
+
+    def race(call: int) -> None:  # remote уходит вперёд перед каждым CAS
+        r.set_description(a, "DEM-001", f"A{call}")
+        _push(a, store)
+
+    spy = _Spy(store, race)
+    with pytest.raises(PushRejectedError) as err:
+        push.push(b.sf, r.SLUG, author=r.AUTHOR, store=spy)
+
+    assert err.value.code == "SYNC-103"
+    assert spy.cas_calls == push.DEFAULT_MAX_RETRIES + 1
+    assert r.pending(b) > 0
+
+
+def test_pull_that_needs_a_merge_ends_push_with_sync_103(pair: tuple) -> None:
+    a, b, store = pair
+    _at_common_head(a, b, store)
+    r.set_description(a, "DEM-001", "A")
+    _push(a, store)
+    r.set_description(b, "DEM-001", "B")
+
+    with pytest.raises(PushRejectedError, match="секция C"):
+        _push(b, store)
 
 
 # --- сеть вне транзакции ----------------------------------------------------------
@@ -208,9 +293,12 @@ class _LockProbe(FileRemote):
 
 
 def test_network_runs_outside_db_transactions(pair: tuple) -> None:
-    a, _b, store = pair
+    a, b, store = pair
     r.make_task(a, "DEM-001")
     probe_a = _LockProbe(store, a.db_path)
     push.push(a.sf, r.SLUG, author=r.AUTHOR, store=probe_a)
+    probe_b = _LockProbe(store, b.db_path)
+    pull.pull(b.sf, r.SLUG, author=r.AUTHOR, store=probe_b)
 
     assert {"get_ref", "has_objects", "put_object", "cas_ref"} <= set(probe_a.calls)
+    assert {"get_ref", "get_object"} <= set(probe_b.calls)

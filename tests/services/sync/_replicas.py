@@ -28,10 +28,12 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import (
     Base,
     DocumentModel,
+    DocumentTagModel,
     PlanModel,
     PlanSectionModel,
     ProjectModel,
     SyncOpModel,
+    TagModel,
     TaskModel,
 )
 from cod_doc.infra.remote.file import FileRemote
@@ -121,7 +123,9 @@ def plan_ids(r: Replica) -> tuple[int, int]:
         return plan.row_id, sec.one().row_id
 
 
-def make_task(r: Replica, task_id: str, *, description: str = "old") -> None:
+def make_task(
+    r: Replica, task_id: str, *, description: str = "old", blocked_by: list[str] | None = None
+) -> None:
     plan_id, section_id = plan_ids(r)
     with transactional(r.sf) as s:
         task_service.create(
@@ -135,7 +139,27 @@ def make_task(r: Replica, task_id: str, *, description: str = "old") -> None:
             priority=Priority.MEDIUM,
             author=AUTHOR,
             description=description,
+            blocked_by=blocked_by,
         )
+
+
+def tag_doc(r: Replica, doc_key: str, tag: str) -> None:
+    """Тег документа — ORM через фабрику с захватом (сервиса записи тегов нет, F3)."""
+    with transactional(r.sf) as s:
+        cap.set_author(s, AUTHOR)
+        row = TagModel(project_id=r.project_id, name=tag)
+        s.add(row)
+        s.flush()
+        s.add(DocumentTagModel(document_id=doc_id(r, doc_key), tag_id=row.row_id))
+
+
+def untag_doc(r: Replica, doc_key: str) -> None:
+    with transactional(r.sf) as s:
+        cap.set_author(s, AUTHOR)
+        for row in s.scalars(
+            select(DocumentTagModel).where(DocumentTagModel.document_id == doc_id(r, doc_key))
+        ):
+            s.delete(row)
 
 
 def set_description(r: Replica, task_id: str, text: str) -> None:
