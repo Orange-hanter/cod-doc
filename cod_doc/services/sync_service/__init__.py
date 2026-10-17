@@ -3,7 +3,8 @@
 Пакет по образцу ``story_service/``. Сейчас в нём формат changeset'а
 (``changeset``, CLO-010), коды ошибок §10.10 (``errors``), ``push``
 (CLO-012), ``fetch``/``pull`` и применение чужих операций (``pull``,
-``apply``, CLO-013); ``_local`` — состояние реплики относительно remote,
+``apply``, CLO-013), дайджест состояния и ``verify`` (``digest``, CLO-014);
+``_local`` — состояние реплики относительно remote,
 ``_values`` — форма значений на проводе. Слияния нет: pull делает только
 fast-forward, расхождение — ``MergeRequiredError`` до секции C.
 

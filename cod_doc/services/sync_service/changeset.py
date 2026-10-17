@@ -50,6 +50,7 @@ __all__ = [
     "JsonValue",
     "Op",
     "canonical_bytes",
+    "canonical_json",
     "decode",
     "encode",
     "format_time",
@@ -353,6 +354,21 @@ def canonical_bytes(cs: Changeset) -> bytes:
     """Каноническая форма §10.4 — то, от чего берётся адрес."""
     return json.dumps(
         to_dict(cs),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def canonical_json(value: FieldValue) -> bytes:
+    """Произвольное значение в канонической форме §10.4 (дайджест, §3.7).
+
+    Те же правила, что у ``canonical_bytes``: время приводится к форме §10.4,
+    ключи по алфавиту, без пробелов и экранирования.
+    """
+    return json.dumps(
+        _normalize(value, "value"),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

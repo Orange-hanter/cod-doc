@@ -1030,6 +1030,47 @@ def shipped_fields(
     return _columns_payload(info, wanted - reg.withheld_columns(table, gate), row, lookup)
 
 
+def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str, str]]:
+    """Уезжающее состояние проекта: ``(таблица, uid сущности, поля JSON)`` (RFC 29 §3.7).
+
+    По строке на каждую захватываемую строку проекта, которую реестр
+    выпускает: поля — ровно как их сериализует хук (``shipped_fields``: FK —
+    uid конца, придержанные колонки выброшены), в той же JSON-форме, что
+    ``sync_op.fields``. Строки ``row_is_local`` (restricted и всё под ним) не
+    выдаются. Порядок не задан — сортирует потребитель (дайджест).
+
+    Один ``_Lookup`` на весь обход: концы ссылок и метки документов читаются
+    по разу, а не по разу на строку, как у ``shipped_fields``.
+    """
+    lookup = _Lookup(session)
+    for table in sorted(CAPTURED_TABLES):
+        mapper = _mapper_for(table)
+        info = table_info(mapper) if mapper is not None else None
+        if mapper is None or info is None:
+            # ``link_suggestion`` регистрируется лениво: пропуск дал бы разный
+            # дайджест у процессов, импортировавших модель и нет.
+            msg = f"sync_capture.shipped_state: модель {table!r} не загружена"
+            raise LookupError(msg)
+        tbl = _table(mapper)
+        stmt = select(tbl)
+        if table == "project":
+            stmt = stmt.where(tbl.c.row_id == project_id)
+        elif _PROJECT_ID in tbl.c:
+            stmt = stmt.where(tbl.c.project_id == project_id)
+        for raw in session.connection().execute(stmt).mappings():
+            row = dict(raw)
+            if _PROJECT_ID not in tbl.c and lookup.project_id(table, row) != project_id:
+                continue
+            gate = gating_row(lookup, table, row, project_id)
+            if not _ships(table, gate):
+                continue
+            entity_uid = _entity_uid(info, row, lookup)
+            if entity_uid is None:
+                raise SyncCaptureError(f"{table}.uid: пуст")
+            wanted = info.shipped - reg.withheld_columns(table, gate)
+            yield table, entity_uid, _dumps(_columns_payload(info, wanted, row, lookup))
+
+
 @contextmanager
 def suspended(session: Session) -> Iterator[None]:
     """Заглушить захват (применение чужих операций, §10.6).
