@@ -679,6 +679,9 @@ def _apply_delete(
     mapper, info = _info(op.entity_kind)
     obj = _find(session, project, mapper, info, op.entity_uid, op.base)
     if obj is None:
+        # Корень уже снесён своим удалением: правки этого changeset'а под ним,
+        # легшие в снимок, мертвы и у его автора — конфликта нет (CLO-027).
+        tombstone.drop_pending(ctx, op.entity_kind, op.entity_uid)
         return
     _require_shipped(session, info, obj, op.entity_uid, None)
     if not merge.allow(session, ctx, op):
@@ -689,6 +692,9 @@ def _apply_delete(
         tombstone.before_delete(session, ctx, info.table, row_id, op)
     _note(touched, info.table, obj, deleted=True, base=op.base)
     session.delete(obj)
+    # Сразу в БД: следующая операция того же uid (ребро снято и поставлено снова)
+    # иначе нашла бы удаляемый объект в identity map и легла правкой в него (CLO-027).
+    session.flush()
 
 
 def _absorbed(session: Session, ctx: merge.Context, op: Op) -> bool:

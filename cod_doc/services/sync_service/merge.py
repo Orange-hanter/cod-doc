@@ -454,10 +454,20 @@ def _payload(row: SyncOpModel, column: str) -> dict[str, object]:
 
 
 def _trim(session: Session, rows: Sequence[SyncOpModel], column: str) -> None:
-    """Убрать поле из неупакованных операций; операция без полей уходит целиком."""
+    """Убрать поле из неупакованных операций; операция без полей уходит целиком.
+
+    Операция создания (``base`` пуст) поле сохраняет: она уезжает вставкой, и
+    реплика, у которой строки ещё нет, без NOT NULL-колонок её не вставит.
+    Расхождение с чужой записью тут возможно только у двойника ключа, чья
+    вставка переписана на uid этой строки (CLO-023), и чужая операция у
+    приёмников уже в истории — её штамп больше, LWW по истории оставит её
+    значение (CLO-027, сиды 91 и 280).
+    """
     for row in rows:
         fields = _payload(row, "fields")
         if column not in fields:
+            continue
+        if row.kind == _UPSERT and not _payload(row, "base"):
             continue
         fields.pop(column)
         if not fields and row.kind == _UPSERT:
@@ -542,7 +552,13 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
             theirs_stamp=theirs_stamp,
             theirs_op=op.op_id,
         )
-        result = field_strategy(classify(op.entity_kind, column))(clash)
+        # Чужая операция создания поверх существующей строки — вставка двойника
+        # ключа, переписанная на uid этой строки (CLO-023), или повторное
+        # восстановление того же снимка: поля — LWW, как в склейке. Тела разошлись
+        # — это уже конфликт ``key_merge`` той склейки; diff3 без общего предка
+        # дал бы ``text`` только в части перестановок (CLO-027, сид 91).
+        strategy = lww if not op.base else field_strategy(classify(op.entity_kind, column))
+        result = strategy(clash)
         if result.outcome is Outcome.THEIRS:
             _trim(session, pending, column)
             out[column] = theirs

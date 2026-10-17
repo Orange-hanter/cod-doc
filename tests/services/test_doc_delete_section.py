@@ -13,7 +13,7 @@ import json
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from cod_doc.domain.entities import (
     Document,
@@ -242,6 +242,22 @@ def test_reverting_a_section_delete_is_refused_explicitly(engine_with_schema) ->
             )
 
 
+def _take_the_dead_id(session: Session, new_id: int | None, dead_id: int | None) -> None:
+    """Посадить новую секцию на номер удалённой — посылка дефекта ai-review #85.
+
+    С CLO-027 хук захвата номер не переиспользует (новая строка — выше всех
+    ``revision.entity_id`` своего вида), но строка, вставленная мимо хука
+    (bulk SQL), его ещё может занять: сторож отката остаётся нужен.
+    """
+    assert new_id is not None and dead_id is not None
+    assert new_id != dead_id  # CLO-027
+    session.execute(
+        text("UPDATE section SET row_id = :dead WHERE row_id = :new"),
+        {"dead": dead_id, "new": new_id},
+    )
+    session.expire_all()
+
+
 def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
     engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
@@ -286,8 +302,7 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
             body="Body of delta.",
             author="human:dakh",
         )
-        # The premise of the defect: the id really was reused.
-        assert delta.row_id == gamma.row_id
+        _take_the_dead_id(session, delta.row_id, gamma.row_id)
 
         with pytest.raises(rev.RevertNotSupportedError):
             revert_service.revert(
@@ -471,7 +486,7 @@ def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_sche
             body="Body of delta.",
             author="human:dakh",
         )
-        assert delta.row_id == gamma.row_id
+        _take_the_dead_id(session, delta.row_id, gamma.row_id)
 
         with pytest.raises(rev.RevertNotSupportedError):
             revert_service.revert(

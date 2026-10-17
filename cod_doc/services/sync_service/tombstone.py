@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from cod_doc.services.sync_service.changeset import Op
     from cod_doc.services.sync_service.merge import Context, EntityClash
 
-__all__ = ["absorb_orphan", "before_delete", "resolve_entity", "rows_of"]
+__all__ = ["absorb_orphan", "before_delete", "drop_pending", "resolve_entity", "rows_of"]
 
 _UPSERT: Final = "upsert"
 _DELETE: Final = "delete"
@@ -450,13 +450,50 @@ def absorb_orphan(session: Session, ctx: Context, op: Op) -> bool:
     tail = _local.pending_ops(session, ctx.project_id)
     deleted = {(o.entity_kind, o.entity_uid): o for o in tail if o.kind == _DELETE}
     dead = _dead(session, ctx)
-    if not deleted and not dead:
-        return False
-    for entity in _missing_targets(session, op):
-        root = _root_of(session, ctx, deleted, dead, entity)
-        if root is not None:
-            _absorb(session, ctx, root, op)
+    missing = _missing_targets(session, op)
+    if deleted or dead:
+        for entity in missing:
+            root = _root_of(session, ctx, deleted, dead, entity)
+            if root is not None:
+                _absorb(session, ctx, root, op)
+                return True
+    # Удаление уже в истории реплики (CLO-027): правка мёртвой строки — пустая
+    # операция. Так приходит хвост реплики, которая сама правила и удаляла ту же
+    # строку, что удалил кто-то третий: чужое удаление у неё пустое (строки уже
+    # нет), и свои правки перед своим удалением уезжают как есть.
+    return any(_buried(session, ctx.project_id, entity) for entity in missing)
+
+
+def _buried(session: Session, project_id: int, entity: Entity) -> bool:
+    """Сущность или её предок по каскадному FK удалены в журнале реплики."""
+    edges = apply.cascade_edges()
+    seen: set[Entity] = set()
+    frontier = [entity]
+    while frontier:
+        current = frontier.pop(0)
+        if current in seen:
+            continue
+        seen.add(current)
+        table, uid = current
+        rows = session.scalars(
+            select(SyncOpModel)
+            .where(
+                SyncOpModel.project_id == project_id,
+                SyncOpModel.entity_kind == table,
+                SyncOpModel.entity_uid == uid,
+            )
+            .order_by(SyncOpModel.hlc, SyncOpModel.op_id)
+        )
+        ops = [_local.op_of(row) for row in rows]
+        if any(o.kind == _DELETE for o in ops):
             return True
+        fields: dict[str, FieldValue] = {}
+        for o in ops:
+            fields.update(o.fields)
+        for parent, child, column in sorted(edges):
+            value = fields.get(column)
+            if child == table and isinstance(value, str) and not _exists(session, (parent, value)):
+                frontier.append((parent, value))
     return False
 
 
@@ -502,6 +539,24 @@ def _absorb(session: Session, ctx: Context, root: _Root, op: Op) -> None:
             theirs_op=op.op_id,
         )
     )
+
+
+def drop_pending(ctx: Context, table: str, uid: str) -> None:
+    """Чужой changeset удаляет корень, который уже снесло своё удаление.
+
+    Правки того же changeset'а под этим корнем легли в ещё не записанный
+    конфликт ``delete_edit`` (``_absorb``), но их автор удалил корень сам:
+    мертвы правки обеих сторон, и восстанавливать нечего. Без этого конфликт
+    открывался, только если правившая и удалившая реплика пушила первой, —
+    множество конфликтов зависело от перестановки (CLO-027, сиды 8 и 44).
+    Записанный конфликт прошлого changeset'а не трогается — как ``retract``
+    (D9 PR #225): правка, уехавшая отдельно от удаления, — настоящая правка.
+    """
+    ctx.conflicts = [
+        spec
+        for spec in ctx.conflicts
+        if not (spec.kind == DELETE_EDIT and (spec.entity_kind, spec.entity_uid) == (table, uid))
+    ]
 
 
 def _delete_op_of(ours: object) -> str | None:

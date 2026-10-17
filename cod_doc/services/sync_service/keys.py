@@ -54,6 +54,7 @@ merged``, событие ``sync.alias_created``): операции, собран
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 from typing import TYPE_CHECKING, Final, cast
 
@@ -61,7 +62,13 @@ from sqlalchemy import select, update
 
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
-from cod_doc.infra.models import Base, EntityAliasModel, ProjectModel, SyncOpModel
+from cod_doc.infra.models import (
+    Base,
+    EntityAliasModel,
+    ProjectModel,
+    SyncConflictModel,
+    SyncOpModel,
+)
 from cod_doc.services import activity_service
 from cod_doc.services.sync_service import _local, apply
 from cod_doc.services.sync_service._values import to_wire
@@ -241,6 +248,7 @@ def _glue(
     apply.finish_row(session, project, info, obj, survivor, winners)
     if theirs_first:
         _rekey_tail(session, ctx.project_id, table, loser, survivor)
+        _repoint_conflicts(session, ctx, table, loser, survivor)
     _alias(session, ctx, table, loser, survivor)
     if ours_text:
         ctx.conflicts.append(
@@ -255,6 +263,34 @@ def _glue(
                 theirs_op=theirs.op_id,
             )
         )
+
+
+def _repoint_conflicts(
+    session: Session, ctx: Context, table: str, loser: str, survivor: str
+) -> None:
+    """Конфликты своей строки — на выжившего, когда её uid проиграл (CLO-027, сид 91).
+
+    Три двойника: первая склейка открыла конфликт на своём uid, вторая этот uid
+    переписала в алиас. Конфликт на алиасе — другая подпись, чем у реплик,
+    которые этого uid не видели (свой проигравший uid не уезжает), а его
+    разрешение писало бы операцию под uid, который знает только эта реплика.
+    """
+    ctx.conflicts = [
+        dataclasses.replace(spec, entity_uid=survivor)
+        if (spec.entity_kind, spec.entity_uid) == (table, loser)
+        else spec
+        for spec in ctx.conflicts
+    ]
+    session.execute(
+        update(SyncConflictModel)
+        .where(
+            SyncConflictModel.project_id == ctx.project_id,
+            SyncConflictModel.entity_kind == table,
+            SyncConflictModel.entity_uid == loser,
+            SyncConflictModel.status == "open",
+        )
+        .values(entity_uid=survivor)
+    )
 
 
 def _alias(session: Session, ctx: Context, table: str, loser: str, survivor: str) -> None:
