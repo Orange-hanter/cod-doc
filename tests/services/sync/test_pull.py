@@ -30,7 +30,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.remote.file import FileRemote
 from cod_doc.services import doc_service
-from cod_doc.services.sync_service import pull, push
+from cod_doc.services.sync_service import _local, pull, push
 from cod_doc.services.sync_service.changeset import Changeset, Op, decode, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, SchemaMismatchError
 from tests.services.sync import _replicas as r
@@ -375,13 +375,30 @@ class _Rendezvous(FileRemote):
         return super().get_ref(project_uid, name)
 
 
-def test_concurrent_pulls_apply_each_changeset_once(pair: tuple) -> None:
+def test_concurrent_pulls_apply_each_changeset_once(
+    pair: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Два pull одной реплики: оба качают цепочку, оба пишут ``sync_ref``.
+
+    Барьеры ставят обе записи ``sync_ref`` в гонку детерминированно: строки
+    головы ``@local`` и ref'а remote на B ещё нет, и оба pull доходят до
+    записи, не увидев чужой. Проигравший не получает ``IntegrityError``.
+    """
     a, b, store = pair
     r.make_task(a, "DEM-001")
     first = _push(a, store)
     r.make_task(a, "DEM-002")
     second = _push(a, store)
     gate = _Rendezvous(store)
+    for name in ("ensure_local_head", "set_remote_ref"):
+        original = getattr(_local, name)
+        barrier = threading.Barrier(2)
+
+        def raced(*args: object, _orig: object = original, _b: threading.Barrier = barrier) -> None:
+            _b.wait(timeout=10)
+            _orig(*args)  # type: ignore[operator]
+
+        monkeypatch.setattr(_local, name, raced)
     results: list[pull.PullResult] = []
     errors: list[BaseException] = []
 

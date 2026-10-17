@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **185 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **188 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -86,8 +86,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 181 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 185 (включая legacy)
+cod-doc-mcp --profile standard           # 184 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 188 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -142,7 +142,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 181 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 184 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -350,7 +350,8 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **doc_tree.\* / doc_node.\* (ADO-116)** | 8 | Дерево документации как данные: разделы с намерением и порядком, детерминированная раскладка по правилам и Инбокс для того, что правилам не подошло. `doc_tree_classify` по умолчанию `dry_run=true` и не трогает то, что человек разложил руками. Только профили standard/full | `doc_tree_get`, `doc_tree_unplaced`, `doc_tree_init`, `doc_tree_classify`, `doc_set_node`, `doc_node_create`, `doc_node_update`, `doc_node_delete` |
 | **doc_node_health.\* / doc_node_intent.\*** | 3 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированная часть без LLM; `doc_node_intent_analyze` — вердикт модели «покрывают ли документы раздела его intent», в своей партиции находок, чтобы упавший проход не закрыл детерминированные. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync`, `doc_node_intent_analyze` |
 | **repair.\* (ADO-192)** | 2 | Фаза D команды `cod-doc update`: починка состояния проекта по карточке `curator_next` — `edited_in_place` → `doc import`, протухший реестр хэшей `MASTER.md` → пересчёт, нерезолвящиеся derived-ссылки → resync секций, замки старше TTL → снятие, незаведённое дерево разделов (проект старше ADO-116) → засев дефолтного без раскладки. Остальное (`stale_export`, `conflict`, `missing`, hash `BROKEN`, `unplaced`, findings) уходит счётчиками в `reported_only`. `dry_run=true` по умолчанию: тул, молча переписывающий десяток документов на спекулятивном вызове, — мина. Фазы A–C на MCP не выставлены, см. абзац ниже. Только профили standard/full. `master_hash_update` (DEBT-009) — зеркало `cod-doc hash update`: реестр `MASTER.md`, заведённый документом, пересчитывается в БД, файл не трогается; по умолчанию сухой | `project_repair`, `master_hash_update` |
-| **ИТОГО** | **185** | | |
+| **sync.\* (RFC 29 §10.7)** | 3 | Синхронизация проекта с remote: `sync_status` — голова реплики и remote, ahead/behind (делает fetch), неотправленные операции, restricted-документы, `verify=true` сверяет дайджест состояния (§3.7); `sync_pull` — fetch + fast-forward (`dry_run`); `sync_push` — упаковка хвоста журнала в changeset и CAS `refs/main`. Ошибки — `ValueError` с кодом `SYNC-NNN` в начале сообщения. Remote заводит человек (`cod-doc remote add`), в MCP настройки remote нет намеренно. Только профили standard/full | `sync_status`, `sync_pull`, `sync_push` |
+| **ИТОГО** | **188** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

@@ -60,6 +60,9 @@ cod-doc ctx structure     — pinned SHA structure_context
 cod-doc scenario new|list|show|update|retire|steps|link|unlink|export|coverage
 cod-doc question new|list|show|edit|resolve|drop|reopen|option|link|unlink|verify|import
 cod-doc approval list|show|approve|deny|cancel
+cod-doc remote add|list|remove — remotes проекта (RFC 29 §10.8)
+cod-doc fetch|pull|push  — синхронизация с remote
+cod-doc sync status|log|verify — состояние синхронизации, дайджест
 
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
@@ -105,6 +108,7 @@ from cod_doc.cli.cmd_reindex import reindex
 from cod_doc.cli.cmd_runtime import runtime
 from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
+from cod_doc.cli.cmd_sync import fetch, pull, push, remote, sync
 from cod_doc.cli.cmd_tui import tui, wizard
 from cod_doc.cli.cmd_update import update
 from cod_doc.cli.completion.cmd import completion
@@ -173,6 +177,11 @@ main.add_command(reindex)
 main.add_command(search_cmd)
 main.add_command(completion)
 main.add_command(runtime)
+main.add_command(remote)
+main.add_command(fetch)
+main.add_command(pull)
+main.add_command(push)
+main.add_command(sync)
 main.add_command(update)
 # Тот же объект под вторым именем: `upgrade` — привычка из
 # `cod-doc-services.sh upgrade`, и разводить две команды с одним поведением

@@ -44,6 +44,7 @@ from cod_doc.mcp.tools import (
     skill_tools,
     story_tools,
     structure_tools,
+    sync_tools,
     task_doc_tools,
     task_tools,
 )
@@ -101,6 +102,8 @@ for _module in (
     # ADO-192 project_repair — фаза D `cod-doc update` (единственная, которую
     # можно выставить на MCP; см. docs/mcp-integration.md)
     repair_tools,
+    # RFC 29 §10.7 / CLO-016 sync_* (status, pull, push; standard/full)
+    sync_tools,
 ):
     _module.register(mcp)
 

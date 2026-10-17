@@ -5,7 +5,8 @@
 
 1. **Упаковка** (транзакция): неупакованные ``sync_op`` проекта по
    ``(hlc, op_id)`` → один changeset, ``parents = [локальная голова]``. Время
-   в полях приводится к форме §10.4 по типу колонки (``_values.to_wire``).
+   в полях приводится к форме §10.4 по типу колонки (``_values.to_wire``);
+   ``digest`` — дайджест состояния реплики в той же транзакции (CLO-014).
    Журнал не меняется: если дальше что-то сорвётся, хвост остаётся хвостом.
 2. **Обмен** (без транзакции): ``get_ref`` → ``has_objects`` /
    ``put_object`` → ``cas_ref(expected = голова, которую реплика видела)``.
@@ -38,7 +39,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local
+from cod_doc.services.sync_service import _local, digest
 from cod_doc.services.sync_service.changeset import Changeset, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, PushRejectedError
 
@@ -91,7 +92,9 @@ def _pack(
             epoch=_local.EPOCH,
             schema_head=_local.schema_head(session),
             hlc_max=max(op.hlc for op in ops),
-            digest=_local.DIGEST_PENDING,
+            # Состояние реплики сейчас = родитель + хвост = состояние после
+            # применения этого changeset'а (§3.7, CLO-014).
+            digest=digest.compute(session, ref.row_id),
             ops=ops,
         )
     packed = _Packed(
