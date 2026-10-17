@@ -22,7 +22,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import select, text, update
-from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ChangesetModel, ProjectModel, SyncOpModel, SyncRefModel
@@ -32,6 +31,8 @@ from cod_doc.services.sync_service.changeset import Changeset, Op
 from cod_doc.services.sync_service.errors import RemoteConfigError, SchemaMismatchError
 
 if TYPE_CHECKING:
+    from sqlalchemy.dialects.postgresql import Insert as PgInsert
+    from sqlalchemy.dialects.sqlite import Insert as SqliteInsert
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.infra.remote.base import RefValue, RemoteStore
@@ -72,7 +73,20 @@ def project_ref(session: Session, slug: str) -> ProjectRef:
 
 
 def _ref_row(session: Session, project_id: int, remote: str, name: str) -> SyncRefModel | None:
-    return session.get(SyncRefModel, (project_id, remote, name))
+    """Строка ``sync_ref`` из БД, а не из identity map.
+
+    Пишут её core-запросами (``_upsert_ref``, ``cas_local_head``) — объект,
+    загруженный раньше в этой сессии, был бы устаревшим.
+    """
+    return session.scalars(
+        select(SyncRefModel)
+        .where(
+            SyncRefModel.project_id == project_id,
+            SyncRefModel.remote == remote,
+            SyncRefModel.name == name,
+        )
+        .execution_options(populate_existing=True)
+    ).one_or_none()
 
 
 def local_head(session: Session, project_id: int) -> str | None:
@@ -95,20 +109,38 @@ def set_remote_ref(session: Session, project_id: int, remote: str, ref: RefValue
     )
 
 
+def _insert_ref(session: Session) -> PgInsert | SqliteInsert:
+    """``INSERT`` диалекта с ``ON CONFLICT``: SQLite или PostgreSQL (hub)."""
+    if session.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        return pg_insert(SyncRefModel)
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    return sqlite_insert(SyncRefModel)
+
+
+_REF_KEY: Final = ("project_id", "remote", "name")
+
+
 def _upsert_ref(
     session: Session, project_id: int, remote: str, sha: str | None, etag: str | None
 ) -> None:
-    row = _ref_row(session, project_id, remote, MAIN)
+    """Записать ref одним ``INSERT … ON CONFLICT DO UPDATE``.
+
+    Не «прочитать, затем вставить или обновить»: два параллельных pull оба
+    видели бы «строки нет», и второй INSERT упал бы на PK (``IntegrityError``
+    наружу). Последний коммит выигрывает — оба пишут увиденную голову remote.
+    """
     now = datetime.now(UTC)
-    if row is None:
-        session.add(
-            SyncRefModel(
-                project_id=project_id, remote=remote, name=MAIN, sha=sha, etag=etag, fetched_at=now
-            )
+    stmt = _insert_ref(session).values(
+        project_id=project_id, remote=remote, name=MAIN, sha=sha, etag=etag, fetched_at=now
+    )
+    session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=list(_REF_KEY), set_={"sha": sha, "etag": etag, "fetched_at": now}
         )
-    else:
-        row.sha, row.etag, row.fetched_at = sha, etag, now
-    session.flush()
+    )
 
 
 def schema_head(session: Session) -> str:
@@ -215,13 +247,21 @@ def journal_ops(session: Session, op_ids: list[str]) -> dict[str, tuple[Op, str 
 
 
 def ensure_local_head(session_factory: sessionmaker[Session], project_id: int) -> None:
-    """Строка головы (``sha`` пуст) — чтобы её сдвигал CAS; гонку вставки гасит PK."""
-    try:
-        with transactional(session_factory) as session:
-            if _ref_row(session, project_id, LOCAL_REMOTE, MAIN) is None:
-                _upsert_ref(session, project_id, LOCAL_REMOTE, None, None)
-    except IntegrityError:
-        pass  # вставил параллельный pull — строка есть
+    """Строка головы (``sha`` пуст) — чтобы её сдвигал CAS.
+
+    ``ON CONFLICT DO NOTHING``: строку, вставленную параллельным pull, не
+    трогаем и ошибки не получаем — дальше голову двигает только CAS.
+    """
+    with transactional(session_factory) as session:
+        stmt = _insert_ref(session).values(
+            project_id=project_id,
+            remote=LOCAL_REMOTE,
+            name=MAIN,
+            sha=None,
+            etag=None,
+            fetched_at=datetime.now(UTC),
+        )
+        session.execute(stmt.on_conflict_do_nothing(index_elements=list(_REF_KEY)))
 
 
 def cas_local_head(session: Session, project_id: int, expected: str | None, new: str) -> bool:
