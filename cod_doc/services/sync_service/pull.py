@@ -9,7 +9,10 @@ SYNC-102), потом каждый применяется в своей тран
 1. **Схема** (SCN-085, Q-012). Changeset с ``schema_head`` новее головы
    миграций этой БД — ``SYNC-104`` «remote на схеме X, у вас Y — cod-doc
    update»; не применяется ни один changeset этого pull, даже более старые.
-2. **Расхождение.** Секция B делает только fast-forward: голова реплики —
+2. **Штампы** (``apply.check_clock``): реплика операций = реплика changeset'а,
+   не своя реплика, не дальше ``hlc.MAX_DRIFT_MS`` впереди стенных часов —
+   иначе SYNC-102.
+3. **Расхождение.** Секция B делает только fast-forward: голова реплики —
    предок головы remote, а свой неупакованный хвост (``sync_op`` без
    ``changeset``) не трогает сущностей чужих операций. «Трогает» — та же
    сущность, или удаление с одной стороны того, на что ссылается FK другой.
@@ -35,6 +38,7 @@ from typing import TYPE_CHECKING, Final
 from sqlalchemy import select, update
 
 from cod_doc.infra.db import transactional
+from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ChangesetModel, SyncOpModel
 from cod_doc.services import activity_service
 from cod_doc.services.sync_service import _local, apply
@@ -268,6 +272,10 @@ def pull(
     _check_divergence(fetched.changesets, own, pending)
 
     foreign = [(sha, cs) for sha, cs in fetched.changesets if sha not in own]
+    with transactional(sf) as session:
+        me = self_replica(session, ref.row_id)
+    for _, cs in foreign:  # штампы — до первой записи, иначе часть pull уже применена
+        apply.check_clock(cs, self_replica_uid=me)
     ops = sum(len(cs.ops) for _, cs in foreign)
     if dry_run:
         return PullResult(

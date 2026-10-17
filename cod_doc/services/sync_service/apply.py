@@ -14,8 +14,17 @@
    полиморфная ссылка — ``NULL``, как её и сериализует захват; висячий
    настоящий FK — ``SYNC-102``: changeset ссылается на сущность, которой у
    реплики нет.
-2. **Только уезжающие колонки.** Поля вне ``SHIPPED_COLUMNS`` (local, чужие,
-   незнакомые) отбрасываются — remote не пишет ``root_path`` и ``position``.
+2. **Недоверенный ввод.** Changeset собирает тот, кто пишет в remote, а
+   hub-БД держит несколько проектов. Поэтому: строка по uid и конец FK
+   ищутся только в проекте pull'а (``project_id`` или цепочка родителей) —
+   чужой проект — SYNC-102; итоговая строка сверяется ещё раз, так что
+   ``project_id`` на чужой проект не перевешивается; поле вне
+   ``SHIPPED_COLUMNS`` (local, ``uid``, незнакомое) и таблица вне захвата —
+   SYNC-102; строка, которую реестр этой реплики держит local (restricted и
+   всё под ним, придержанные колонки), не пишется ни до, ни после правки;
+   штампы проверяет ``check_clock`` (реплика операций, не своя реплика, не
+   дальше ``hlc.MAX_DRIFT_MS`` впереди стенных часов). Любой отказ —
+   исключение, и транзакция changeset'а откатывается целиком.
 3. **Создание.** Новая строка получает локальный ``row_id``; local-колонки с
    ``NOT NULL`` заполняются здесь: ``position`` — append-счётчиком (у
    адресных позиций — номер критерия, опции, диаграммы, D7) или пересчётом из
@@ -52,7 +61,7 @@ from cod_doc.domain.entities import EntityKind
 from cod_doc.infra import ordering
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
-from cod_doc.infra.hlc import Hlc, clock_for, self_replica
+from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
 from cod_doc.infra.models import Base, SyncOpModel
 from cod_doc.services import search_service
 from cod_doc.services.sync_service import _local
@@ -64,6 +73,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy import Table
     from sqlalchemy.orm import Mapper, Session
+    from sqlalchemy.sql.elements import ColumnElement
 
     from cod_doc.infra.models.base import RankMixin
     from cod_doc.services.sync_service._local import ProjectRef
@@ -74,6 +84,8 @@ logger = logging.getLogger("cod_doc.services.sync_service.apply")
 _UID: Final = "uid"
 _POSITION: Final = "position"
 _PROJECT: Final = "project"
+_PROJECT_ID: Final = "project_id"
+_ROW_ID: Final = "row_id"
 #: Где ``position`` — адрес (``<story_id>#<position>``, номер опции, диаграммы):
 #: append-счётчик, не пересчитывается (DATA_MODEL §3.18.2, D7).
 ADDRESS_POSITIONS: Final = frozenset({"story_acceptance", "open_question_option", "adr_diagram"})
@@ -182,32 +194,90 @@ def _note(touched: Touched, table: str, obj: object, *, deleted: bool, op: Op) -
         touched.renumber.add((table, tuple((c, getattr(obj, c)) for c in parent_cols)))
 
 
+# --- проект строки ----------------------------------------------------------------
+
+
+def _row(session: Session, table: str, where: ColumnElement[bool]) -> dict[str, object] | None:
+    tbl = Base.metadata.tables[table]
+    found = session.execute(select(tbl).where(where)).mappings().first()
+    return None if found is None else dict(found)
+
+
+def _project_of(session: Session, table: str, row: Mapping[str, object]) -> object:
+    """``project.row_id`` строки: своя ``project_id`` или цепочка родителей захвата.
+
+    Hub-БД держит несколько проектов, а uid и FK из changeset'а — недоверенный
+    ввод: строка, найденная по uid, обязана принадлежать проекту pull'а.
+    """
+    for _ in range(len(cap.CAPTURED_TABLES) + 1):
+        if table == _PROJECT:
+            return row.get(_ROW_ID)
+        if _PROJECT_ID in row:
+            return row[_PROJECT_ID]
+        info = cap.table_info(_mapper(table))
+        if info is None or info.parent is None:
+            return None
+        column, target = info.parent
+        value = row.get(column)
+        if value is None:
+            return None
+        parent = _row(session, target, Base.metadata.tables[target].c.row_id == value)
+        if parent is None:
+            return None
+        table, row = target, parent
+    return None
+
+
+def _require_own(
+    session: Session, project: ProjectRef, table: str, row: Mapping[str, object], what: str
+) -> None:
+    owner = _project_of(session, table, row)
+    if owner != project.row_id:
+        msg = f"{what}: строка {table} принадлежит другому проекту этой БД"
+        raise ObjectMissingError(msg)
+
+
+def _row_of(info: cap.TableInfo, obj: object) -> dict[str, object]:
+    return {column: getattr(obj, attr) for column, attr in info.columns}
+
+
 # --- значения ---------------------------------------------------------------------
 
 
-def _row_id_by_uid(session: Session, table: str, uid: str) -> int | None:
-    tbl = cast("Table", _mapper(table).local_table)
-    found = session.execute(select(tbl.c.row_id).where(tbl.c.uid == uid)).scalar_one_or_none()
-    return None if found is None else int(found)
+def _row_id_by_uid(session: Session, project: ProjectRef, table: str, uid: str) -> int | None:
+    """``row_id`` строки ``table`` с этим uid в проекте pull'а; чужой проект — SYNC-102."""
+    tbl = Base.metadata.tables[table]
+    found = _row(session, table, tbl.c.uid == uid)
+    if found is None:
+        return None
+    _require_own(session, project, table, found, f"uid {uid}")
+    return int(cast("int", found[_ROW_ID]))
 
 
 def _translate(
     session: Session,
+    project: ProjectRef,
     info: cap.TableInfo,
     payload: Mapping[str, object],
     existing: object | None,
 ) -> dict[str, object]:
-    """Поля операции → значения ORM-атрибутов: FK uid → row_id, время → datetime."""
+    """Поля операции → значения ORM-атрибутов: FK uid → row_id, время → datetime.
+
+    Поле вне ``SHIPPED_COLUMNS`` таблицы (local, ``uid``, незнакомое) —
+    SYNC-102: захват такого не пишет, значит объект собран не нашим кодом.
+    """
     out: dict[str, object] = {}
     for column, value in payload.items():
         if column not in info.shipped:
-            continue  # local, чужая или незнакомая колонка: remote её не пишет
-        out[column] = _value(session, info, column, value, payload, existing)
+            msg = f"{info.table}.{column}: колонка не уезжает — remote её не пишет"
+            raise ObjectMissingError(msg)
+        out[column] = _value(session, project, info, column, value, payload, existing)
     return out
 
 
 def _value(
     session: Session,
+    project: ProjectRef,
     info: cap.TableInfo,
     column: str,
     value: object,
@@ -218,9 +288,9 @@ def _value(
         return None
     if column in info.fk_targets:
         target = info.fk_targets[column]
-        row_id = _row_id_by_uid(session, target, str(value))
-        if row_id is None and column not in info.logical:
-            msg = f"{info.table}.{column}: на реплике нет строки {target} с uid {value}"
+        row_id = _row_id_by_uid(session, project, target, str(value))
+        if row_id is None and (column not in info.logical or column == _PROJECT_ID):
+            msg = f"{info.table}.{column}: в проекте нет строки {target} с uid {value}"
             raise ObjectMissingError(msg)
         return row_id  # висячая логическая ссылка — NULL, как в захвате
     if column in info.polymorphic:
@@ -233,7 +303,7 @@ def _value(
         if poly_target is None or poly_target not in reg.UID_TABLES:
             msg = f"{info.table}.{column}: вид сущности {kind!r} без uid"
             raise ObjectMissingError(msg)
-        return _row_id_by_uid(session, poly_target, str(value))
+        return _row_id_by_uid(session, project, poly_target, str(value))
     return from_wire(info.table, column, value)
 
 
@@ -242,6 +312,7 @@ def _value(
 
 def _find(
     session: Session,
+    project: ProjectRef,
     mapper: Mapper[object],
     info: cap.TableInfo,
     op: Op,
@@ -250,12 +321,15 @@ def _find(
     model = mapper.class_
     if info.has_uid:
         stmt = select(model).where(getattr(model, info.attr(_UID)) == op.entity_uid)
-        return session.scalars(stmt).one_or_none()
+        obj = session.scalars(stmt).one_or_none()
+        if obj is not None:
+            _require_own(session, project, info.table, _row_of(info, obj), f"uid {op.entity_uid}")
+        return obj
     columns = reg.spec_for(info.table).deterministic_uid or ()
     try:
-        values = _translate(session, info, {c: key_payload.get(c) for c in columns}, None)
+        values = _translate(session, project, info, {c: key_payload.get(c) for c in columns}, None)
     except ObjectMissingError:
-        return None  # конца ребра нет — нет и ребра; создание упадёт на полях
+        return None  # конца ребра нет в проекте — нет и ребра; создание упадёт на полях
     if any(values.get(c) is None and c not in info.nullable for c in columns):
         return None  # конец ребра не найден — и строки нет
     stmt = select(model)
@@ -264,6 +338,36 @@ def _find(
         value = values.get(column)
         stmt = stmt.where(attr.is_(None) if value is None else attr == value)
     return session.scalars(stmt).one_or_none()
+
+
+# --- гейт реестра -----------------------------------------------------------------
+
+
+def _require_shipped(
+    session: Session, info: cap.TableInfo, obj: object, op: Op, *, written: bool
+) -> None:
+    """Remote не пишет строку, которую реестр этой реплики держит local.
+
+    Тот же гейт, что у захвата (``sync_capture.shipped_fields``): restricted
+    документ и всё, что на него ссылается, ``row_is_local``, придержанные
+    колонки (``withheld_columns``). До записи — существующая строка, после —
+    итоговая: так не пройдёт ни правка local-строки, ни новая строка под
+    restricted-документом, ни колонка, которую реестр для этой строки
+    придерживает.
+    """
+    try:
+        allowed = cap.shipped_fields(session, info.table, _row_of(info, obj))
+    except cap.SyncCaptureError as exc:
+        msg = f"{info.table} {op.entity_uid}: {exc}"
+        raise ObjectMissingError(msg) from exc
+    if allowed is None:
+        msg = f"{info.table} {op.entity_uid}: строка local на этой реплике (restricted и т. п.)"
+        raise ObjectMissingError(msg)
+    if written:
+        withheld = sorted(set(op.fields) - set(allowed))
+        if withheld:
+            msg = f"{info.table} {op.entity_uid}: колонки {withheld} реестр придерживает"
+            raise ObjectMissingError(msg)
 
 
 # --- создание ---------------------------------------------------------------------
@@ -310,13 +414,16 @@ def _apply_op(session: Session, project: ProjectRef, op: Op, touched: Touched) -
         msg = f"операция над проектом {op.entity_uid} в changeset'е проекта {project.uid}"
         raise ObjectMissingError(msg)
     if op.kind == "delete":
-        obj = _find(session, mapper, info, op, op.base)
+        obj = _find(session, project, mapper, info, op, op.base)
         if obj is not None:
+            _require_shipped(session, info, obj, op, written=False)
             _note(touched, info.table, obj, deleted=True, op=op)
             session.delete(obj)
         return
-    obj = _find(session, mapper, info, op, op.fields)
-    values = _translate(session, info, op.fields, obj)
+    obj = _find(session, project, mapper, info, op, op.fields)
+    if obj is not None:
+        _require_shipped(session, info, obj, op, written=False)
+    values = _translate(session, project, info, op.fields, obj)
     if obj is None:
         if op.base:
             msg = (
@@ -335,6 +442,10 @@ def _apply_op(session: Session, project: ProjectRef, op: Op, touched: Touched) -
         for column, value in values.items():
             setattr(obj, info.attr(column), value)
     session.flush()
+    # Итоговая строка: проект (project_id не перевешивается на чужой, ребёнок —
+    # под своим родителем) и гейт реестра.
+    _require_own(session, project, info.table, _row_of(info, obj), f"{info.table} {op.entity_uid}")
+    _require_shipped(session, info, obj, op, written=True)
     _note(touched, info.table, obj, deleted=False, op=op)
 
 
@@ -447,6 +558,36 @@ def _dumps(payload: Mapping[str, object]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+# --- часы -----------------------------------------------------------------------
+
+
+def check_clock(cs: Changeset, *, self_replica_uid: str, now_ms: int | None = None) -> None:
+    """Штампы чужого changeset'а до первой записи: иначе remote отравит часы реплики.
+
+    ``hlc_max`` — максимум штампов операций (это проверяет и ``Changeset``);
+    реплика каждой операции — реплика changeset'а; не своя реплика (remote не
+    выдаёт себя за эту машину); не дальше ``MAX_DRIFT_MS`` впереди стенных
+    часов. Нарушение — SYNC-102: объект непригоден.
+    """
+    now = wall_ms() if now_ms is None else now_ms
+    if cs.replica == self_replica_uid:
+        msg = f"changeset от реплики {cs.replica} — это uid этой реплики"
+        raise ObjectMissingError(msg)
+    stamps = [Hlc.parse(op.hlc) for op in cs.ops]
+    if stamps and str(max(stamps)) != cs.hlc_max:
+        msg = f"hlc_max {cs.hlc_max} ≠ максимальному штампу операций {max(stamps)}"
+        raise ObjectMissingError(msg)
+    for op, stamp in zip(cs.ops, stamps, strict=True):
+        if stamp.replica_uid != cs.replica:
+            msg = f"операция {op.op_id}: реплика штампа {stamp.replica_uid} ≠ {cs.replica}"
+            raise ObjectMissingError(msg)
+    limit = now + MAX_DRIFT_MS
+    for raw in (cs.hlc_max, *(op.hlc for op in cs.ops)):
+        if Hlc.parse(raw).ms > limit:
+            msg = f"штамп {raw} впереди стенных часов больше чем на {MAX_DRIFT_MS} мс"
+            raise ObjectMissingError(msg)
+
+
 # --- вход -------------------------------------------------------------------------
 
 
@@ -456,6 +597,7 @@ def apply_changeset(session: Session, project: ProjectRef, sha: str, cs: Changes
     Сбой любой операции — исключение, и вызывающий откатывает транзакцию
     целиком: changeset применяется весь или никак.
     """
+    check_clock(cs, self_replica_uid=self_replica(session, project.row_id))
     touched = Touched()
     with cap.suspended(session):
         for op in cs.ops:

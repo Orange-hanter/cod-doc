@@ -50,10 +50,19 @@ MAX_COUNTER = 9999
 _MS_WIDTH = 13
 _MAX_MS = 10**_MS_WIDTH - 1
 _HLC_RE = re.compile(r"(\d{13})\.(\d{4})\.(.+)")
+#: Насколько чужой штамп может опережать стенные часы (RFC 29 значения не
+#: задаёт). Штамп дальше — недоверенный ввод: принятый как есть, он увёл бы
+#: часы реплики в будущее, и все её следующие операции выигрывали бы LWW.
+MAX_DRIFT_MS = 5 * 60 * 1000
 
 
 def _wall_ms() -> int:
     return time.time_ns() // 1_000_000
+
+
+def wall_ms() -> int:
+    """Стенные часы в миллисекундах — те же, что у ``HybridClock`` по умолчанию."""
+    return _wall_ms()
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -115,9 +124,16 @@ class HybridClock:
             return self._advance(self._ms, self._counter + 1)
 
     def observe(self, remote: Hlc) -> Hlc:
-        """Принять чужой штамп (pull): следующий свой штамп будет больше обоих."""
+        """Принять чужой штамп (pull): следующий свой штамп будет больше обоих.
+
+        Чужой штамп дальше ``wall + MAX_DRIFT_MS`` обрезается до этой границы:
+        часы не уходят в будущее, даже если вызывающий штамп не проверил.
+        """
         with self._lock:
             wall = self._wall()
+            ceiling = min(wall + MAX_DRIFT_MS, _MAX_MS - 1)
+            if remote.ms > ceiling:
+                remote = Hlc(ceiling, 0, remote.replica_uid)
             ms = max(wall, self._ms, remote.ms)
             if ms == self._ms == remote.ms:
                 counter = max(self._counter, remote.counter) + 1
