@@ -5,17 +5,14 @@ Acceptance: «Открытые конфликты — один пункт оче
 MCP sync_conflicts/sync_resolve по RFC 29 §10.7–10.8; паритет-спек обновлён;
 тест на SCN-089.»
 
-Текстовое слияние — CLO-019, отдельная задача. Чтобы конфликт правки секции
-возник независимо от неё, стратегия ``text`` здесь подменена: пересекающиеся
-правки одной секции всегда дают конфликт — ровно тот исход, который SCN-089
-и предполагает.
+Конфликт даёт настоящее текстовое слияние (``text_merge``, CLO-019): обе
+реплики переписали одну и ту же строку секции — ханки пересекаются.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -33,7 +30,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.mcp.server import mcp
 from cod_doc.services import curator_service, doc_service
-from cod_doc.services.sync_service import merge, pull, push
+from cod_doc.services.sync_service import pull, push
 from tests.services.sync import _replicas as r
 
 if TYPE_CHECKING:
@@ -44,23 +41,6 @@ if TYPE_CHECKING:
 DOC = "spec"
 BOB = "human:bob"
 _TICK = 0.003
-
-
-@pytest.fixture
-def text_conflicts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Стратегия ``text``: пересекающиеся правки — всегда конфликт (CLO-019 — отдельно)."""
-    original = merge._plugin
-
-    def plugin(module: str) -> object:
-        if module == "text_merge":
-            return SimpleNamespace(
-                resolve=lambda _clash: merge.Resolution(
-                    merge.Outcome.CONFLICT, conflict_kind=merge.TEXT
-                )
-            )
-        return original(module)
-
-    monkeypatch.setattr(merge, "_plugin", plugin)
 
 
 @pytest.fixture
@@ -131,7 +111,7 @@ def _curator(rep: r.Replica, tmp_path: Path) -> dict[str, Any]:
 
 
 def test_scn_089_section_conflict_in_curator_resolved_by_cli_and_delivered(
-    pair, text_conflicts, tmp_path: Path
+    pair, tmp_path: Path
 ) -> None:
     a, b, store = pair
     _patch(a, "правка A\n")
@@ -190,7 +170,7 @@ def test_scn_089_section_conflict_in_curator_resolved_by_cli_and_delivered(
     assert [p for p in _curator(b, tmp_path)["priority"] if p["kind"] == "sync_conflict"] == []
 
 
-def test_mcp_sync_conflicts_and_resolve(pair, text_conflicts, tmp_path: Path) -> None:
+def test_mcp_sync_conflicts_and_resolve(pair, tmp_path: Path) -> None:
     a, b, store = pair
     _patch(a, "правка A\n")
     _patch(b, "правка B\n")
