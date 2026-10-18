@@ -61,7 +61,7 @@ from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.models import ProjectModel, SyncConflictModel
 from cod_doc.infra.models.sync import SYNC_CONFLICT_KINDS
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, apply, tombstone
+from cod_doc.services.sync_service import _conflict_rows, _local, apply, tombstone
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
 from cod_doc.services.sync_service.errors import (
@@ -93,6 +93,8 @@ _THEIRS: Final = "theirs"
 _CUSTOM: Final = "custom"
 #: Виды, у которых разрешение — запись одного поля сущности.
 FIELD_KINDS: Final = frozenset({"field", "text", "status"})
+#: Виды, которые открывает проигрывание цепочки статуса (``status_merge``).
+CHAIN_KINDS: Final = frozenset({"status", "double_checkout"})
 #: Виды со своей механикой разрешения → задача, которая её строит.
 DEFERRED_KINDS: Final = {"double_checkout": "CLO-031"}
 _ENTITY_KINDS: Final = {table: kind for kind, table in reg.ENTITY_KIND_TABLES.items()}
@@ -138,6 +140,15 @@ def _conflict_uid(spec: ConflictSpec) -> str:
 
 def open_conflict(session: Session, project_id: int, spec: ConflictSpec, *, author: str) -> str:
     """Записать открытый конфликт и событие ``sync.conflict_opened``; вернуть uid."""
+    if spec.kind in CHAIN_KINDS:
+        # Конфликт цепочки статуса — один на подпись: проигрывание повторяется
+        # при каждой чужой записи поля и описывает последний отказ (CLO-044).
+        signature = (spec.entity_kind, spec.entity_uid, spec.field, spec.kind)
+        for row in _conflict_rows.open_rows(session, project_id, signature):
+            row.ours, row.theirs = _encode(spec.ours), _encode(spec.theirs)
+            row.base, row.theirs_op = _encode(spec.base), spec.theirs_op
+            session.flush()
+            return row.uid
     uid = _conflict_uid(spec)
     if session.get(SyncConflictModel, uid) is not None:
         return uid

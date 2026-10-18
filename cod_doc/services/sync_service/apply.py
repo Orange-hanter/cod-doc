@@ -1126,8 +1126,12 @@ def apply_changeset(
     check_clock(cs, self_replica_uid=self_replica(session, project.row_id))
     touched = Touched()
     with cap.suspended(session):
-        for op in cs.ops:
-            _apply_op(session, project, op, touched, ctx)
+        ctx.batch = tuple(cs.ops)
+        try:
+            for op in cs.ops:
+                _apply_op(session, project, op, touched, ctx)
+        finally:
+            ctx.batch = ()
         _renumber(session, touched)
         _rebuild_links(session, touched.section_ids)
         _rebuild_fts(session, project, touched)
