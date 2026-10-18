@@ -48,8 +48,11 @@ authored-полями (``fields``) и их прежними значениями
 7. **Пустая операция не пишется.** Изменились только ``local``-колонки (или
    ``uid``, который хук только что назначил) — операции нет. Строка, ставшая
    local (документ повысили до ``restricted``), операции не даёт, а в лог идёт
-   предупреждение «на remote осталась история» (Q-015). Строка, переставшая
-   быть local, уезжает upsert'ом целиком.
+   предупреждение «на remote осталась история» (Q-015). Исключение —
+   документ, который уже уезжал: он даёт операцию отзыва, а неотправленный
+   хвост его тела вычищается (решение 20 реестра, ``sync_withdraw``).
+   Строка, переставшая быть local, уезжает upsert'ом целиком; документ —
+   вместе с телом, ссылками на него и ревизиями, которых remote не видел.
 8. **Порядок.** Внутри flush upsert'ы идут в порядке зависимостей таблиц
    (родитель раньше ребёнка), удаления — в обратном и после upsert'ов: так их
    можно применять по возрастанию HLC.
@@ -633,6 +636,11 @@ class PendingOp:
     tx: SessionTransaction | None = field(default=None, repr=False)
     #: Строка на момент захвата (row_id-FK) — для пересверки гейта на commit.
     row: dict[str, object] | None = field(default=None, repr=False)
+    #: Операция отзыва (решение 20 реестра): гейт на commit её не выбрасывает —
+    #: строка local по построению — и с соседними upsert'ами она не склеивается.
+    withdraw: bool = False
+    #: Первый upsert строки, переставшей быть local (``base`` пуст).
+    promoted: bool = False
 
 
 def _pending(session: Session) -> list[PendingOp]:
@@ -730,6 +738,8 @@ def _upsert_op(
                     "sync_capture: строка %s стала local — на remote осталась история (Q-015)",
                     info.table,
                 )
+                if info.table == "document":
+                    return _withdraw_op(session, info, now, before, project_id, lookup)
             return None
         promoted = not ships_before
     elif not _ships(info.table, gate_now):
@@ -747,7 +757,61 @@ def _upsert_op(
             return None
         fields = _columns_payload(info, columns, now, lookup)
         base = _columns_payload(info, columns, before, lookup)
-    return _new_op(session, info, project_id, entity_uid, "upsert", fields, base, now)
+    op = _new_op(session, info, project_id, entity_uid, "upsert", fields, base, now)
+    op.promoted = promoted
+    return op
+
+
+def document_shipped(session: Session | Connection, project_id: int, doc_uid: object) -> bool:
+    """Документ уже бывал в changeset'е: своём отправленном или принятом (решение 20).
+
+    Хвост не считается: неотправленную операцию никто, кроме реплики, не видел.
+    """
+    if not isinstance(doc_uid, str) or not doc_uid:
+        return False
+    tbl = cast("Table", SyncOpModel.__table__)
+    hit = session.execute(
+        select(tbl.c.op_id)
+        .where(
+            tbl.c.project_id == project_id,
+            tbl.c.entity_kind == "document",
+            tbl.c.entity_uid == doc_uid,
+            tbl.c.changeset.is_not(None),
+        )
+        .limit(1)
+    ).first()
+    return hit is not None
+
+
+def _withdraw_op(
+    session: Session,
+    info: TableInfo,
+    now: Mapping[str, object],
+    before: Mapping[str, object],
+    project_id: object,
+    lookup: _Lookup,
+) -> PendingOp | None:
+    """Операция отзыва уехавшего документа: ``upsert`` ровно с ``sensitivity``."""
+    if not isinstance(project_id, int) or not document_shipped(
+        lookup.conn, project_id, now.get(_UID)
+    ):
+        return None  # не уезжал — отзывать нечего
+    entity_uid = _entity_uid(info, now, lookup)
+    if entity_uid is None:
+        raise SyncCaptureError(f"{info.table}.uid: пуст")
+    column = reg.WITHDRAW_COLUMN
+    op = _new_op(
+        session,
+        info,
+        project_id,
+        entity_uid,
+        "upsert",
+        {column: _serialize(info, column, now, lookup)},
+        {column: _serialize(info, column, before, lookup)},
+        now,
+    )
+    op.withdraw = True
+    return op
 
 
 def _delete_op(
@@ -890,6 +954,14 @@ def _after_flush(session: Session, flush_context: UOWTransaction) -> None:
         return
     captured = [op for _, op in sorted(upserts, key=lambda p: p[0])]
     captured += [op for _, op in sorted(deletes, key=lambda p: -p[0])]
+    lowered = [op for op in captured if op.promoted and op.entity_kind == "document"]
+    if lowered:
+        from cod_doc.infra import sync_withdraw
+
+        seen = {(op.entity_kind, op.entity_uid) for op in (*_pending(session), *captured)}
+        for op in lowered:
+            assert op.row is not None
+            captured += sync_withdraw.reship_ops(session, op.row, op.project_id, seen)
     if _COMMITTING_KEY in session.info:
         # Flush commit'а после нашего before_commit (чужой before_commit
         # что-то поменял): хвост уже записан, пишем эти операции сразу —
@@ -914,7 +986,12 @@ def coalesce(ops: list[PendingOp]) -> list[PendingOp]:
     for op in ops:
         key = (op.entity_kind, op.entity_uid)
         prev = last.get(key)
-        if op.kind == "upsert" and prev is not None and prev.kind == "upsert":
+        if (
+            op.kind == "upsert"
+            and prev is not None
+            and prev.kind == "upsert"
+            and not (op.withdraw or prev.withdraw)
+        ):
             for column, value in op.base.items():
                 if column not in prev.fields and column not in prev.base:
                     prev.base[column] = value
@@ -953,6 +1030,10 @@ def _regate(lookup: _Lookup, pending: list[PendingOp]) -> list[PendingOp]:
     for op in pending:
         table = op.entity_kind
         spec = reg.spec_for(table)
+        if op.withdraw:
+            # Отзыв — операция над строкой, которая local по построению (решение 20).
+            out.append(op)
+            continue
         if op.row is None or (spec.row_is_local is None and table not in reg.DOC_REFS):
             out.append(op)
             continue
@@ -982,6 +1063,15 @@ def _write(
     pending = _regate(_Lookup(session), pending)
     if not pending:
         return
+    withdrawn = [op for op in pending if op.withdraw and op.row is not None]
+    if withdrawn:
+        from cod_doc.infra import sync_withdraw
+
+        for op in withdrawn:
+            assert op.row is not None
+            # Хвост тела, захваченный до повышения, — до записи этой транзакции:
+            # её собственные операции тела уже выбросил ``_regate``.
+            sync_withdraw.purge_tail(session, op.project_id, op.row)
     if author is None and any(op.author is None for op in pending):
         logger.warning(
             "sync_capture: транзакция без автора — %d операций записаны как %s",

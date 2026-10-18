@@ -97,7 +97,12 @@ def doc_update(
         sys.exit(1)
 
     if as_json:
-        payload = {"doc_key": doc_key, "changes": result.changes, "dry_run": dry_run}
+        payload = {
+            "doc_key": doc_key,
+            "changes": result.changes,
+            "dry_run": dry_run,
+            "warnings": list(result.warnings),
+        }
         click.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
@@ -109,3 +114,6 @@ def doc_update(
     for field, change in result.changes.items():
         # click.echo: values are user text and may contain rich markup brackets.
         click.echo(f"  {field}: {change['from']!r} → {change['to']!r}")
+    # click.echo, не rich: перенос строки разорвал бы текст предупреждения.
+    for warning in result.warnings:
+        click.echo(f"⚠️  {warning}")
