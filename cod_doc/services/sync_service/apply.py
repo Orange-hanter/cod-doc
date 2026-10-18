@@ -64,9 +64,19 @@
 8. **Journal-таблицы** (``revision``, CLO-024) не сливаются: операцию
    применяет ``journal.apply_op`` — объединение по ``revision_id``, родитель —
    локальная голова сущности (Q-010).
-9. **Маркер разрешения** (вид ``sync_resolution``, CLO-045) — не строка
-   схемы: ``markers.close`` закрывает свои открытые конфликты той же подписи,
-   открытые раньше маркера.
+9. **Отзыв restricted-документа** (CLO-046, решение 20 реестра). Операция
+   отзыва (``reg.is_withdraw``: документ, одно поле ``sensitivity``) проходит
+   гейт до записи как обычная правка, а после записи строка законно local —
+   финальный гейт её не судит (``_finish_withdraw``); тело затирается, свой
+   хвост по документу вычищается (``sync_withdraw.withdraw_locally``).
+   Операция над строкой, которую держит local только отозванный документ
+   (restricted здесь и бывал в changeset'е), поглощается — не пишется и не
+   отвергается (``_drop_withdrawn``): она захвачена до отзыва, а отказ навсегда
+   остановил бы pull. Понижение отозванного документа гейт до записи судит по
+   строке уже с новой меткой (``_lowers_shared_document``).
+10. **Маркер разрешения** (вид ``sync_resolution``, CLO-045) — не строка
+    схемы: ``markers.close`` закрывает свои открытые конфликты той же подписи,
+    открытые раньше маркера.
 """
 
 from __future__ import annotations
@@ -86,6 +96,7 @@ from cod_doc.domain.entities import EntityKind
 from cod_doc.infra import ordering
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
+from cod_doc.infra import sync_withdraw as cap_withdraw
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
 from cod_doc.infra.models import Base, EntityAliasModel, SyncConflictModel, SyncOpModel
 from cod_doc.services import search_service
@@ -432,6 +443,8 @@ def _require_shipped(
     uid: str,
     written: Mapping[str, object] | None,
     incoming: Mapping[str, object] | None = None,
+    *,
+    lowering: bool = False,
 ) -> None:
     """Remote не пишет строку, которую реестр этой реплики держит local.
 
@@ -448,6 +461,10 @@ def _require_shipped(
         # поверх неё (Q-017, CLO-025) — гейт по строке уже с решением.
         decision = reg.decision_columns(info.table)
         row |= {c: v for c, v in incoming.items() if c in decision}
+        if lowering:
+            # Понижение отозванного документа (CLO-046): гейт — по строке уже с
+            # новой меткой; право на него проверил ``_lowers_shared_document``.
+            row[reg.WITHDRAW_COLUMN] = incoming[reg.WITHDRAW_COLUMN]
     try:
         allowed = cap.shipped_fields(session, info.table, row)
     except cap.SyncCaptureError as exc:
@@ -461,6 +478,126 @@ def _require_shipped(
         if withheld:
             msg = f"{info.table} {uid}: колонки {withheld} реестр придерживает"
             raise ObjectMissingError(msg)
+
+
+#: Ключ ``session.info``: отзывы, применённые текущим changeset'ом (uid → реплика).
+_APPLIED_WITHDRAWALS: Final = "cod_doc.sync_withdraw.applied"
+
+
+def _lowers_shared_document(
+    session: Session, info: cap.TableInfo, row: Mapping[str, object], op: Op
+) -> bool:
+    """Чужая операция законно снимает restricted с отозванного документа (решение 20).
+
+    Три условия, все обязательны. Документ restricted здесь по **чужому**
+    отзыву: свой отзыв (реплика повысила документ сама) и никогда не
+    уезжавший restricted-документ remote не открывает. Понижение пришло от той
+    реплики, чей отзыв в силе (``sync_withdraw.restricted_by``): получатель того
+    же отзыва держит пустую оболочку, и его «понижение» разослало бы пустоту.
+    Форма — первый upsert (Q-015): ``base`` пуст, поля — ровно уезжающие колонки
+    документа. Не прошедшее понижение поглощается как любая операция над
+    отозванным документом.
+    """
+    column = reg.WITHDRAW_COLUMN
+    if info.table != "document" or column not in op.fields:
+        return False
+    if not reg.is_cleared(op.fields[column]) or reg.is_cleared(row.get(column)):
+        return False
+    if op.base or set(op.fields) != info.shipped:
+        return False
+    project_id = row.get(_PROJECT_ID)
+    if not isinstance(project_id, int):
+        return False
+    applied: dict[object, str] = session.info.get(_APPLIED_WITHDRAWALS, {})
+    who = applied.get(row.get(_UID)) or cap_withdraw.restricted_by(
+        session, project_id, row.get(_UID)
+    )
+    if who is None or who == self_replica(session.connection(), project_id):
+        return False
+    return Hlc.parse(op.hlc).replica_uid == who
+
+
+def _drop_withdrawn(
+    session: Session, project: ProjectRef, info: cap.TableInfo, row: Mapping[str, object], op: Op
+) -> Op | None:
+    """Чужая операция без того, что держит local отозванный документ (решение 20).
+
+    ``None`` — строка целиком local из-за отозванного документа: операция
+    поглощается (она в истории реплики, но не пишется). Иначе из неё вычищены
+    колонки, придержанные только из-за него; ничего не осталось — тоже ``None``.
+    Понижение отозванного документа проходит как есть.
+    """
+    if _lowers_shared_document(session, info, row, op):
+        return op
+    held, extra = cap_withdraw.withdrawn_hold(session, project.row_id, info.table, row)
+    if held:
+        return None
+    if not extra & op.fields.keys():
+        return op
+    fields = {c: v for c, v in op.fields.items() if c not in extra}
+    if not fields:
+        return None
+    base = {c: v for c, v in op.base.items() if c not in extra}
+    return dataclasses.replace(op, fields=fields, base=base)
+
+
+def _finish_withdraw(
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    obj: object,
+    op: Op,
+    ctx: merge.Context,
+) -> list[int]:
+    """Итоговая строка отзыва: свой проект, и строка перестала уезжать только меткой.
+
+    Обычный финальный гейт (``finish_row``) отверг бы её — строка теперь local.
+    Отзыв пишет одну колонку, и до записи строка уезжала (гейт до записи), так
+    что remote этим путём ничего, кроме метки, в local-строку не кладёт. Тело
+    документа затирается, хвост реплики по нему вычищается (решение 20); свои
+    неотправленные правки и тексты до затирания ложатся в local-событие
+    ``sync.withdraw_quarantined`` — событие не уезжает (решение 19 реестра), и
+    из его ``payload`` работу можно вернуть.
+    """
+    session.flush()
+    row = _row_of(info, obj)
+    _require_own(session, project, info.table, row, f"{info.table} {op.entity_uid}")
+    result = cap_withdraw.withdraw_locally(session, project.row_id, row)
+    # Журнал операций changeset'а пишется после применения: понижение из того же
+    # changeset'а (повысили и понизили до push) ищет отзыв здесь.
+    session.info.setdefault(_APPLIED_WITHDRAWALS, {})[row.get(_UID)] = Hlc.parse(op.hlc).replica_uid
+    if result.quarantine is not None:
+        from cod_doc.services import activity_service
+
+        activity_service.emit_for_write(
+            session,
+            project.row_id,
+            "sync.withdraw_quarantined",
+            ctx.author,
+            scope_kind="doc",
+            scope_id=str(row.get("doc_key")),
+            payload=result.quarantine,
+            summary=(
+                f"документ {row.get('doc_key')} отозван: свои неотправленные правки "
+                "сохранены в payload события"
+            ),
+        )
+    return result.sections
+
+
+def _require_withdraw_shared(
+    session: Session, project: ProjectRef, info: cap.TableInfo, obj: object, op: Op
+) -> None:
+    """Отзыв — только документа, который у реплики уже бывал в changeset'е.
+
+    Документ, которого журнал реплики не знает, другая реплика не видела: его
+    «отзыв» — подделка, и затирать по нему тело нельзя (SYNC-102).
+    """
+    if not reg.is_withdraw(info.table, op.fields):
+        return
+    if not cap.document_shipped(session, project.row_id, getattr(obj, info.attr(_UID))):
+        msg = f"{info.table} {op.entity_uid}: отзыв документа, который здесь не бывал в changeset'е"
+        raise ObjectMissingError(msg)
 
 
 # --- каскад удаления ----------------------------------------------------------------
@@ -559,6 +696,10 @@ def _check_cascaded_row(
         allowed = cap.shipped_fields(session, child, row)
     except cap.SyncCaptureError:
         allowed = None
+    if allowed is None and cap_withdraw.withdrawn_hold(session, project.row_id, child, row)[0]:
+        # Связь с отозванным документом (ссылка истории, тег) уходит с родителем:
+        # она local только из-за отзыва, текста документа в ней нет (решение 20).
+        return
     if allowed is None:
         msg = (
             f"удаление {root} снесло бы каскадом строку {child}, которую реестр этой "
@@ -690,6 +831,9 @@ def _apply_delete(
         # Корень уже снесён своим удалением: правки этого changeset'а под ним,
         # легшие в снимок, мертвы и у его автора — конфликта нет (CLO-027).
         tombstone.drop_pending(ctx, op.entity_kind, op.entity_uid)
+        return
+    if cap_withdraw.withdrawn_hold(session, project.row_id, info.table, _row_of(info, obj))[0]:
+        # Строку отозванного документа remote не сносит (B2): удаление поглощается.
         return
     _require_shipped(session, info, obj, op.entity_uid, None)
     if not merge.allow(session, ctx, op):
@@ -871,7 +1015,13 @@ def _apply_op(
     _require_known_columns(info, op.fields)
     obj = _find(session, project, mapper, info, op.entity_uid, op.fields)
     if obj is not None:
-        _require_shipped(session, info, obj, op.entity_uid, None, op.fields)
+        _require_withdraw_shared(session, project, info, obj, op)
+        lowering = _lowers_shared_document(session, info, _row_of(info, obj), op)
+        kept = _drop_withdrawn(session, project, info, _row_of(info, obj), op)
+        if kept is None:
+            return
+        op = kept
+        _require_shipped(session, info, obj, op.entity_uid, None, op.fields, lowering=lowering)
     if not merge.allow(session, ctx, op):
         return
     if obj is None and op.base and _absorbed(session, ctx, op):
@@ -890,11 +1040,56 @@ def _apply_op(
             return
         raise
     if obj is None:
-        _insert(session, project, mapper, info, op, values, touched, ctx)
+        final = _final_row_kept(session, project, info, None, op, values)
+        if final is not None:
+            _insert(session, project, mapper, info, final[0], final[1], touched, ctx)
         return
+    _write_existing(session, project, info, obj, op, values, touched, ctx)
+
+
+def _final_row_kept(
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    obj: object | None,
+    op: Op,
+    values: dict[str, object],
+) -> tuple[Op, dict[str, object]] | None:
+    """Итоговая строка под отозванным документом (новая секция, ссылка на него).
+
+    ``None`` — операция поглощена; иначе операция и значения без колонок,
+    придержанных только из-за отзыва. Сам отзыв сюда не ходит: его итоговая
+    строка local по построению (``_finish_withdraw``).
+    """
+    if reg.is_withdraw(info.table, op.fields):
+        return op, values
+    row = {**(_row_of(info, obj) if obj is not None else {}), **values}
+    kept = _drop_withdrawn(session, project, info, row, op)
+    if kept is None:
+        return None
+    return kept, {c: v for c, v in values.items() if c in kept.fields}
+
+
+def _write_existing(
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    obj: object,
+    op: Op,
+    values: dict[str, object],
+    touched: Touched,
+    ctx: merge.Context,
+) -> None:
+    kept = _final_row_kept(session, project, info, obj, op, values)
+    if kept is None:
+        return
+    op, values = kept
     for column, value in values.items():
         setattr(obj, info.attr(column), value)
-    finish_row(session, project, info, obj, op.entity_uid, op.fields)
+    if reg.is_withdraw(info.table, op.fields):
+        touched.section_ids.update(_finish_withdraw(session, project, info, obj, op, ctx))
+    else:
+        finish_row(session, project, info, obj, op.entity_uid, op.fields)
     _note(touched, info.table, obj, deleted=False, base=op.base)
 
 
@@ -910,6 +1105,13 @@ def _apply_marker(session: Session, project: ProjectRef, op: Op, ctx: merge.Cont
     target = entity_by_uid(session, project, table, entity_uid)
     if target is not None:
         obj, info = target
+        held, extra = cap_withdraw.withdrawn_hold(
+            session, project.row_id, table, _row_of(info, obj)
+        )
+        if held or (column is not None and column in extra):
+            # Подпись о строке отозванного документа (CLO-046): маркер поглощается,
+            # как любая чужая операция над ней — не пишется и не отвергается.
+            return
         written = {} if column is None else {column: None}
         _require_shipped(session, info, obj, entity_uid, written)
     markers.close(session, project.row_id, marker, author=ctx.author)
@@ -1158,6 +1360,8 @@ def apply_changeset(
         _rebuild_links(session, touched.section_ids)
         _rebuild_fts(session, project, touched)
     _record_ops(session, project, sha, cs)
+    # Отзывы этого changeset'а теперь в журнале — ``restricted_by`` видит их сам.
+    session.info.pop(_APPLIED_WITHDRAWALS, None)
     _local.record_changeset(session, project, sha, cs)
     if cs.ops:
         clock_for(session, self_replica(session, project.row_id)).observe(Hlc.parse(cs.hlc_max))

@@ -10,7 +10,9 @@ tmp; общая история заведена на A и разошлась п�
 LWW поля, вставки по rank, текст (diff3), статус и checkout, рёбра и тег-связи,
 удаление против правки, двойники натурального ключа (документ, секция,
 тег, буква секции плана), сценарии на restricted-документе своей реплики
-(ссылка и ``group_key`` придержаны, F8) и правки их заголовка с других реплик. Затем картина копируется в несколько «вселенных»
+(ссылка и ``group_key`` придержаны, F8) и правки их заголовка с других реплик,
+повышение общего документа до restricted и понижение обратно (отзыв, CLO-046)
+вперемешку с правками его тела. Затем картина копируется в несколько «вселенных»
 (все три БД и remote), и в каждой синхронизация идёт своей случайной
 перестановкой ``push``/``pull`` (push без повтора: отказ CAS — тоже шаг
 перестановки), пока система не затихнет: хвостов нет, все три головы равны
@@ -100,6 +102,7 @@ MAIN_DOC = "spec/main"
 DOOMED_DOC = "spec/doomed"
 TAG = "remote"
 SECRET_DOC = "secret/vault"
+CLASSIFIED_DOC = "spec/classified"
 LINES = 6
 STATUSES = ("backlog", "todo", "in_progress", "blocked", "review", "done", "cancelled")
 ROUNDS = 2
@@ -128,6 +131,7 @@ def _setup(a: r.Replica) -> None:
         r.make_task(a, task_id, description=_text(task_id))
     r.make_doc(a, MAIN_DOC, {f"s{i}": _text(f"s{i}") for i in range(3)})
     r.make_doc(a, DOOMED_DOC, {"d0": _text("d0"), "d1": _text("d1")})
+    r.make_doc(a, CLASSIFIED_DOC, {"c0": _text("c0"), "c1": _text("c1")})
     with transactional(a.sf) as s:
         cap.set_author(s, r.AUTHOR)
         s.add(TagModel(project_id=a.project_id, name=TAG))
@@ -387,6 +391,53 @@ def _scenario_title(rep: r.Replica, rng: random.Random, n: int) -> None:
         rng.choice(rows).title = f"{rep.name}-{n}"
 
 
+#: Кроме владельца A, тело ``CLASSIFIED_DOC`` в раунде правит одна реплика.
+_CLASSIFIED_EDITOR: list[str] = []
+
+
+def _classified(rep: r.Replica) -> bool:
+    with transactional(rep.sf, commit=False) as s:
+        doc = doc_service.get(s, rep.project_id, CLASSIFIED_DOC)
+        return doc is not None and doc.sensitivity == Sensitivity.RESTRICTED
+
+
+def _toggle_classified(rep: r.Replica, _rng: random.Random, _n: int) -> None:
+    """Владелец A повышает документ до restricted или понижает обратно (CLO-046).
+
+    Метку пишет одна реплика: понизить отозванный документ получатель не может
+    (DM-005), а встречные повышение и понижение с разных реплик генератор не
+    порождает — правку тела отозванного документа на получателе тоже (её
+    ревизия local, а после понижения вошла бы в дайджест только у него).
+    """
+    if rep.name != "a":
+        msg = "метку CLASSIFIED_DOC пишет только A"
+        raise RuntimeError(msg)
+    target = Sensitivity.INTERNAL if _classified(rep) else Sensitivity.RESTRICTED
+    with transactional(rep.sf) as s:
+        doc_service.update_metadata(
+            s,
+            project_id=rep.project_id,
+            document_id=r.doc_id(rep, CLASSIFIED_DOC),
+            author=r.AUTHOR,
+            sensitivity=target,
+            allow_declassify=True,
+        )
+
+
+def _edit_classified_body(rep: r.Replica, rng: random.Random, n: int) -> None:
+    """Тело документа, который A может отозвать посреди раунда: правки в полёте
+    поглощает pull владельца, хвост получателя вычищает приход отзыва.
+
+    Две реплики-получателя, правящие одну секцию, открыли бы ``text`` только в
+    тех перестановках, где отзыв приходит после их слияния, — поэтому правит A и
+    одна реплика раунда; получатель — только пока документ у него не отозван.
+    """
+    if rep.name != "a" and (rep.name not in _CLASSIFIED_EDITOR or _classified(rep)):
+        msg = f"{rep.name}: тело CLASSIFIED_DOC в этом раунде не правит"
+        raise RuntimeError(msg)
+    _edit_section(rep, rng, n, CLASSIFIED_DOC, rng.choice(["c0", "c1"]))
+
+
 def _new_task(rep: r.Replica, _rng: random.Random, n: int) -> None:
     """Новая задача со своим номером (двойники leased-ключа — CLO-030, вне генератора)."""
     offset = {"a": 100, "b": 200, "c": 300}[rep.name]
@@ -425,11 +476,14 @@ EDITS: tuple[tuple[Edit, int], ...] = (
     (_new_task, 1),
     (_restricted_scenario, 1),
     (_scenario_title, 1),
+    (_toggle_classified, 4),
+    (_edit_classified_body, 3),
 )
 
 
 def _offline(reps: tuple[r.Replica, ...], rng: random.Random, rnd: int) -> None:
     """Правки раунда: на каждой реплике 2–5 случайных; checkout — у одной реплики."""
+    _CLASSIFIED_EDITOR[:] = [reps[1 + rnd % (len(reps) - 1)].name]
     edits = [e for e, _ in EDITS]
     weights = [w for _, w in EDITS]
     locker = reps[rnd % len(reps)]

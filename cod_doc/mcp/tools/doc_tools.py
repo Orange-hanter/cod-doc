@@ -222,6 +222,9 @@ def register(mcp: FastMCP) -> None:
 
         Returns the document plus ``changes`` ({field: {from, to}}); an empty
         ``changes`` means nothing differed and nothing was written.
+        ``warnings`` — raising an already synced document to ``restricted``
+        withdraws it from the other replicas, but its history stays on the
+        remote (CLO-046); the warning says so.
         ``dry_run=True`` validates and reports ``changes`` without writing.
         """
         from cod_doc.domain.entities import DocumentType, Sensitivity
@@ -252,6 +255,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(str(exc)) from exc
         out = doc_to_dict(result.document)
         out["changes"] = result.changes
+        out["warnings"] = list(result.warnings)
         if dry_run:
             out["dry_run"] = True
         return out

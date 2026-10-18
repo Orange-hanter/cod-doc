@@ -37,6 +37,7 @@ from sqlalchemy import inspect, select
 from cod_doc.domain.entities import EntityKind
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
+from cod_doc.infra import sync_withdraw as cap_withdraw
 from cod_doc.infra.models import RevisionModel
 from cod_doc.services import revision_service
 from cod_doc.services.sync_service import apply
@@ -112,7 +113,9 @@ def apply_op(session: Session, project: ProjectRef, op: Op) -> None:
         "entity_kind": kind.value,
         "entity_id": entity_id,
     }
-    if cap.shipped_fields(session, _TABLE, row) is None:
+    if cap.shipped_fields(session, _TABLE, row) is None and not _before_withdrawal(
+        session, project, table, *target
+    ):
         raise _reject(op, "ревизия local на этой реплике (restricted и т. п.)")
     at = from_wire(_TABLE, "at", op.fields["at"])
     if not isinstance(at, datetime):
@@ -129,6 +132,18 @@ def apply_op(session: Session, project: ProjectRef, op: Op) -> None:
         reason=_text(op.fields.get("reason")),
         commit_sha=_text(op.fields.get("commit_sha")),
     )
+
+
+def _before_withdrawal(
+    session: Session, project: ProjectRef, table: str, entity: object, info: cap.TableInfo
+) -> bool:
+    """Ревизия сущности, которую держит local только отозванный документ (CLO-046).
+
+    Записана до отзыва и у получателей уже есть: отвергнуть — остановить pull
+    владельца, пропустить — разойтись с получателями после понижения.
+    """
+    row = {c: getattr(entity, a) for c, a in info.columns}
+    return cap_withdraw.ships_but_for_withdrawal(session, project.row_id, table, row)
 
 
 def _text(value: object) -> str | None:

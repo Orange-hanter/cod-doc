@@ -43,7 +43,7 @@ from cod_doc.domain.entities import (
     Section,
     Sensitivity,
 )
-from cod_doc.infra import ordering
+from cod_doc.infra import ordering, sync_capture, sync_registry, sync_withdraw
 from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
 from cod_doc.services import activity_service, search_service, validation
@@ -1031,6 +1031,8 @@ class MetadataUpdate(NamedTuple):
 
     document: Document
     changes: dict[str, dict[str, str | None]]
+    #: Предупреждения для поверхности (CLO-046: «история остаётся на remote»).
+    warnings: tuple[str, ...] = ()
 
 
 def update_metadata(
@@ -1089,6 +1091,17 @@ def update_metadata(
                 f"lowering sensitivity {doc.sensitivity} → {sensitivity.value} un-redacts "
                 "the document; only a human may do it (CLI `doc update`)",
             )
+        if (
+            sync_registry.is_cleared(sensitivity.value)
+            and not sync_registry.is_cleared(doc.sensitivity)
+            and sync_withdraw.withdrawn_by_peer(session, doc.project_id, doc.uid)
+        ):
+            raise validation.ValidationError(
+                "DM-005",
+                "document was withdrawn by another replica (restricted, body cleared here); "
+                "lowering it from this replica would ship empty sections — lower it where "
+                "its text lives (CLO-046)",
+            )
     if preamble is not None:
         wanted["preamble"] = preamble
 
@@ -1141,7 +1154,28 @@ def update_metadata(
         search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     refreshed = DocumentRepository(session).get(document_id)
     assert refreshed is not None
-    return MetadataUpdate(refreshed, changes)
+    return MetadataUpdate(refreshed, changes, _withdraw_warnings(session, doc, changes))
+
+
+#: Предупреждение при повышении уехавшего документа до restricted (Q-015, CLO-046).
+REMOTE_HISTORY_WARNING = (
+    "история документа остаётся на remote: changeset'ы неизменяемы, на получателях "
+    "документ отозван (restricted, тело очищено), но прежние версии лежат в истории"
+)
+
+
+def _withdraw_warnings(
+    session: Session, doc: DocumentModel, changes: dict[str, dict[str, str | None]]
+) -> tuple[str, ...]:
+    """Предупреждение, если правка отзывает уже уехавший документ (решение 20 реестра)."""
+    change = changes.get("sensitivity")
+    if change is None:
+        return ()
+    if not sync_registry.is_cleared(change["from"]) or sync_registry.is_cleared(change["to"]):
+        return ()
+    if not sync_capture.document_shipped(session, doc.project_id, doc.uid):
+        return ()
+    return (REMOTE_HISTORY_WARNING,)
 
 
 def rename(
