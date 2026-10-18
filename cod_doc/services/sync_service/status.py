@@ -7,7 +7,8 @@ pull): ``behind`` — число скачанных и ещё не примен�
 
 Поля, у которых в секции B нет источника, отдаются нейтральными значениями и
 заполнятся своими задачами: ``epoch_remote`` — ``None`` (``meta.json``,
-CLO-032), ``leases`` — пусто (CLO-030/031). ``open_conflicts`` — открытые
+CLO-032). ``leases`` — остатки аренды номеров ``{префикс: (следующий,
+последний)}`` (CLO-030). ``open_conflicts`` — открытые
 строки ``sync_conflict`` (CLO-017).
 
 ``log`` — changeset'ы локального индекса по первому родителю от головы
@@ -26,7 +27,7 @@ from sqlalchemy import func, select
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import Base, ChangesetModel, SyncOpModel, SyncRefModel
-from cod_doc.services.sync_service import _local, conflicts, digest, remotes
+from cod_doc.services.sync_service import _local, conflicts, digest, leases, remotes
 from cod_doc.services.sync_service import pull as pull_mod
 
 if TYPE_CHECKING:
@@ -133,6 +134,7 @@ def status(
         ahead = _ahead(session, head, head_remote) if configured else 0
         restricted = _restricted(session, ref.row_id)
         open_conflicts = conflicts.count_open(session, ref.row_id)
+        lease_left = leases.lease_status(session, ref.row_id)
     checked = (
         digest.verify(sf, project, remote=remote, store=store)
         if verify and configured and store is not None
@@ -154,6 +156,7 @@ def status(
         epoch_local=_local.EPOCH,
         epoch_remote=None,
         restricted_local=restricted,
+        leases=lease_left,
         drift_hint=hint,
         verify=checked,
     )

@@ -1363,3 +1363,21 @@ def suspended(session: Session) -> Iterator[None]:
             session.info[_SUSPENDED_KEY] = depth
         else:
             session.info.pop(_SUSPENDED_KEY, None)
+
+
+def row_project_id(session: Session, table: str, row: Mapping[str, object]) -> object:
+    """Проект строки ``table``: ``project_id`` или через родителя (как у захвата)."""
+    return _Lookup(session).project_id(table, row)
+
+
+def row_edge_uid(session: Session, table: str, row: Mapping[str, object]) -> str | None:
+    """Детерминированный uid ребра по строке (FK — ``row_id``); ``None`` — не разрешим.
+
+    Зовёт закрепление провизорных ID (CLO-030): у ``adr_task``, ``commit_link`` и
+    ``*_link`` человеческий ID — часть ключа ребра, и переписанная ссылка меняет uid.
+    """
+    mapper = _mapper_for(table)
+    info = table_info(mapper) if mapper is not None else None
+    if info is None:
+        return None
+    return _edge_uid(info, row, _Lookup(session))

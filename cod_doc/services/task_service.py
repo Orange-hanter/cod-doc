@@ -73,6 +73,7 @@ from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
+from cod_doc.services.sync_service import leases
 from cod_doc.services.task_errors import CheckoutConflictError
 
 # SVC-004: класс живёт в листовом `task_errors`; здесь реэкспорт под прежним именем.
@@ -150,9 +151,6 @@ class DuplicateTaskIdError(ValueError):
 # префиксом может занять номер между расчётом и insert. Столько раз
 # пересчитываем номер, прежде чем сдаться.
 _AUTO_ID_ATTEMPTS = 3
-_MIN_PREFIX_LEN = 2
-_SCOPE_PREFIX_LEN = 3
-_FALLBACK_PREFIX = "TSK"
 _PREFIXED_TASK_ID_RE = re.compile(r"^([A-Z]{2,5})-\d+$")
 
 
@@ -184,8 +182,19 @@ def _require_task(session: Session, task_id: str, *, project_id: int) -> TaskMod
     stmt = select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
+        # CLO-030: провизорный ID, закреплённый push'ем, резолвится алиасом.
+        current = leases.current_id(session, project_id, "task", task_id)
+        if current is not None:
+            return _require_task(session, current, project_id=project_id)
         raise TaskNotFoundError(task_id)
     return model
+
+
+def _allocate_task_id(session: Session, project_id: int, prefix: str) -> str:
+    """ID под вставку: из аренды при настроенном remote (CLO-030), иначе ``max+1``."""
+    if leases.enabled(session, project_id):
+        return leases.lease_number(session, project_id, prefix, kind="task")
+    return _next_task_id(session, project_id, prefix)
 
 
 def _next_task_id(session: Session, project_id: int, prefix: str) -> str:
@@ -196,7 +205,14 @@ def _next_task_id(session: Session, project_id: int, prefix: str) -> str:
     считая максимум внутри плана, мы выдавали ``{prefix}-001`` каждый раз,
     когда префикс появлялся в новом плане, и немедленно упирались в занятый
     id из соседнего плана того же проекта (ADO-177).
+
+    CLO-030: с настроенным remote — подсказка из аренды (остаток не тратится);
+    выдачу под вставку делает ``_allocate_task_id``.
     """
+    if leases.enabled(session, project_id):
+        hint = leases.peek_number(session, project_id, prefix, kind="task")
+        if hint is not None:
+            return hint
     stmt = select(TaskModel.task_id).where(
         TaskModel.project_id == project_id,
         TaskModel.task_id.like(f"{prefix}-%"),
@@ -216,10 +232,7 @@ def id_prefix_from_scope(scope: str) -> str:
     ``adoption-2026-08`` → ``ADO``, ``cod-doc`` → ``COD``. Меньше двух букв —
     ``TSK``: результат обязан проходить ``validate_id_prefix`` (2-5 заглавных).
     """
-    letters = [c for c in scope.upper() if c.isascii() and c.isalpha()]
-    if len(letters) < _MIN_PREFIX_LEN:
-        return _FALLBACK_PREFIX
-    return "".join(letters[:_SCOPE_PREFIX_LEN])
+    return leases.scope_prefix(scope)
 
 
 def id_prefix_for_plan(session: Session, plan_id: int) -> str:
@@ -289,7 +302,7 @@ def _add_with_auto_id(
     ensure_outer_transaction(session)
     attempted = ""
     for _ in range(_AUTO_ID_ATTEMPTS):
-        attempted = _next_task_id(session, project_id, prefix)
+        attempted = _allocate_task_id(session, project_id, prefix)
         try:
             with session.begin_nested():
                 return repo.add(build(attempted))
@@ -1598,8 +1611,20 @@ def complete(
 
 
 def get(session: Session, task_id: str, *, project_id: int) -> Task | None:
+    """Задача проекта по ``task_id``; провизорный ID после закрепления — по алиасу.
+
+    Закреплённую задачу (CLO-030) ищут и по старому ``ADO-~xxxx``: результат
+    несёт уже постоянный ``task_id``, и вызывающий видит переименование, сравнив
+    его с запрошенным.
+    """
     # STO-029: task_id уникален только в проекте.
-    return TaskRepository(session).get_in_project(task_id, project_id=project_id)
+    repo = TaskRepository(session)
+    found = repo.get_in_project(task_id, project_id=project_id)
+    if found is None:
+        current = leases.current_id(session, project_id, "task", task_id)
+        if current is not None:
+            found = repo.get_in_project(current, project_id=project_id)
+    return found
 
 
 def get_many(session: Session, task_ids: list[str], *, project_id: int) -> dict[str, Task]:

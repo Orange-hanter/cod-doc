@@ -25,6 +25,7 @@ from cod_doc.infra.models import ScenarioModel, ScenarioStepModel
 from cod_doc.infra.rank import initial
 from cod_doc.infra.repositories import ScenarioRepository
 from cod_doc.services import activity_service, validation
+from cod_doc.services.sync_service import leases
 
 from ._internals import (
     _derive_group_key,
@@ -75,7 +76,8 @@ def create(
 
     repo = ScenarioRepository(session)
     sid = scenario_id or _next_scenario_id(session, project_id)
-    validation.validate_scenario_id(sid)
+    if not leases.is_provisional(sid):  # провизорный ID генератора (CLO-030)
+        validation.validate_scenario_id(sid)
     if repo.get_by_scenario_id(project_id, sid) is not None:
         raise ScenarioAlreadyExistsError(sid)
 
@@ -153,7 +155,14 @@ def create(
 
 
 def get(session: Session, project_id: int, scenario_id: str) -> Scenario | None:
-    return ScenarioRepository(session).get_by_scenario_id(project_id, scenario_id)
+    """Сценарий проекта; закреплённый провизорный ``SCN-~xxxx`` — по алиасу (CLO-030)."""
+    repo = ScenarioRepository(session)
+    found = repo.get_by_scenario_id(project_id, scenario_id)
+    if found is None:
+        current = leases.current_id(session, project_id, "scenario", scenario_id)
+        if current is not None:
+            found = repo.get_by_scenario_id(project_id, current)
+    return found
 
 
 def list_for_project(session: Session, project_id: int) -> list[Scenario]:
