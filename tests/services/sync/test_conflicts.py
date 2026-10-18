@@ -86,8 +86,9 @@ def _pending_ops(rep: r.Replica) -> list[dict[str, object]]:
 
 
 def _task_ops(rep: r.Replica) -> list[dict[str, object]]:
-    """Хвост без ревизий: разрешение пишет и ревизию, она уезжает тоже (CLO-024)."""
-    return [op for op in _pending_ops(rep) if op["kind"] != "revision"]
+    """Хвост без ревизий и маркеров: разрешение пишет и ревизию (CLO-024), и маркер
+    разрешения (CLO-045) — они уезжают тоже."""
+    return [op for op in _pending_ops(rep) if op["kind"] not in {"revision", "sync_resolution"}]
 
 
 def _count(rep: r.Replica, model: type, *where: object) -> int:
@@ -181,6 +182,14 @@ def test_resolve_ours_ships_ours_even_when_the_db_already_holds_it(rep: r.Replic
     assert len(ops) == before + 1
     assert ops[-1]["fields"] == {"title": "Task DEM-001"}
     assert _task(rep).title == "Task DEM-001"
+    (marker,) = [op for op in _pending_ops(rep) if op["kind"] == "sync_resolution"]
+    task_uid = _task(rep).uid
+    assert marker["fields"] == {
+        "entity_kind": "task",
+        "entity_uid": task_uid,
+        "field": "title",
+        "kind": "field",
+    }
 
 
 def test_custom_text_resolves_a_text_conflict(rep: r.Replica) -> None:

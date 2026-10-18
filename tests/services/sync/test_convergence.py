@@ -24,11 +24,12 @@ LWW поля, вставки по rank, текст (diff3), статус и chec
    оставляет в БД «наше» (RFC §3.7), и реплика, открывшая его, держит своё
    значение поля, пока человек не решит (D1 PR #225). Поэтому до разрешения
    три реплики законно расходятся в полях открытых конфликтов. Проверка:
-   каждая реплика разрешает свои открытые конфликты (``take`` выводится из
-   подписи — одинаково во всех вселенных), система снова затихает, и так до
-   пустого списка на всех трёх; затем полный дайджест (вместе с журналом
-   ревизий) одинаков у трёх реплик, ``sync verify`` равен remote, уезжающее
-   состояние совпадает построчно.
+   каждую открытую подпись разрешает одна реплика — первая, у которой она
+   открыта (``take`` выводится из подписи), маркер разрешения закрывает её
+   у остальных (CLO-045), система снова затихает, и так до пустого списка на
+   всех трёх; затем полный дайджест (вместе с журналом ревизий) одинаков у
+   трёх реплик, ``sync verify`` равен remote, уезжающее состояние совпадает
+   построчно.
 2. *Множество конфликтов — по подписи, а не по uid.* ``sync_conflict`` —
    local-таблица (§3.2): конфликт открывает реплика, которая сливала свой
    хвост с чужим changeset'ом, и uid у него uuid7 этой реплики (у
@@ -39,7 +40,9 @@ LWW поля, вставки по rank, текст (diff3), статус и chec
    одинаково во всех вселенных одного сида, то есть не зависит от
    перестановки. Сравнение по репликам внутри вселенной — нет: кто открыл,
    зависит от того, кто сливал.
-3. Двойной офлайн-checkout (``double_checkout``) генератор не порождает:
+3. Статус пишут любые реплики любое число раз: цепочка записей решается
+   одинаково при любом порядке доставки (CLO-044).
+4. Двойной офлайн-checkout (``double_checkout``) генератор не порождает:
    checkout задачи в раунде делает одна реплика. Его разрешение — механика
    аренды CLO-031, до неё конфликт не сходится (D6 PR #225). Двойники
    leased-ключей (``task_id``) тоже вне генератора — CLO-030.
@@ -107,7 +110,6 @@ UNIVERSES = 3
 RANDOM_STEPS = 14
 MAX_SETTLE = 12
 MAX_RESOLVE = 6
-MAX_STATUS_WRITERS = 2
 
 type Signature = tuple[str, str, str | None, str]
 type Edit = Callable[[r.Replica, random.Random, int], None]
@@ -223,28 +225,19 @@ def _delete_doomed(rep: r.Replica, _rng: random.Random, _n: int) -> None:
         doc_service.delete(s, project_id=rep.project_id, doc_key=DOOMED_DOC, author=r.AUTHOR)
 
 
-#: Кто в текущем раунде писал статус задачи: не больше двух реплик на задачу.
-_STATUS_WRITERS: dict[str, set[str]] = {}
+def _write_status(rep: r.Replica, task_id: str, status: str) -> None:
+    with transactional(rep.sf) as s:
+        cap.set_author(s, r.AUTHOR)
+        _task_row(s, task_id).status = status
 
 
 def _set_status(rep: r.Replica, rng: random.Random, _n: int) -> None:
-    """Статус через ORM: пара значений любая — слияние проверяет переход само.
+    """Статус через ORM: значение любое, писателей и записей сколько угодно.
 
-    Статус одной задачи в раунде пишут не больше двух реплик, по разу каждая.
-    Проверка перехода попарная (CLO-020): у трёх записей (три реплики или две
-    записи одной) промежуточная может проиграть допустимым переходом и не
-    уехать, и кто какую пару судил, зависит от порядка — множество конфликтов
-    ``status`` тоже (аудит, F11).
+    Переход проверяет слияние — проигрыванием цепочки всех записей статуса
+    задачи (CLO-044); ограничение «две записи статуса на раунд» снято.
     """
-    task_id = rng.choice(TASKS[:2])
-    writers = _STATUS_WRITERS.setdefault(task_id, set())
-    if rep.name in writers or len(writers) >= MAX_STATUS_WRITERS:
-        msg = f"{task_id}: статус в раунде уже писали {sorted(writers)}"
-        raise RuntimeError(msg)
-    writers.add(rep.name)
-    with transactional(rep.sf) as s:
-        cap.set_author(s, r.AUTHOR)
-        _task_row(s, task_id).status = rng.choice(STATUSES)
+    _write_status(rep, rng.choice(TASKS[:2]), rng.choice(STATUSES))
 
 
 def _checkout_or_release(rep: r.Replica, _rng: random.Random, _n: int) -> None:
@@ -490,7 +483,6 @@ EDITS: tuple[tuple[Edit, int], ...] = (
 
 def _offline(reps: tuple[r.Replica, ...], rng: random.Random, rnd: int) -> None:
     """Правки раунда: на каждой реплике 2–5 случайных; checkout — у одной реплики."""
-    _STATUS_WRITERS.clear()
     _CLASSIFIED_EDITOR[:] = [reps[1 + rnd % (len(reps) - 1)].name]
     edits = [e for e, _ in EDITS]
     weights = [w for _, w in EDITS]
@@ -570,13 +562,26 @@ def _take(row: dict[str, object]) -> str:
     return "ours" if hashlib.sha256(key.encode()).digest()[0] % 2 else "theirs"
 
 
+def _signature(row: dict[str, object]) -> Signature:
+    return (str(row["entity_kind"]), str(row["entity_uid"]), row["field"], str(row["kind"]))  # type: ignore[return-value]
+
+
 def _resolve_everything(u: Universe, rng: random.Random) -> None:
+    """Каждую открытую подпись решает **одна** реплика — первая, у которой она открыта.
+
+    У остальных конфликт той же подписи закрывает маркер разрешения, приехавший
+    обменом (CLO-045): ручного resolve на каждой реплике нет.
+    """
     for _ in range(MAX_RESOLVE):
         if not any(_signatures(rep) for rep in u.reps):
             return
+        taken: set[Signature] = set()
         for rep in u.reps:
             with transactional(rep.sf) as s:
                 for row in conflicts.list_conflicts(s, rep.project_id):
+                    if _signature(row) in taken:
+                        continue
+                    taken.add(_signature(row))
                     time.sleep(TICK)
                     conflicts.resolve_conflict(
                         s, rep.project_id, str(row["uid"]), take=_take(row), author=r.AUTHOR
@@ -986,4 +991,192 @@ def test_three_sections_claiming_one_letter_get_the_same_letters_everywhere(
 
     assert _quiet(u)
     _assert_converged(u, f"три заявки на букву, порядок {order}")
+    _dispose(u)
+
+
+def _settle_fixed(u: Universe, *order: r.Replica) -> None:
+    for _ in range(MAX_SETTLE):
+        if _quiet(u):
+            return
+        _synced(u, *order)
+    assert _quiet(u), "синхронизация не затихла"
+
+
+def _status(rep: r.Replica, task_id: str) -> str:
+    with transactional(rep.sf, commit=False) as s:
+        return str(_task_row(s, task_id).status)
+
+
+@pytest.mark.parametrize("order", ["abc", "acb", "bac", "bca", "cab", "cba"])
+def test_status_chain_of_three_writers_decides_the_same_in_any_order(
+    tmp_path: Path, order: str
+) -> None:
+    """F11 (сид 386): blocked (A) → in_progress (B) → done (C), каждая из todo, офлайн.
+
+    Попарно: B принимала done и обрезала свой in_progress, тот не уезжал, и C
+    судила blocked → done напрямую — конфликт ``status`` только в части
+    порядков. Цепочка: blocked, затем in_progress (blocked → in_progress
+    допустим), затем done — в любом порядке, без конфликта.
+    """
+    u = _three(tmp_path)
+    reps = {rep.name: rep for rep in u.reps}
+    for name, status in (("a", "blocked"), ("b", "in_progress"), ("c", "done")):
+        time.sleep(TICK)
+        _write_status(reps[name], TASKS[0], status)
+
+    _settle_fixed(u, *(reps[x] for x in order))
+
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"done"}
+    assert set().union(*(_signatures(rep) for rep in u.reps)) == set()
+    _assert_converged(u, f"цепочка статуса, порядок {order}")
+    _dispose(u)
+
+
+@pytest.mark.parametrize("order", ["ab", "ba"])
+def test_two_writes_of_one_replica_are_judged_as_a_chain(tmp_path: Path, order: str) -> None:
+    """Сид 25: backlog (A) против cancelled → in_review (B).
+
+    Цепочка по штампу: backlog; cancelled поверх todo — конкурентна, backlog →
+    cancelled допустим; in_review последовательна (B видела cancelled). Итог
+    in_review, без конфликта, при любом порядке.
+    """
+    u = _three(tmp_path)
+    a, b, _c = u.reps
+    time.sleep(TICK)
+    _write_status(a, TASKS[0], "backlog")
+    time.sleep(TICK)
+    _write_status(b, TASKS[0], "cancelled")
+    time.sleep(TICK)
+    _write_status(b, TASKS[0], "in_review")
+
+    first, second = (a, b) if order == "ab" else (b, a)
+    _settle_fixed(u, first, second, u.reps[2])
+
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"in_review"}
+    assert set().union(*(_signatures(rep) for rep in u.reps)) == set()
+    _assert_converged(u, f"две записи одной реплики, порядок {order}")
+    _dispose(u)
+
+
+def test_rejected_status_write_opens_the_same_conflict_on_every_replica(tmp_path: Path) -> None:
+    """cancelled (A) раньше blocked (B): cancelled → blocked запрещён.
+
+    Проигрывание у всех одно: в БД cancelled на всех трёх репликах, отказ —
+    запись B, конфликт с одной подписью у каждой реплики, получившей чужую
+    запись цепочки.
+    """
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    time.sleep(TICK)
+    _write_status(a, TASKS[0], "cancelled")
+    time.sleep(TICK)
+    _write_status(b, TASKS[0], "blocked")
+
+    _settle_fixed(u, b, c, a)
+
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"cancelled"}
+    sigs = [_signatures(rep) for rep in u.reps]
+    assert sigs[0] == sigs[1] == sigs[2]
+    ((kind, _uid, field, ckind),) = sigs[0]
+    assert (kind, field, ckind) == ("task", "status", "status")
+    with transactional(b.sf, commit=False) as s:
+        (row,) = conflicts.list_conflicts(s, b.project_id)
+    assert (row["ours"], row["theirs"], row["base"]) == ("cancelled", "blocked", "todo")
+    _assert_converged(u, "отказ в цепочке")
+    _dispose(u)
+
+
+def _cancelled_against_blocked(tmp_path: Path) -> Universe:
+    """Отказ в цепочке статуса у всех трёх реплик: cancelled (A) раньше blocked (B)."""
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    time.sleep(TICK)
+    _write_status(a, TASKS[0], "cancelled")
+    time.sleep(TICK)
+    _write_status(b, TASKS[0], "blocked")
+    _settle_fixed(u, b, c, a)
+    assert all(len(_signatures(rep)) == 1 for rep in u.reps)
+    return u
+
+
+def _resolve_on(rep: r.Replica, take: str) -> dict[str, object]:
+    with transactional(rep.sf) as s:
+        (row,) = conflicts.list_conflicts(s, rep.project_id)
+        time.sleep(TICK)
+        return conflicts.resolve_conflict(
+            s, rep.project_id, str(row["uid"]), take=take, author=r.AUTHOR
+        )
+
+
+def _closed_by(rep: r.Replica) -> list[str | None]:
+    with transactional(rep.sf, commit=False) as s:
+        return [
+            row["resolved_by"]  # type: ignore[misc]
+            for row in conflicts.list_conflicts(s, rep.project_id, status="resolved")
+        ]
+
+
+def test_resolution_on_one_replica_closes_the_conflict_on_the_others(tmp_path: Path) -> None:
+    """CLO-045: конфликт ``status`` открыт на A, B и C; resolve на B, обмен — закрыт везде.
+
+    У A и C ``resolved_by = sync:remote:<uid маркера>``; ручного resolve у них нет.
+    """
+    u = _cancelled_against_blocked(tmp_path)
+    a, b, c = u.reps
+
+    resolved = _resolve_on(b, "theirs")
+    _settle_fixed(u, b, a, c)
+
+    assert {rep.name: _signatures(rep) for rep in u.reps} == {"a": set(), "b": set(), "c": set()}
+    marker = resolved["marker"]
+    assert _closed_by(a) == _closed_by(c) == [f"sync:remote:{marker}"]
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"blocked"}
+    _assert_converged(u, "маркер разрешения")
+    _dispose(u)
+
+
+def test_text_conflict_resolved_where_it_was_merged_closes_on_the_other_merger(
+    tmp_path: Path,
+) -> None:
+    """F4: A, B и C правят одну строку описания. Конфликт ``text`` открывают B и C —
+    каждая со своим «нашим»; решение B закрывает конфликт C."""
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    for rep in (a, b, c):
+        time.sleep(TICK)
+        r.set_description(rep, TASKS[0], _edit_line(_text(TASKS[0]), random.Random(0), rep.name))
+    _synced(u, a, b, c)
+    _settle_fixed(u, a, b, c)
+    assert _signatures(b) == _signatures(c) != set()
+
+    resolved = _resolve_on(b, "ours")
+    _settle_fixed(u, b, a, c)
+
+    assert set().union(*(_signatures(rep) for rep in u.reps)) == set()
+    # У C их может быть два (против A и против B) — маркер закрывает оба.
+    assert set(_closed_by(c)) == {f"sync:remote:{resolved['marker']}"}
+    _assert_converged(u, "текст: маркер разрешения")
+    _dispose(u)
+
+
+def test_conflict_opened_after_the_marker_stays_open(tmp_path: Path) -> None:
+    """Новые конкурентные записи после разрешения — новый отказ той же подписи.
+
+    Маркер старше его записей и конфликт не закрывает: он открыт на всех трёх.
+    """
+    u = _cancelled_against_blocked(tmp_path)
+    a, b, c = u.reps
+    _resolve_on(b, "ours")  # cancelled
+    _settle_fixed(u, b, a, c)
+    assert set().union(*(_signatures(rep) for rep in u.reps)) == set()
+
+    time.sleep(TICK)
+    _write_status(a, TASKS[0], "todo")  # cancelled → todo
+    time.sleep(TICK)
+    _write_status(c, TASKS[0], "done")  # cancelled → done поверх todo — отказ
+    _settle_fixed(u, a, c, b)
+
+    sigs = [_signatures(rep) for rep in u.reps]
+    assert sigs[0] == sigs[1] == sigs[2] != set()
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"todo"}
     _dispose(u)

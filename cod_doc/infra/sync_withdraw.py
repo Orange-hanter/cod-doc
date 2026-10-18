@@ -54,6 +54,9 @@ _SECTION: Final = "section"
 _REVISION: Final = "revision"
 _DELETE: Final = "delete"
 _CHUNK: Final = 500
+#: Вид операции-маркера разрешения (``sync_service.markers.MARKER_KIND``, CLO-045):
+#: infra не импортирует services, значение — контракт формата changeset'а.
+MARKER_KIND: Final = "sync_resolution"
 
 Row = dict[str, object]
 
@@ -133,9 +136,7 @@ def purge_tail(session: Session, project_id: int, doc: Mapping[str, object]) -> 
     subtree = _subtree(session, doc, tail)
     drop: set[str] = set()
     for op in tail:
-        if (op.entity_kind in (_DOCUMENT, *reg.DOCUMENT_BODY) and op.entity_uid in subtree) or (
-            op.entity_kind == _REVISION and _loads(op.fields).get("entity_id") in subtree
-        ):
+        if _in_subtree(op.entity_kind, op.entity_uid, op.fields, subtree):
             drop.add(op.op_id)
     drop |= _regate_tail(session, project_id, [op for op in tail if op.op_id not in drop])
     ids = sorted(drop)
@@ -153,6 +154,16 @@ def purge_tail(session: Session, project_id: int, doc: Mapping[str, object]) -> 
         for op in tail
         if op.op_id in drop
     ]
+
+
+def _in_subtree(kind: str, uid: str, raw_fields: object, subtree: set[str]) -> bool:
+    """Операция хвоста о документе или его теле: строка, ревизия или маркер разрешения."""
+    if kind in (_DOCUMENT, *reg.DOCUMENT_BODY):
+        return uid in subtree
+    if kind == _REVISION:
+        return _loads(raw_fields).get("entity_id") in subtree
+    # Маркер разрешения (CLO-045) о строке тела: подпись тоже не уезжает.
+    return kind == MARKER_KIND and _loads(raw_fields).get("entity_uid") in subtree
 
 
 def _subtree(session: Session, doc: Mapping[str, object], tail: Iterable[Any]) -> set[str]:

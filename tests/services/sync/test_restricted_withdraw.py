@@ -43,7 +43,7 @@ from cod_doc.infra.models import (
     SyncOpModel,
 )
 from cod_doc.services import doc_service, scenario_service
-from cod_doc.services.sync_service import digest, pull, push
+from cod_doc.services.sync_service import digest, markers, pull, push
 from cod_doc.services.validation import ValidationError
 from tests.services.sync import _replicas as r
 from tests.services.sync.test_apply_untrusted import _forge, _refused, _uid
@@ -644,6 +644,59 @@ def test_tail_purge_finds_body_ops_ordered_before_the_op_naming_the_document(
         shipped = s.scalars(select(SyncOpModel.fields)).all()
     assert not any("утечка из хвоста" in f for f in shipped)
     assert "утечка из хвоста" not in _sections(b).values()
+
+
+def _section_uid(rep: r.Replica, anchor: str) -> str:
+    with transactional(rep.sf, commit=False) as s:
+        return str(
+            s.scalars(
+                select(SectionModel.uid).where(
+                    SectionModel.document_id == r.doc_id(rep, DOC), SectionModel.anchor == anchor
+                )
+            ).one()
+        )
+
+
+def test_marker_about_a_withdrawn_section_is_absorbed(trio: tuple) -> None:
+    """Маркер разрешения (CLO-045) о секции отозванного документа — как правка: поглощается."""
+    a, b, c, store = trio
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _sync(a, b, c, store)
+    signature = {
+        "entity_kind": "section",
+        "entity_uid": _section_uid(b, "intro"),
+        "field": "body",
+        "kind": "text",
+    }
+    _forge(
+        a,
+        store,
+        [
+            {
+                "entity_kind": markers.MARKER_KIND,
+                "entity_uid": str(uuid.uuid7()),
+                "fields": signature,
+            }
+        ],
+    )
+
+    _pull(b, store)
+
+    assert set(_sections(b).values()) == {""}
+
+
+def test_own_unpushed_marker_about_the_document_body_is_purged(trio: tuple) -> None:
+    a, b, c, store = trio
+    signature = ("section", _section_uid(a, "intro"), "body", "text")
+    with transactional(a.sf) as s:
+        marker_uid = markers.record(s, a.project_id, signature, author=r.AUTHOR)
+
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _sync(a, b, c, store)
+
+    with transactional(a.sf, commit=False) as s:
+        left = s.scalars(select(SyncOpModel.op_id).where(SyncOpModel.entity_uid == marker_uid))
+        assert left.all() == []
 
 
 # --- поверхности --------------------------------------------------------------------------

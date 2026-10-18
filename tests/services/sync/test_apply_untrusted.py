@@ -29,6 +29,7 @@ from cod_doc.infra.models import (
     DocumentModel,
     DocumentTagModel,
     ProjectModel,
+    SyncConflictModel,
     SyncOpModel,
     TagModel,
     TaskModel,
@@ -497,3 +498,101 @@ def test_open_store_allows_only_implemented_schemes(
     with pytest.raises(RemoteConfigError) as err:
         _local.open_store("demo", "origin")
     assert err.value.code == "SYNC-110"
+
+
+# --- маркер разрешения (CLO-045) -------------------------------------------------------
+
+
+def _marker_op(fields: dict[str, Any], **op: Any) -> dict[str, Any]:
+    return {
+        "entity_kind": "sync_resolution",
+        "entity_uid": str(uuid.uuid7()),
+        "fields": fields,
+        **op,
+    }
+
+
+def _signature(b: r.Replica) -> dict[str, Any]:
+    return {
+        "entity_kind": "task",
+        "entity_uid": _uid(b, TaskModel, task_id="DEM-001"),
+        "field": "status",
+        "kind": "status",
+    }
+
+
+@pytest.mark.parametrize(
+    ("op", "fields", "match"),
+    [
+        ({"kind": "delete"}, {}, "только дописывается"),
+        ({"base": {"kind": "status"}}, {}, "только дописывается"),
+        ({"entity_uid": "not-a-uuid"}, {}, "не UUID"),
+        ({}, {"extra": 1}, "поля"),
+        ({}, {"entity_kind": "sync_conflict"}, "не захватывается"),
+        ({}, {"entity_kind": "revision"}, "журнал"),
+        ({}, {"kind": "pwned"}, "вид конфликта"),
+        ({}, {"field": "row_id"}, "не уезжает"),
+        ({}, {"field": None}, "не уезжает"),
+        ({}, {"kind": "delete_edit"}, "поля нет"),
+        ({}, {"entity_uid": ""}, "непустая строка"),
+    ],
+)
+def test_malformed_resolution_marker_is_refused(
+    pair: tuple, op: dict[str, Any], fields: dict[str, Any], match: str
+) -> None:
+    a, b, store = pair
+    _forge(a, store, [_marker_op(_signature(b) | fields, **op)])
+
+    _refused(b, store, match)
+
+
+def test_marker_without_a_signature_field_is_refused(pair: tuple) -> None:
+    a, b, store = pair
+    signature = _signature(b)
+    del signature["field"]
+    _forge(a, store, [_marker_op(signature)])
+
+    _refused(b, store, "поля")
+
+
+def test_marker_naming_a_locally_restricted_row_is_refused(pair: tuple) -> None:
+    a, b, store = pair
+    row_id = _restricted_doc(b)
+    with Session(b.engine) as s:
+        secret_uid = str(s.get_one(DocumentModel, row_id).uid)
+    signature = {"entity_kind": "document", "entity_uid": secret_uid}
+    _forge(a, store, [_marker_op(signature | {"field": "title", "kind": "field"})])
+
+    _refused(b, store, "local на этой реплике")
+
+
+def test_marker_naming_a_row_of_another_project_is_refused(pair: tuple) -> None:
+    """Hub: маркер с подписью строки чужого проекта этой БД — SYNC-102, её конфликт открыт."""
+    a, b, store = pair
+    intruder_uid, tag_uid = _intruder(b)
+    with Session(b.engine) as s:
+        project_id = s.scalars(
+            select(ProjectModel.row_id).where(ProjectModel.uid == intruder_uid)
+        ).one()
+        s.add(
+            SyncConflictModel(
+                uid=str(uuid.uuid7()),
+                project_id=project_id,
+                entity_kind="tag",
+                entity_uid=tag_uid,
+                field="name",
+                kind="field",
+                ours='"a"',
+                theirs='"b"',
+                base='"x"',
+                theirs_op="01K7Z000000000000000009999",
+                status="open",
+            )
+        )
+        s.commit()
+    signature = {"entity_kind": "tag", "entity_uid": tag_uid, "field": "name", "kind": "field"}
+    _forge(a, store, [_marker_op(signature)])
+
+    _refused(b, store, "другому проекту")
+    with Session(b.engine) as s:
+        assert s.scalars(select(SyncConflictModel.status)).all() == ["open"]
