@@ -52,7 +52,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ChangesetModel, SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, apply, conflicts, merge
+from cod_doc.services.sync_service import _local, apply, conflicts, markers, merge
 from cod_doc.services.sync_service.changeset import Changeset, decode
 from cod_doc.services.sync_service.errors import (
     MergeRequiredError,
@@ -270,9 +270,11 @@ def _check_divergence(
     mine = [op for op in tail if op.op_id not in own_ids]
     # Журнал не сливается — объединяется по id (§3.7, CLO-024): его операции
     # не пересекаются с хвостом ни правкой, ни удалением.
+    # Маркер разрешения (CLO-045) — тоже не строка: только закрывает конфликты.
+    unmerged = {*reg.JOURNAL_IDS, markers.MARKER_KIND}
     merge.check(
-        [op for op in foreign if op.entity_kind not in reg.JOURNAL_IDS],
-        [op for op in mine if op.entity_kind not in reg.JOURNAL_IDS],
+        [op for op in foreign if op.entity_kind not in unmerged],
+        [op for op in mine if op.entity_kind not in unmerged],
     )
     return bool(mine)
 
@@ -326,10 +328,10 @@ def _apply_one(
             else:
                 ctx.drain()
                 apply.apply_changeset(session, project, sha, cs, ctx=ctx)
-                opened.extend(
-                    conflicts.open_conflict(session, project.row_id, spec, author=ctx.author)
-                    for spec in ctx.drain()
-                )
+                for spec in ctx.drain():
+                    uid = conflicts.open_conflict(session, project.row_id, spec, author=ctx.author)
+                    if uid is not None:  # None — подпись уже решена маркером (CLO-045)
+                        opened.append(uid)
             return _APPLIED, sha
         current = _local.local_head(session, project.row_id)
         if _local.is_applied(session, sha):

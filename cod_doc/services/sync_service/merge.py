@@ -75,9 +75,9 @@ from ulid import ULID
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import Hlc, clock_for
-from cod_doc.infra.models import Base, SyncConflictModel, SyncOpModel
+from cod_doc.infra.models import Base, SyncOpModel
 from cod_doc.infra.models.sync import SYNC_CONFLICT_KINDS
-from cod_doc.services.sync_service import _conflict_rows, _local
+from cod_doc.services.sync_service import _conflict_rows, _local, markers
 from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
 from cod_doc.services.sync_service.errors import MergeRequiredError
 
@@ -89,7 +89,8 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from cod_doc.services.sync_service.changeset import Op
-    from cod_doc.services.sync_service.status_merge import Rejection, Replay, Write
+    from cod_doc.services.sync_service.status_merge import Rejection, Replay
+    from cod_doc.services.sync_service.status_merge import Write as _Write
 
 __all__ = [
     "DELETE_EDIT",
@@ -166,6 +167,9 @@ class ConflictSpec:
     base: FieldValue
     #: ``op_id`` чужой операции (у цепочки статуса — отвергнутой записи).
     theirs_op: str
+    #: Старший штамп записей, сошедшихся в конфликте (``sync_conflict.opened_hlc``,
+    #: CLO-045); ``None`` — штамп ``theirs_op``.
+    hlc: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in SYNC_CONFLICT_KINDS:
@@ -294,9 +298,9 @@ class _ChainPlugin(Protocol):
     CHAIN_COLUMNS: tuple[str, ...]
     STATUS: str
     DOUBLE_CHECKOUT: str
-    Write: type[Write]
+    Write: type[_Write]
 
-    def replay(self, column: str, writes: Iterable[Write]) -> Replay: ...
+    def replay(self, column: str, writes: Iterable[_Write]) -> Replay: ...
 
     def conflict_kind(self, column: str) -> str: ...
 
@@ -606,6 +610,7 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
                     theirs=theirs,
                     base=clash.theirs_base,
                     theirs_op=op.op_id,
+                    hlc=max(clash.ours_stamp[0], clash.theirs_stamp[0]),
                 ),
             )
     if merged:
@@ -619,39 +624,19 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
 
 
 def _chain_ops(ctx: Context, op: Op, rows: Sequence[SyncOpModel]) -> list[Op]:
-    """Все известные реплике upsert'ы сущности: журнал, хвост, текущий changeset."""
+    """Известные реплике upsert'ы сущности: журнал, хвост, текущий changeset.
+
+    Только после последнего удаления: восстановленная строка (``delete_edit
+    --take theirs``) с тем же uid начинает цепочку заново со своей вставки.
+    """
     known = {row.op_id: _local.op_of(row) for row in rows}
     for other in (*ctx.batch, op):
         if (other.entity_kind, other.entity_uid) == (op.entity_kind, op.entity_uid):
             known.setdefault(other.op_id, other)
-    return [o for o in known.values() if o.kind == _UPSERT]
-
-
-def _decided(session: Session, project_id: int, signature: _conflict_rows.Signature) -> Stamp:
-    """Штамп последней отвергнутой записи, о которой человек на этой реплике уже решил.
-
-    Решённый конфликт не открывается снова от той же записи: она остаётся в
-    цепочке навсегда, а проигрывание повторяется при каждой чужой записи поля.
-    """
-    entity_kind, entity_uid, column, kind = signature
-    stmt = select(SyncConflictModel.theirs_op).where(
-        SyncConflictModel.project_id == project_id,
-        SyncConflictModel.status == _conflict_rows.RESOLVED,
-        SyncConflictModel.entity_kind == entity_kind,
-        SyncConflictModel.entity_uid == entity_uid,
-        SyncConflictModel.kind == kind,
-        SyncConflictModel.resolved_by.not_like("sync:%"),
-    )
-    stmt = stmt.where(
-        SyncConflictModel.field.is_(None) if column is None else SyncConflictModel.field == column
-    )
-    ops = list(session.scalars(stmt))
-    if not ops:
-        return ("", "")
-    stamps = session.execute(
-        select(SyncOpModel.hlc, SyncOpModel.op_id).where(SyncOpModel.op_id.in_(ops))
-    ).all()
-    return max(((h, o) for h, o in stamps), default=("", ""))
+    deleted = max((_stamp(o) for o in known.values() if o.kind == _DELETE), default=None)
+    return [
+        o for o in known.values() if o.kind == _UPSERT and (deleted is None or _stamp(o) > deleted)
+    ]
 
 
 def _chain(
@@ -659,9 +644,12 @@ def _chain(
 ) -> dict[str, FieldValue]:
     """Поля статуса и замка — проигрыванием цепочки (``status_merge``); отказы — конфликты.
 
-    Значение записывается для полей чужой операции; конфликт открывается по
-    последнему отказу, о котором здесь ещё не решали; конфликт цепочки, которой
-    больше нечего отвергнуть (доехала промежуточная запись), закрывается.
+    Значение записывается для полей чужой операции. Конфликт открывается по
+    последнему отказу новее последнего маркера разрешения подписи (CLO-045):
+    отвергнутая запись остаётся в цепочке навсегда, а решённый конфликт от неё
+    заново не открывается ни здесь, ни там, куда доехал маркер. Конфликт
+    цепочки, которой больше нечего отвергнуть (доехала промежуточная запись),
+    закрывается.
     """
     status_merge = cast("_ChainPlugin", _strategy_module(STATUS))
     ops = _chain_ops(ctx, op, rows)
@@ -698,8 +686,8 @@ def _chain(
                 why="цепочка статуса больше ничего не отвергает",
             )
             continue
-        decided = _decided(session, ctx.project_id, signature)
-        open_ = [(c, r) for c, r in found if r.write.stamp > decided]
+        decided = markers.latest(session, ctx.project_id, signature)
+        open_ = [(c, r) for c, r in found if decided is None or r.write.hlc > decided]
         if not open_:
             continue
         column, last = max(open_, key=lambda cr: cr[1].write.stamp)
@@ -714,6 +702,7 @@ def _chain(
                 theirs=last.write.value,
                 base=last.write.base,
                 theirs_op=last.write.op_id,
+                hlc=last.write.hlc,
             ),
         )
     return out

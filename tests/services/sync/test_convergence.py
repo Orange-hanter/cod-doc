@@ -22,11 +22,12 @@ LWW поля, вставки по rank, текст (diff3), статус и chec
    оставляет в БД «наше» (RFC §3.7), и реплика, открывшая его, держит своё
    значение поля, пока человек не решит (D1 PR #225). Поэтому до разрешения
    три реплики законно расходятся в полях открытых конфликтов. Проверка:
-   каждая реплика разрешает свои открытые конфликты (``take`` выводится из
-   подписи — одинаково во всех вселенных), система снова затихает, и так до
-   пустого списка на всех трёх; затем полный дайджест (вместе с журналом
-   ревизий) одинаков у трёх реплик, ``sync verify`` равен remote, уезжающее
-   состояние совпадает построчно.
+   каждую открытую подпись разрешает одна реплика — первая, у которой она
+   открыта (``take`` выводится из подписи), маркер разрешения закрывает её
+   у остальных (CLO-045), система снова затихает, и так до пустого списка на
+   всех трёх; затем полный дайджест (вместе с журналом ревизий) одинаков у
+   трёх реплик, ``sync verify`` равен remote, уезжающее состояние совпадает
+   построчно.
 2. *Множество конфликтов — по подписи, а не по uid.* ``sync_conflict`` —
    local-таблица (§3.2): конфликт открывает реплика, которая сливала свой
    хвост с чужим changeset'ом, и uid у него uuid7 этой реплики (у
@@ -507,13 +508,26 @@ def _take(row: dict[str, object]) -> str:
     return "ours" if hashlib.sha256(key.encode()).digest()[0] % 2 else "theirs"
 
 
+def _signature(row: dict[str, object]) -> Signature:
+    return (str(row["entity_kind"]), str(row["entity_uid"]), row["field"], str(row["kind"]))  # type: ignore[return-value]
+
+
 def _resolve_everything(u: Universe, rng: random.Random) -> None:
+    """Каждую открытую подпись решает **одна** реплика — первая, у которой она открыта.
+
+    У остальных конфликт той же подписи закрывает маркер разрешения, приехавший
+    обменом (CLO-045): ручного resolve на каждой реплике нет.
+    """
     for _ in range(MAX_RESOLVE):
         if not any(_signatures(rep) for rep in u.reps):
             return
+        taken: set[Signature] = set()
         for rep in u.reps:
             with transactional(rep.sf) as s:
                 for row in conflicts.list_conflicts(s, rep.project_id):
+                    if _signature(row) in taken:
+                        continue
+                    taken.add(_signature(row))
                     time.sleep(TICK)
                     conflicts.resolve_conflict(
                         s, rep.project_id, str(row["uid"]), take=_take(row), author=r.AUTHOR
@@ -1015,4 +1029,100 @@ def test_rejected_status_write_opens_the_same_conflict_on_every_replica(tmp_path
         (row,) = conflicts.list_conflicts(s, b.project_id)
     assert (row["ours"], row["theirs"], row["base"]) == ("cancelled", "blocked", "todo")
     _assert_converged(u, "отказ в цепочке")
+    _dispose(u)
+
+
+def _cancelled_against_blocked(tmp_path: Path) -> Universe:
+    """Отказ в цепочке статуса у всех трёх реплик: cancelled (A) раньше blocked (B)."""
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    time.sleep(TICK)
+    _write_status(a, TASKS[0], "cancelled")
+    time.sleep(TICK)
+    _write_status(b, TASKS[0], "blocked")
+    _settle_fixed(u, b, c, a)
+    assert all(len(_signatures(rep)) == 1 for rep in u.reps)
+    return u
+
+
+def _resolve_on(rep: r.Replica, take: str) -> dict[str, object]:
+    with transactional(rep.sf) as s:
+        (row,) = conflicts.list_conflicts(s, rep.project_id)
+        time.sleep(TICK)
+        return conflicts.resolve_conflict(
+            s, rep.project_id, str(row["uid"]), take=take, author=r.AUTHOR
+        )
+
+
+def _closed_by(rep: r.Replica) -> list[str | None]:
+    with transactional(rep.sf, commit=False) as s:
+        return [
+            row["resolved_by"]  # type: ignore[misc]
+            for row in conflicts.list_conflicts(s, rep.project_id, status="resolved")
+        ]
+
+
+def test_resolution_on_one_replica_closes_the_conflict_on_the_others(tmp_path: Path) -> None:
+    """CLO-045: конфликт ``status`` открыт на A, B и C; resolve на B, обмен — закрыт везде.
+
+    У A и C ``resolved_by = sync:remote:<uid маркера>``; ручного resolve у них нет.
+    """
+    u = _cancelled_against_blocked(tmp_path)
+    a, b, c = u.reps
+
+    resolved = _resolve_on(b, "theirs")
+    _settle_fixed(u, b, a, c)
+
+    assert {rep.name: _signatures(rep) for rep in u.reps} == {"a": set(), "b": set(), "c": set()}
+    marker = resolved["marker"]
+    assert _closed_by(a) == _closed_by(c) == [f"sync:remote:{marker}"]
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"blocked"}
+    _assert_converged(u, "маркер разрешения")
+    _dispose(u)
+
+
+def test_text_conflict_resolved_where_it_was_merged_closes_on_the_other_merger(
+    tmp_path: Path,
+) -> None:
+    """F4: A, B и C правят одну строку описания. Конфликт ``text`` открывают B и C —
+    каждая со своим «нашим»; решение B закрывает конфликт C."""
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    for rep in (a, b, c):
+        time.sleep(TICK)
+        r.set_description(rep, TASKS[0], _edit_line(_text(TASKS[0]), random.Random(0), rep.name))
+    _synced(u, a, b, c)
+    _settle_fixed(u, a, b, c)
+    assert _signatures(b) == _signatures(c) != set()
+
+    resolved = _resolve_on(b, "ours")
+    _settle_fixed(u, b, a, c)
+
+    assert set().union(*(_signatures(rep) for rep in u.reps)) == set()
+    # У C их может быть два (против A и против B) — маркер закрывает оба.
+    assert set(_closed_by(c)) == {f"sync:remote:{resolved['marker']}"}
+    _assert_converged(u, "текст: маркер разрешения")
+    _dispose(u)
+
+
+def test_conflict_opened_after_the_marker_stays_open(tmp_path: Path) -> None:
+    """Новые конкурентные записи после разрешения — новый отказ той же подписи.
+
+    Маркер старше его записей и конфликт не закрывает: он открыт на всех трёх.
+    """
+    u = _cancelled_against_blocked(tmp_path)
+    a, b, c = u.reps
+    _resolve_on(b, "ours")  # cancelled
+    _settle_fixed(u, b, a, c)
+    assert set().union(*(_signatures(rep) for rep in u.reps)) == set()
+
+    time.sleep(TICK)
+    _write_status(a, TASKS[0], "todo")  # cancelled → todo
+    time.sleep(TICK)
+    _write_status(c, TASKS[0], "done")  # cancelled → done поверх todo — отказ
+    _settle_fixed(u, a, c, b)
+
+    sigs = [_signatures(rep) for rep in u.reps]
+    assert sigs[0] == sigs[1] == sigs[2] != set()
+    assert {_status(rep, TASKS[0]) for rep in u.reps} == {"todo"}
     _dispose(u)

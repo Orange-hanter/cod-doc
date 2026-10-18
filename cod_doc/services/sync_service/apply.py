@@ -64,6 +64,9 @@
 8. **Journal-таблицы** (``revision``, CLO-024) не сливаются: операцию
    применяет ``journal.apply_op`` — объединение по ``revision_id``, родитель —
    локальная голова сущности (Q-010).
+9. **Маркер разрешения** (вид ``sync_resolution``, CLO-045) — не строка
+   схемы: ``markers.close`` закрывает свои открытые конфликты той же подписи,
+   открытые раньше маркера.
 """
 
 from __future__ import annotations
@@ -86,7 +89,7 @@ from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
 from cod_doc.infra.models import Base, EntityAliasModel, SyncConflictModel, SyncOpModel
 from cod_doc.services import search_service
-from cod_doc.services.sync_service import _local, merge
+from cod_doc.services.sync_service import _local, markers, merge
 from cod_doc.services.sync_service._values import from_wire
 from cod_doc.services.sync_service.errors import ObjectMissingError
 
@@ -849,6 +852,9 @@ def _through_alias(session: Session, project: ProjectRef, info: cap.TableInfo, o
 def _apply_op(
     session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
 ) -> None:
+    if op.entity_kind == markers.MARKER_KIND:
+        _apply_marker(session, project, op, ctx)
+        return
     if op.entity_kind in reg.JOURNAL_IDS:
         # Журнал — объединение по глобальному id, без слияния (§3.7, CLO-024).
         from cod_doc.services.sync_service import journal
@@ -891,6 +897,23 @@ def _apply_op(
         setattr(obj, info.attr(column), value)
     finish_row(session, project, info, obj, op.entity_uid, op.fields)
     _note(touched, info.table, obj, deleted=False, base=op.base)
+
+
+def _apply_marker(session: Session, project: ProjectRef, op: Op, ctx: merge.Context) -> None:
+    """Маркер разрешения (CLO-045): закрыть свои конфликты той же подписи, открытые раньше.
+
+    Подпись — недоверенный ввод: форма (``markers.parse``) и гейт реестра —
+    сущность, которую эта реплика держит local, или придержанное поле подписи
+    — SYNC-102, как правка такой строки.
+    """
+    marker = markers.parse(op)
+    table, entity_uid, column, _kind = marker.signature
+    target = entity_by_uid(session, project, table, entity_uid)
+    if target is not None:
+        obj, info = target
+        written = {} if column is None else {column: None}
+        _require_shipped(session, info, obj, entity_uid, written)
+    markers.close(session, project.row_id, marker, author=ctx.author)
 
 
 def _insert(

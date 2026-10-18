@@ -588,7 +588,7 @@ CREATE TABLE scenario_link (
 | Structure platform | `code_structure_snapshot`, `code_entity`, `code_edge`, `code_boundary`, `code_contract`, `doc_code_claim`, `structure_*` | `0031_structure_platform` |
 | Дерево документации | `doc_node`, `doc_node_suggestion`, `document.node_id` | `0035_doc_nodes` |
 | Репликация (RFC 29, секция A) | `uid` в authored-таблицах, `rank`/`node_rank`, `replica`, `sync_op`, `changeset`, `sync_ref`, `sync_lease`, `entity_alias` — см. §3.18 | `0049_sync_identity`, `0050_sync_rank` |
-| Конфликты слияния (RFC 29, секция C) | `sync_conflict` (local) — см. §3.18 | `0051_sync_conflict` |
+| Конфликты слияния (RFC 29, секция C) | `sync_conflict` (local; + `opened_hlc`, 0052) — см. §3.18 | `0051_sync_conflict`, `0052_sync_conflict_opened_hlc` |
 
 Таблицы `agent_definition` и `actor` из capability-доков в схеме **нет** — это
 целевые спеки (ARCHITECTURE §12.2, agents-and-skills §1.1).
@@ -761,7 +761,8 @@ CREATE TABLE sync_conflict (
   ours         TEXT, theirs TEXT, base TEXT,  -- канонический JSON значения (§10.4)
   theirs_op    TEXT NOT NULL,                 -- op_id чужой операции
   status       TEXT NOT NULL CHECK (status IN ('open','resolved')),
-  resolved_by  TEXT, resolved_at DATETIME
+  resolved_by  TEXT, resolved_at DATETIME,
+  opened_hlc   TEXT                           -- 0052 (CLO-045): старший штамп записей конфликта
 );
 CREATE INDEX ix_sync_conflict_status ON sync_conflict(project_id, status);
 ```
@@ -810,8 +811,13 @@ CREATE INDEX ix_sync_conflict_status ON sync_conflict(project_id, status);
   ревизия, событие `sync.conflict_resolved`; если сущность уже снёс более
   поздний changeset — только событие и отметка. Чужое удаление само закрывает
   конфликты полей и склейки на снесённых строках (`resolved_by =
-  'sync:deleted'`). Разрешение на одной реплике конфликт на другой не
-  закрывает.
+  'sync:deleted'`). Конфликт цепочки статуса (`status`, `double_checkout`,
+  CLO-044) открывает каждая реплика, проигравшая цепочку с отказом, — один на
+  подпись; цепочка без отказов закрывает его сама (`sync:chain`). Разрешение
+  на одной реплике пишет маркер — операцию `sync_op` вида `sync_resolution` с
+  подписью конфликта (CLO-045); получатель закрывает свои конфликты той же
+  подписи с `opened_hlc` меньше штампа маркера (`resolved_by =
+  'sync:remote:<uid маркера>'`).
 - **`scenario.group_key` на restricted-документе** придержан вместе с
   `doc_key`/`document_id` (fail-closed: по умолчанию это basename `doc_key`).
   Приёмник ставит в NOT NULL-колонку заглушку `restricted`

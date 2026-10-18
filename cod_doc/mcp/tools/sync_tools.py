@@ -163,7 +163,9 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             Конфликт после разрешения (поля ``sync_conflicts``) плюс
-            ``revision_id`` ревизии сущности (``null`` у таблиц без ревизий).
+            ``revision_id`` ревизии сущности (``null`` у таблиц без ревизий) и
+            ``marker`` — uid маркера разрешения: уедет следующим push и закроет
+            конфликт той же подписи на других репликах (``null`` — подпись local).
         """
         with _as_value_error():
             sf, _entry = session_factory(project)

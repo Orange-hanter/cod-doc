@@ -20,7 +20,10 @@ changeset'а: в БД остаётся «наше», «их» лежит в ко
 3. событие ``sync.conflict_resolved`` (§10.11): ``scope_kind`` — таблица
    сущности, ``payload = {conflict_uid, kind, take}``; свой текст в событие
    не кладётся, ``take = "custom"``;
-4. отметка ``status = resolved``, ``resolved_by``, ``resolved_at``.
+4. отметка ``status = resolved``, ``resolved_by``, ``resolved_at``;
+5. маркер разрешения (``markers.record``, CLO-045) — операция журнала с
+   подписью конфликта: у реплик, где открыт конфликт той же подписи, он
+   закрывается при pull (``resolved_by = sync:remote:<uid маркера>``).
 
 **Коды** (§10.10). ``SYNC-302`` — конфликта нет в проекте или он уже
 разрешён; ``SYNC-301`` — ``take`` не подходит к виду: свой текст — только у
@@ -58,10 +61,10 @@ from sqlalchemy import inspect, select
 from cod_doc.domain.entities import EntityKind
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
-from cod_doc.infra.models import ProjectModel, SyncConflictModel
+from cod_doc.infra.models import ProjectModel, SyncConflictModel, SyncOpModel
 from cod_doc.infra.models.sync import SYNC_CONFLICT_KINDS
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _conflict_rows, _local, apply, tombstone
+from cod_doc.services.sync_service import _conflict_rows, _local, apply, markers, tombstone
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
 from cod_doc.services.sync_service.errors import (
@@ -138,15 +141,36 @@ def _conflict_uid(spec: ConflictSpec) -> str:
     return str(uuid.uuid7())
 
 
-def open_conflict(session: Session, project_id: int, spec: ConflictSpec, *, author: str) -> str:
-    """Записать открытый конфликт и событие ``sync.conflict_opened``; вернуть uid."""
+def _opened_hlc(session: Session, spec: ConflictSpec) -> str | None:
+    """Старший штамп записей конфликта; без него у спеки — штамп чужой операции."""
+    if spec.hlc is not None:
+        return spec.hlc
+    found = session.scalars(
+        select(SyncOpModel.hlc).where(SyncOpModel.op_id == spec.theirs_op)
+    ).first()
+    return None if found is None else str(found)
+
+
+def open_conflict(
+    session: Session, project_id: int, spec: ConflictSpec, *, author: str
+) -> str | None:
+    """Записать открытый конфликт и событие ``sync.conflict_opened``; вернуть uid.
+
+    ``None`` — подпись уже решена маркером разрешения новее записей конфликта
+    (CLO-045): решение другой реплики пришло раньше, чем эта реплика сама
+    свела те же записи.
+    """
+    signature = (spec.entity_kind, spec.entity_uid, spec.field, spec.kind)
+    opened = _opened_hlc(session, spec)
+    if markers.covered(session, project_id, signature, opened):
+        return None
     if spec.kind in CHAIN_KINDS:
         # Конфликт цепочки статуса — один на подпись: проигрывание повторяется
         # при каждой чужой записи поля и описывает последний отказ (CLO-044).
-        signature = (spec.entity_kind, spec.entity_uid, spec.field, spec.kind)
         for row in _conflict_rows.open_rows(session, project_id, signature):
             row.ours, row.theirs = _encode(spec.ours), _encode(spec.theirs)
             row.base, row.theirs_op = _encode(spec.base), spec.theirs_op
+            row.opened_hlc = max(filter(None, (row.opened_hlc, opened)), default=None)
             session.flush()
             return row.uid
     uid = _conflict_uid(spec)
@@ -165,6 +189,7 @@ def open_conflict(session: Session, project_id: int, spec: ConflictSpec, *, auth
             base=_encode(spec.base),
             theirs_op=spec.theirs_op,
             status=OPEN,
+            opened_hlc=opened,
         )
     )
     session.flush()
@@ -368,6 +393,40 @@ def _resolve_key_merge(
     return entity_id, diff
 
 
+def _journal_knows(session: Session, project_id: int, table: str, uid: str) -> bool:
+    found = session.scalars(
+        select(SyncOpModel.op_id).where(
+            SyncOpModel.project_id == project_id,
+            SyncOpModel.entity_kind == table,
+            SyncOpModel.entity_uid == uid,
+        )
+    ).first()
+    return found is not None
+
+
+def _share(
+    session: Session, project: _local.ProjectRef, row: SyncConflictModel, author: str
+) -> str | None:
+    """Маркер разрешения в хвост (CLO-045); ``None`` — подпись выпускать нельзя.
+
+    Маркер несёт только подпись, но и её не выпускает реплика, у которой
+    сущность local (restricted и т. п.) или поле придержано; удалённую
+    сущность — только если её uid уже ходил в журнале.
+    """
+    target = apply.entity_by_uid(session, project, row.entity_kind, row.entity_uid)
+    if target is not None:
+        obj, info = target
+        try:
+            allowed = cap.shipped_fields(session, row.entity_kind, apply._row_of(info, obj))
+        except cap.SyncCaptureError:
+            return None
+        if allowed is None or (row.field is not None and row.field not in allowed):
+            return None
+    elif not _journal_knows(session, project.row_id, row.entity_kind, row.entity_uid):
+        return None
+    return markers.record(session, project.row_id, _conflict_rows.signature_of(row), author=author)
+
+
 def resolve_conflict(
     session: Session,
     project_id: int,
@@ -379,8 +438,11 @@ def resolve_conflict(
 ) -> dict[str, object]:
     """Разрешить открытый конфликт: значение, операция, ревизия, событие — одна транзакция.
 
-    Возвращает конфликт после разрешения и ``revision_id`` записанной ревизии
-    (``None`` у таблиц без ``EntityKind``) — ответ ``sync_resolve`` (§10.7).
+    Возвращает конфликт после разрешения, ``revision_id`` записанной ревизии
+    (``None`` у таблиц без ``EntityKind``) и ``marker`` — uid маркера
+    разрешения, который уедет следующим push'ем и закроет конфликт той же
+    подписи на других репликах (CLO-045; ``None`` — подпись local) — ответ
+    ``sync_resolve`` (§10.7).
     """
     row = _open_row(session, project_id, conflict_uid)
     value, label = _chosen(row, take)
@@ -448,7 +510,8 @@ def resolve_conflict(
     row.resolved_by = author
     row.resolved_at = datetime.now(UTC)
     session.flush()
-    return {**_as_dict(row), "revision_id": revision_id}
+    marker = _share(session, project, row, author)
+    return {**_as_dict(row), "revision_id": revision_id, "marker": marker}
 
 
 def _jsonable(value: object) -> object:

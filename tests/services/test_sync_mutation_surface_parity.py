@@ -17,7 +17,9 @@ RFC 29 §3.9, §10.6: гейты паритета расширяются на ``
 ``remotes.add``/``remove`` пишут ``config.yaml``, а не БД, и выставлены в CLI
 — в MCP их нет намеренно (§10.7). ``resolve_conflict`` выставлен как
 ``sync resolve`` в CLI и ``sync_resolve`` в MCP (CLO-026); ``open_conflict``
-— внутренний: конфликт открывает слияние внутри pull.
+— внутренний: конфликт открывает слияние внутри pull. ``close`` — тоже
+внутренний: автозакрытие конфликтов цепочкой статуса (CLO-044) и маркером
+разрешения с другой реплики (CLO-045) идёт внутри pull.
 """
 
 from __future__ import annotations
@@ -38,7 +40,15 @@ from ._surface_parity import (
 SPEC = ServiceSpec(
     name="sync_service",
     known_mutations=frozenset(
-        {"push", "pull", "open_conflict", "resolve_conflict", "resolve_key", "apply_changeset"}
+        {
+            "push",
+            "pull",
+            "open_conflict",
+            "resolve_conflict",
+            "resolve_key",
+            "apply_changeset",
+            "close",
+        }
     ),
     known_reads=frozenset(
         {
@@ -81,6 +91,12 @@ SPEC = ServiceSpec(
             "(take=deleted, CLO-027) пишется в его транзакции, когда удаление сносит "
             "строку с открытым конфликтом"
         ),
+        "close": (
+            "автозакрытие конфликтов без записи в сущность (_conflict_rows.close, "
+            "markers.close): цепочка статуса без отказов (CLO-044) и маркер разрешения "
+            "другой реплики (CLO-045) внутри pull; событие sync.conflict_resolved "
+            "пишется в транзакции changeset'а"
+        ),
     },
 )
 
@@ -114,6 +130,7 @@ def test_discovered_mutations_exact() -> None:
         "resolve_conflict",
         "resolve_key",
         "apply_changeset",
+        "close",
     }
 
 
