@@ -440,6 +440,8 @@ def _require_shipped(
     uid: str,
     written: Mapping[str, object] | None,
     incoming: Mapping[str, object] | None = None,
+    *,
+    lowering: bool = False,
 ) -> None:
     """Remote не пишет строку, которую реестр этой реплики держит local.
 
@@ -456,9 +458,9 @@ def _require_shipped(
         # поверх неё (Q-017, CLO-025) — гейт по строке уже с решением.
         decision = reg.decision_columns(info.table)
         row |= {c: v for c, v in incoming.items() if c in decision}
-        if _lowers_shared_document(session, info, row, incoming):
+        if lowering:
             # Понижение отозванного документа (CLO-046): гейт — по строке уже с
-            # новой меткой. Только документа, который бывал в changeset'е.
+            # новой меткой; право на него проверил ``_lowers_shared_document``.
             row[reg.WITHDRAW_COLUMN] = incoming[reg.WITHDRAW_COLUMN]
     try:
         allowed = cap.shipped_fields(session, info.table, row)
@@ -475,21 +477,41 @@ def _require_shipped(
             raise ObjectMissingError(msg)
 
 
-def _lowers_shared_document(
-    session: Session, info: cap.TableInfo, row: Mapping[str, object], incoming: Mapping[str, object]
-) -> bool:
-    """Чужая операция снимает restricted с документа, который уже бывал в changeset'е.
+#: Ключ ``session.info``: отзывы, применённые текущим changeset'ом (uid → реплика).
+_APPLIED_WITHDRAWALS: Final = "cod_doc.sync_withdraw.applied"
 
-    Свой никогда не уезжавший restricted-документ remote не откроет: его uid в
-    журнале операций реплики нет (решение 20 реестра).
+
+def _lowers_shared_document(
+    session: Session, info: cap.TableInfo, row: Mapping[str, object], op: Op
+) -> bool:
+    """Чужая операция законно снимает restricted с отозванного документа (решение 20).
+
+    Три условия, все обязательны. Документ restricted здесь по **чужому**
+    отзыву: свой отзыв (реплика повысила документ сама) и никогда не
+    уезжавший restricted-документ remote не открывает. Понижение пришло от той
+    реплики, чей отзыв в силе (``sync_withdraw.restricted_by``): получатель того
+    же отзыва держит пустую оболочку, и его «понижение» разослало бы пустоту.
+    Форма — первый upsert (Q-015): ``base`` пуст, поля — ровно уезжающие колонки
+    документа. Не прошедшее понижение поглощается как любая операция над
+    отозванным документом.
     """
     column = reg.WITHDRAW_COLUMN
-    if info.table != "document" or column not in incoming:
+    if info.table != "document" or column not in op.fields:
         return False
-    if not reg.is_cleared(incoming[column]) or reg.is_cleared(row.get(column)):
+    if not reg.is_cleared(op.fields[column]) or reg.is_cleared(row.get(column)):
+        return False
+    if op.base or set(op.fields) != info.shipped:
         return False
     project_id = row.get(_PROJECT_ID)
-    return isinstance(project_id, int) and cap.document_shipped(session, project_id, row.get(_UID))
+    if not isinstance(project_id, int):
+        return False
+    applied: dict[object, str] = session.info.get(_APPLIED_WITHDRAWALS, {})
+    who = applied.get(row.get(_UID)) or cap_withdraw.restricted_by(
+        session, project_id, row.get(_UID)
+    )
+    if who is None or who == self_replica(session.connection(), project_id):
+        return False
+    return Hlc.parse(op.hlc).replica_uid == who
 
 
 def _drop_withdrawn(
@@ -502,7 +524,7 @@ def _drop_withdrawn(
     колонки, придержанные только из-за него; ничего не осталось — тоже ``None``.
     Понижение отозванного документа проходит как есть.
     """
-    if _lowers_shared_document(session, info, row, op.fields):
+    if _lowers_shared_document(session, info, row, op):
         return op
     held, extra = cap_withdraw.withdrawn_hold(session, project.row_id, info.table, row)
     if held:
@@ -517,19 +539,62 @@ def _drop_withdrawn(
 
 
 def _finish_withdraw(
-    session: Session, project: ProjectRef, info: cap.TableInfo, obj: object, op: Op
+    session: Session,
+    project: ProjectRef,
+    info: cap.TableInfo,
+    obj: object,
+    op: Op,
+    ctx: merge.Context,
 ) -> list[int]:
     """Итоговая строка отзыва: свой проект, и строка перестала уезжать только меткой.
 
     Обычный финальный гейт (``finish_row``) отверг бы её — строка теперь local.
     Отзыв пишет одну колонку, и до записи строка уезжала (гейт до записи), так
     что remote этим путём ничего, кроме метки, в local-строку не кладёт. Тело
-    документа затирается, хвост реплики по нему вычищается (решение 20).
+    документа затирается, хвост реплики по нему вычищается (решение 20); свои
+    неотправленные правки и тексты до затирания ложатся в local-событие
+    ``sync.withdraw_quarantined`` — событие не уезжает (решение 19 реестра), и
+    из его ``payload`` работу можно вернуть.
     """
     session.flush()
     row = _row_of(info, obj)
     _require_own(session, project, info.table, row, f"{info.table} {op.entity_uid}")
-    return cap_withdraw.withdraw_locally(session, project.row_id, row)
+    result = cap_withdraw.withdraw_locally(session, project.row_id, row)
+    # Журнал операций changeset'а пишется после применения: понижение из того же
+    # changeset'а (повысили и понизили до push) ищет отзыв здесь.
+    session.info.setdefault(_APPLIED_WITHDRAWALS, {})[row.get(_UID)] = Hlc.parse(op.hlc).replica_uid
+    if result.quarantine is not None:
+        from cod_doc.services import activity_service
+
+        activity_service.emit_for_write(
+            session,
+            project.row_id,
+            "sync.withdraw_quarantined",
+            ctx.author,
+            scope_kind="doc",
+            scope_id=str(row.get("doc_key")),
+            payload=result.quarantine,
+            summary=(
+                f"документ {row.get('doc_key')} отозван: свои неотправленные правки "
+                "сохранены в payload события"
+            ),
+        )
+    return result.sections
+
+
+def _require_withdraw_shared(
+    session: Session, project: ProjectRef, info: cap.TableInfo, obj: object, op: Op
+) -> None:
+    """Отзыв — только документа, который у реплики уже бывал в changeset'е.
+
+    Документ, которого журнал реплики не знает, другая реплика не видела: его
+    «отзыв» — подделка, и затирать по нему тело нельзя (SYNC-102).
+    """
+    if not reg.is_withdraw(info.table, op.fields):
+        return
+    if not cap.document_shipped(session, project.row_id, getattr(obj, info.attr(_UID))):
+        msg = f"{info.table} {op.entity_uid}: отзыв документа, который здесь не бывал в changeset'е"
+        raise ObjectMissingError(msg)
 
 
 # --- каскад удаления ----------------------------------------------------------------
@@ -945,11 +1010,13 @@ def _apply_op(
     _require_known_columns(info, op.fields)
     obj = _find(session, project, mapper, info, op.entity_uid, op.fields)
     if obj is not None:
+        _require_withdraw_shared(session, project, info, obj, op)
+        lowering = _lowers_shared_document(session, info, _row_of(info, obj), op)
         kept = _drop_withdrawn(session, project, info, _row_of(info, obj), op)
         if kept is None:
             return
         op = kept
-        _require_shipped(session, info, obj, op.entity_uid, None, op.fields)
+        _require_shipped(session, info, obj, op.entity_uid, None, op.fields, lowering=lowering)
     if not merge.allow(session, ctx, op):
         return
     if obj is None and op.base and _absorbed(session, ctx, op):
@@ -972,7 +1039,7 @@ def _apply_op(
         if final is not None:
             _insert(session, project, mapper, info, final[0], final[1], touched, ctx)
         return
-    _write_existing(session, project, info, obj, op, values, touched)
+    _write_existing(session, project, info, obj, op, values, touched, ctx)
 
 
 def _final_row_kept(
@@ -1006,6 +1073,7 @@ def _write_existing(
     op: Op,
     values: dict[str, object],
     touched: Touched,
+    ctx: merge.Context,
 ) -> None:
     kept = _final_row_kept(session, project, info, obj, op, values)
     if kept is None:
@@ -1014,7 +1082,7 @@ def _write_existing(
     for column, value in values.items():
         setattr(obj, info.attr(column), value)
     if reg.is_withdraw(info.table, op.fields):
-        touched.section_ids.update(_finish_withdraw(session, project, info, obj, op))
+        touched.section_ids.update(_finish_withdraw(session, project, info, obj, op, ctx))
     else:
         finish_row(session, project, info, obj, op.entity_uid, op.fields)
     _note(touched, info.table, obj, deleted=False, base=op.base)
@@ -1259,6 +1327,8 @@ def apply_changeset(
         _rebuild_links(session, touched.section_ids)
         _rebuild_fts(session, project, touched)
     _record_ops(session, project, sha, cs)
+    # Отзывы этого changeset'а теперь в журнале — ``restricted_by`` видит их сам.
+    session.info.pop(_APPLIED_WITHDRAWALS, None)
     _local.record_changeset(session, project, sha, cs)
     if cs.ops:
         clock_for(session, self_replica(session, project.row_id)).observe(Hlc.parse(cs.hlc_max))

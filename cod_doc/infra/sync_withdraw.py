@@ -28,7 +28,8 @@ merge против затёртого. У ссылок (``scenario``, ``plan``�
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Final, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from sqlalchemy import and_, delete, or_, select, update
 from ulid import ULID
@@ -91,21 +92,34 @@ def _body_rows(session: Session, doc_row_id: object) -> dict[str, list[Row]]:
 # --- хвост ---------------------------------------------------------------------------
 
 
-def purge_tail(session: Session, project_id: int, doc: Mapping[str, object]) -> int:
+def purge_tail(session: Session, project_id: int, doc: Mapping[str, object]) -> list[Row]:
     """Убрать из хвоста своей реплики операции отозванного документа (решение 20).
 
-    ``doc`` — строка документа (``row_id``, ``uid``). Возвращает число удалённых
-    операций. Зовут захват (владелец, перед записью отзыва) и применение чужого
-    отзыва (получатель).
+    ``doc`` — строка документа (``row_id``, ``uid``). Возвращает удалённые
+    операции (``entity_kind``, ``entity_uid``, ``kind``, ``fields``, ``base``,
+    ``hlc``) — получатель кладёт их в карантин. Зовут захват (владелец, перед
+    записью отзыва) и применение чужого отзыва (получатель).
+
+    Тело документа — неподвижная точка: живые строки тела плюс каждая
+    сущность, которую хоть одна операция хвоста (``fields`` или ``base``,
+    любого вида) связывает с документом через ``DOCUMENT_BODY``. Один проход
+    по порядку HLC пропустил бы правку секции, стоящую раньше операции,
+    называющей документ (удаление с ``document_id`` в ``base``).
     """
     doc_uid = doc.get(_UID)
     if not isinstance(doc_uid, str):
-        return 0
+        return []
     conn = session.connection()
     ops = _ops_table()
     tail = conn.execute(
         select(
-            ops.c.op_id, ops.c.entity_kind, ops.c.entity_uid, ops.c.kind, ops.c.fields, ops.c.base
+            ops.c.op_id,
+            ops.c.hlc,
+            ops.c.entity_kind,
+            ops.c.entity_uid,
+            ops.c.kind,
+            ops.c.fields,
+            ops.c.base,
         )
         .where(
             ops.c.project_id == project_id,
@@ -115,28 +129,53 @@ def purge_tail(session: Session, project_id: int, doc: Mapping[str, object]) -> 
         .order_by(ops.c.hlc, ops.c.op_id)
     ).all()
     if not tail:
-        return 0
-    subtree = {doc_uid}
-    for rows in _body_rows(session, doc.get(_ROW_ID)).values():
-        subtree.update(str(r[_UID]) for r in rows if isinstance(r.get(_UID), str))
+        return []
+    subtree = _subtree(session, doc, tail)
     drop: set[str] = set()
     for op in tail:
-        fields, base = _loads(op.fields), _loads(op.base)
-        column = reg.DOCUMENT_BODY.get(op.entity_kind)
-        if (op.entity_kind == _DOCUMENT and op.entity_uid == doc_uid) or (
-            column is not None
-            and (op.entity_uid in subtree or doc_uid in (fields.get(column), base.get(column)))
+        if (op.entity_kind in (_DOCUMENT, *reg.DOCUMENT_BODY) and op.entity_uid in subtree) or (
+            op.entity_kind == _REVISION and _loads(op.fields).get("entity_id") in subtree
         ):
-            drop.add(op.op_id)
-            subtree.add(op.entity_uid)
-    for op in tail:
-        if op.entity_kind == _REVISION and _loads(op.fields).get("entity_id") in subtree:
             drop.add(op.op_id)
     drop |= _regate_tail(session, project_id, [op for op in tail if op.op_id not in drop])
     ids = sorted(drop)
     for i in range(0, len(ids), _CHUNK):
         conn.execute(delete(ops).where(ops.c.op_id.in_(ids[i : i + _CHUNK])))
-    return len(ids)
+    return [
+        {
+            "hlc": op.hlc,
+            "entity_kind": op.entity_kind,
+            "entity_uid": op.entity_uid,
+            "kind": op.kind,
+            "fields": _loads(op.fields),
+            "base": _loads(op.base),
+        }
+        for op in tail
+        if op.op_id in drop
+    ]
+
+
+def _subtree(session: Session, doc: Mapping[str, object], tail: Iterable[Any]) -> set[str]:
+    """uid документа и его тела — неподвижная точка по живым строкам и хвосту."""
+    doc_uid = str(doc.get(_UID))
+    subtree = {doc_uid}
+    for rows in _body_rows(session, doc.get(_ROW_ID)).values():
+        subtree.update(str(r[_UID]) for r in rows if isinstance(r.get(_UID), str))
+    links: dict[str, set[object]] = {}
+    for op in tail:
+        column = reg.DOCUMENT_BODY.get(op.entity_kind)
+        if column is None:
+            continue
+        owners = links.setdefault(op.entity_uid, set())
+        owners.update((_loads(op.fields).get(column), _loads(op.base).get(column)))
+    changed = True
+    while changed:
+        changed = False
+        for uid, owners in links.items():
+            if uid not in subtree and owners & subtree:
+                subtree.add(uid)
+                changed = True
+    return subtree
 
 
 def _regate_tail(session: Session, project_id: int, tail: Iterable[object]) -> set[str]:
@@ -183,7 +222,17 @@ def _regate_tail(session: Session, project_id: int, tail: Iterable[object]) -> s
 # --- получатель ------------------------------------------------------------------------
 
 
-def withdraw_locally(session: Session, project_id: int, doc: Mapping[str, object]) -> list[int]:
+@dataclass(frozen=True, slots=True)
+class Withdrawn:
+    """Итог применения чужого отзыва у получателя."""
+
+    #: ``row_id`` оставшихся секций — по ним пересобирается derived.
+    sections: list[int]
+    #: Карантин своих неотправленных правок; ``None`` — их не было.
+    quarantine: dict[str, object] | None
+
+
+def withdraw_locally(session: Session, project_id: int, doc: Mapping[str, object]) -> Withdrawn:
     """Чужой отзыв применён: вычистить свой хвост, затереть текст тела.
 
     Строки тела остаются (решение 20 реестра): после отзыва они local и в
@@ -193,13 +242,18 @@ def withdraw_locally(session: Session, project_id: int, doc: Mapping[str, object
     Они удаляются — как и ревизии документа и тела, которых журнал не знает:
     иначе после понижения сущность снова уезжала бы, и такая ревизия вошла бы
     в дайджест только этой реплики. Запись — под ``suspended`` вызывающего,
-    операций не даёт. Возвращает ``row_id`` оставшихся секций — derived
-    (ссылки, поиск) пересобирается по ним.
+    операций не даёт.
+
+    Своя работа не пропадает молча: если хвост держал правки документа, они
+    и тексты затрагиваемых строк до затирания возвращаются в ``quarantine`` —
+    вызывающий пишет их local-записью (событие ``sync.withdraw_quarantined``).
     """
-    purge_tail(session, project_id, doc)
+    dropped = purge_tail(session, project_id, doc)
     _drop_unshipped_revisions(session, project_id, doc)
     lookup = cap._Lookup(session)
     sections: list[int] = []
+    edited = {str(op["entity_uid"]) for op in dropped}
+    texts: list[dict[str, object]] = []
     for table, column in reg.DOCUMENT_BODY.items():
         blanks = {c: v for (t, c), v in reg.WITHDRAW_BLANK.items() if t == table}
         mapper = cap._mapper_for(table)
@@ -208,13 +262,17 @@ def withdraw_locally(session: Session, project_id: int, doc: Mapping[str, object
         model = mapper.class_
         stmt = select(model).where(getattr(model, info.attr(column)) == doc.get(_ROW_ID))
         objs = list(session.scalars(stmt))
-        uids = {
-            id(obj): cap._entity_uid(info, {c: getattr(obj, a) for c, a in info.columns}, lookup)
-            for obj in objs
-        }
+        rows = {id(obj): {c: getattr(obj, a) for c, a in info.columns} for obj in objs}
+        uids = {key: cap._entity_uid(info, row, lookup) for key, row in rows.items()}
         known = _known_uids(session, project_id, table, [u for u in uids.values() if u])
         for obj in objs:
-            if uids[id(obj)] not in known:
+            uid = uids[id(obj)]
+            if uid in edited or uid not in known:
+                texts.append(
+                    {"table": table, "uid": uid}
+                    | {c: rows[id(obj)][c] for c in _QUARANTINE_COLUMNS.get(table, ())}
+                )
+            if uid not in known:
                 session.delete(obj)
                 continue
             for blank_column, value in blanks.items():
@@ -222,7 +280,22 @@ def withdraw_locally(session: Session, project_id: int, doc: Mapping[str, object
             if table == _SECTION:
                 sections.append(int(getattr(obj, info.attr(_ROW_ID))))
         session.flush()
-    return sections
+    quarantine: dict[str, object] | None = None
+    if dropped or texts:
+        quarantine = {
+            "doc_key": doc.get("doc_key"),
+            "doc_uid": doc.get(_UID),
+            "ops": dropped,
+            "rows": texts,
+        }
+    return Withdrawn(sections, quarantine)
+
+
+#: Что из строки тела сохраняет карантин: текст и то, по чему его найти.
+_QUARANTINE_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
+    _SECTION: ("anchor", "heading", "body"),
+    "doc_comment": ("anchor", "quote", "body", "author"),
+}
 
 
 def _drop_unshipped_revisions(session: Session, project_id: int, doc: Mapping[str, object]) -> None:
@@ -609,30 +682,51 @@ def ships_but_for_withdrawal(
     return cap._ships(table, relaxed) and not reg.withheld_columns(table, relaxed)
 
 
-def withdrawn_by_peer(session: Session, project_id: int, doc_uid: object) -> bool:
-    """Последняя запись метки документа в журнале — чужой отзыв.
+def restricted_by(session: Session, project_id: int, doc_uid: object) -> str | None:
+    """uid реплики, чей отзыв держит документ restricted здесь; ``None`` — отзыва нет.
 
-    Тогда у этой реплики от документа осталась оболочка с затёртым телом, и
-    понижение отсюда разослало бы пустые секции поверх настоящего текста
-    владельца. Понижать документ может реплика, которая держит его текст.
+    Свой отзыв — последняя своя запись метки (решение 20): реплика сама
+    повысила документ и только она вправе его понизить; чужой отзыв, пришедший
+    позже, у неё поглощается и этого не меняет. Иначе — первый чужой отзыв
+    после последней записи уезжающей метки (кто бы её ни писал): он и перевёл
+    документ в restricted у этой реплики.
     """
     if not isinstance(doc_uid, str):
-        return False
+        return None
     ops = _ops_table()
     conn = session.connection()
-    rows = conn.execute(
-        select(ops.c.replica_uid, ops.c.fields)
-        .where(
-            ops.c.project_id == project_id,
-            ops.c.entity_kind == _DOCUMENT,
-            ops.c.entity_uid == doc_uid,
-            ops.c.kind != _DELETE,
+    me = self_replica(conn, project_id)
+    labels = [
+        (replica_uid, fields)
+        for replica_uid, raw in conn.execute(
+            select(ops.c.replica_uid, ops.c.fields)
+            .where(
+                ops.c.project_id == project_id,
+                ops.c.entity_kind == _DOCUMENT,
+                ops.c.entity_uid == doc_uid,
+                ops.c.kind != _DELETE,
+            )
+            .order_by(ops.c.hlc, ops.c.op_id)
         )
-        .order_by(ops.c.hlc.desc(), ops.c.op_id.desc())
-    )
-    for replica_uid, raw in rows:
-        fields = _loads(raw)
-        if reg.WITHDRAW_COLUMN not in fields:
-            continue
-        return reg.is_withdraw(_DOCUMENT, fields) and replica_uid != self_replica(conn, project_id)
-    return False
+        if reg.WITHDRAW_COLUMN in (fields := _loads(raw))
+    ]
+    own = [fields for replica_uid, fields in labels if replica_uid == me]
+    if own and reg.is_withdraw(_DOCUMENT, own[-1]):
+        return me
+    cleared = [i for i, (_, f) in enumerate(labels) if reg.is_cleared(f[reg.WITHDRAW_COLUMN])]
+    start = cleared[-1] + 1 if cleared else 0
+    for replica_uid, fields in labels[start:]:
+        if replica_uid != me and reg.is_withdraw(_DOCUMENT, fields):
+            return str(replica_uid)
+    return None
+
+
+def withdrawn_by_peer(session: Session, project_id: int, doc_uid: object) -> bool:
+    """Документ restricted здесь по чужому отзыву (``restricted_by``).
+
+    Тогда у этой реплики от документа осталась оболочка с затёртым телом, и
+    понижение отсюда разослало бы пустые секции поверх настоящего текста.
+    Понижать документ может реплика, которая отозвала его сама.
+    """
+    who = restricted_by(session, project_id, doc_uid)
+    return who is not None and who != self_replica(session.connection(), project_id)

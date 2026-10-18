@@ -32,8 +32,16 @@ from cod_doc.domain.entities import (
     ScenarioKind,
     Sensitivity,
 )
+from cod_doc.infra import sync_capture as cap
 from cod_doc.infra.db import transactional
-from cod_doc.infra.models import DocumentModel, ScenarioModel, SectionModel, SyncOpModel
+from cod_doc.infra.hlc import self_replica
+from cod_doc.infra.models import (
+    ActivityEventModel,
+    DocumentModel,
+    ScenarioModel,
+    SectionModel,
+    SyncOpModel,
+)
 from cod_doc.services import doc_service, scenario_service
 from cod_doc.services.sync_service import digest, pull, push
 from cod_doc.services.validation import ValidationError
@@ -374,6 +382,20 @@ def test_lowering_reships_the_document_and_converges(trio: tuple) -> None:
     _verified(a, b, c, store=store)
 
 
+def test_raise_and_lower_in_one_changeset_converge(trio: tuple) -> None:
+    """Отзыв и понижение в одном changeset'е: понижение находит отзыв того же changeset'а."""
+    a, b, c, store = trio
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _set_sensitivity(a, Sensitivity.INTERNAL)
+
+    _sync(a, b, c, store)
+
+    for rep in (b, c):
+        assert _sensitivity(rep) == "internal", rep.name
+        assert _sections(rep) == SECTIONS, rep.name
+    _verified(a, b, c, store=store)
+
+
 def test_never_shipped_document_raised_to_restricted_writes_no_withdrawal(
     tmp_path: Path,
 ) -> None:
@@ -448,6 +470,180 @@ def test_remote_cannot_lower_a_document_restricted_only_here(trio: tuple) -> Non
     )
 
     _refused(b, store, "local на этой реплике")
+
+
+# --- security review: понижение, отзыв, хвост --------------------------------------
+
+
+def _doc_fields(rep: r.Replica) -> dict[str, Any]:
+    """Поля документа формой первого upsert'а (Q-015): все уезжающие колонки."""
+    with transactional(rep.sf, commit=False) as s:
+        row = (
+            s.execute(
+                select(DocumentModel.__table__).where(
+                    DocumentModel.project_id == rep.project_id, DocumentModel.doc_key == DOC
+                )
+            )
+            .mappings()
+            .one()
+        )
+        fields = cap.shipped_fields(s, "document", {**row, "sensitivity": "internal"})
+    assert fields is not None
+    return {
+        k: (v.isoformat().replace("+00:00", "Z") if hasattr(v, "isoformat") else v)
+        for k, v in fields.items()
+    }
+
+
+def _replica_uid(rep: r.Replica) -> str:
+    with transactional(rep.sf) as s:
+        return self_replica(s, rep.project_id)
+
+
+def _lowering(rep_from: r.Replica, doc_uid: str) -> dict[str, Any]:
+    fields = _doc_fields(rep_from)
+    fields["sensitivity"] = "internal"
+    return {"entity_kind": "document", "entity_uid": doc_uid, "fields": fields, "base": {}}
+
+
+def test_remote_lowering_does_not_open_a_document_restricted_here(trio: tuple) -> None:
+    """B сам повысил уехавший документ: чужое понижение его не открывает."""
+    a, b, _, store = trio
+    _set_sensitivity(b, Sensitivity.RESTRICTED)  # отзыв B в хвосте, не отправлен
+    doc_uid = _uid(b, DocumentModel, doc_key=DOC)
+    _forge(a, store, [_lowering(a, doc_uid)])
+
+    _pull(b, store)
+
+    assert _sensitivity(b) == "restricted"
+    assert _sections(b) == SECTIONS
+
+
+def test_lowering_is_accepted_only_from_the_replica_that_withdrew(trio: tuple) -> None:
+    a, b, c, store = trio
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _sync(a, b, c, store)
+    doc_uid = _uid(b, DocumentModel, doc_key=DOC)
+    _forge(a, store, [_lowering(a, doc_uid)], replica=_replica_uid(c))
+
+    _pull(b, store)
+
+    assert _sensitivity(b) == "restricted"
+
+
+def test_lowering_must_have_the_shape_of_a_first_upsert(trio: tuple) -> None:
+    a, b, c, store = trio
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _sync(a, b, c, store)
+    doc_uid = _uid(b, DocumentModel, doc_key=DOC)
+    _forge(
+        a,
+        store,
+        [
+            {
+                "entity_kind": "document",
+                "entity_uid": doc_uid,
+                "fields": {"sensitivity": "internal"},
+                "base": {"sensitivity": "restricted"},
+            }
+        ],
+    )
+
+    _pull(b, store)
+
+    assert _sensitivity(b) == "restricted"
+
+
+def test_peer_withdrawal_does_not_take_lowering_away_from_the_replica_that_restricted_first(
+    trio: tuple,
+) -> None:
+    a, b, _, store = trio
+    _set_sensitivity(a, Sensitivity.RESTRICTED)  # A первым, в хвосте
+    _set_sensitivity(b, Sensitivity.RESTRICTED)
+    _push(b, store)
+    _pull(a, store)  # отзыв B у A поглощается: документ и так restricted A
+
+    result = _set_sensitivity(a, Sensitivity.INTERNAL)
+
+    assert result.changes["sensitivity"]["to"] == "internal"
+    assert _sections(a) == SECTIONS
+
+
+def test_withdrawal_quarantines_unpushed_receiver_edits(trio: tuple) -> None:
+    a, b, _, store = trio
+    _patch(b, "intro", "черновик B")
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _push(a, store)
+
+    _pull(b, store)
+
+    with transactional(b.sf, commit=False) as s:
+        payloads = s.scalars(
+            select(ActivityEventModel.payload).where(
+                ActivityEventModel.kind == "sync.withdraw_quarantined"
+            )
+        ).all()
+    assert len(payloads) == 1
+    assert "черновик B" in json.dumps(payloads[0], ensure_ascii=False)
+
+
+def test_withdrawal_of_a_document_never_shared_here_is_refused(trio: tuple) -> None:
+    a, b, _, store = trio
+    hidden_uid = str(uuid.uuid7())
+    with Session(b.engine) as s:  # мимо захвата: документ B, которого журнал не знает
+        doc = doc_service.create(
+            s,
+            project_id=b.project_id,
+            doc_key="b-hidden",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="b-hidden",
+            author=r.AUTHOR,
+            path="docs/b-hidden.md",
+            sensitivity=Sensitivity.INTERNAL,
+            reindex=False,
+        )
+        s.get_one(DocumentModel, doc.row_id).uid = hidden_uid
+        s.commit()
+    _forge(
+        a,
+        store,
+        [
+            {
+                "entity_kind": "document",
+                "entity_uid": hidden_uid,
+                "fields": {"sensitivity": "restricted"},
+                "base": {"sensitivity": "internal"},
+            }
+        ],
+    )
+
+    _refused(b, store, "не бывал")
+
+
+def test_tail_purge_finds_body_ops_ordered_before_the_op_naming_the_document(
+    trio: tuple,
+) -> None:
+    """Правка секции в хвосте раньше её удаления: только удаление называет документ."""
+    a, b, c, store = trio
+    _patch(a, "tail", "утечка из хвоста")
+    with transactional(a.sf) as s:
+        doc_service.delete_section(
+            s,
+            project_id=a.project_id,
+            document_id=r.doc_id(a, DOC),
+            anchor="tail",
+            author=r.AUTHOR,
+            reindex=False,
+        )
+
+    _set_sensitivity(a, Sensitivity.RESTRICTED)
+    _sync(a, b, c, store)
+
+    with transactional(a.sf, commit=False) as s:
+        shipped = s.scalars(select(SyncOpModel.fields)).all()
+    assert not any("утечка из хвоста" in f for f in shipped)
+    assert "утечка из хвоста" not in _sections(b).values()
 
 
 # --- поверхности --------------------------------------------------------------------------
