@@ -13,7 +13,11 @@ PUT надгробия с ``If-Match`` (``DeleteObject`` условие в MinIO
 проигравший гонку получает ``412 PreconditionFailed`` (или ``409
 ConditionalRequestConflict``, если запись-соперник ещё идёт), и это ``None``,
 а не исключение. ``If-Match`` на отсутствующий ключ — ``404``: ref не равен
-``expected``, тоже ``None``. etag — ETag объекта как есть (в кавычках); для
+``expected``, тоже ``None``. Сервер обязан так и отвечать: замороженный
+bitnamilegacy/minio 2025.7.23 на такой PUT молча создаёт объект, и CAS от
+призрачного ``expected`` проходил (контракт
+``test_cas_rejects_expected_when_ref_absent`` ловит это на живом сервере;
+MinIO RELEASE.2025-09-07 и новее отвечают верно). etag — ETag объекта как есть (в кавычках); для
 PUT без multipart и без SSE-KMS это MD5 тела, и ABA (X → Y → X) CAS пропускает
 — так же, как ``FileRemote`` с sha256, и по той же причине это безопасно.
 

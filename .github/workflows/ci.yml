@@ -124,28 +124,17 @@ jobs:
   # один файл, а MinIO в трёх долях стартовал бы трижды ради одной.
   #
   # Образ: сборки MinIO community больше не публикуются (minio/minio снят с
-  # Docker Hub, quay.io закрыт, dl.min.io отвечает 410). bitnamilegacy/minio —
-  # замороженный образ Bitnami, сервер стартует без аргументов (у
-  # `services:` нет `command`), а `MINIO_DEFAULT_BUCKETS` создаёт бакет.
-  # Conditional writes на PUT в MinIO с 2024 года; тег запинен.
+  # Docker Hub, quay.io закрыт, dl.min.io отвечает 410). pgsty/minio —
+  # сопровождаемая сборка того же кода (github.com/pgsty/minio), запинена
+  # тегом и digest'ом. Замороженный bitnamilegacy/minio:2025.7.23 не подошёл:
+  # PUT с `If-Match` на отсутствующий ключ он молча создаёт объект — контракт
+  # `test_cas_rejects_expected_when_ref_absent[s3]` на нём падал.
+  # Сервер стартует шагом `docker run`, а не в `services:`: образу нужен
+  # аргумент `server /data`, а у `services:` нет `command`.
   # Обязательной проверкой джоба становится через агрегат `test` ниже.
   s3-remote:
     name: S3 remote (MinIO)
     runs-on: ubuntu-latest
-    services:
-      minio:
-        image: bitnamilegacy/minio:2025.7.23-debian-12-r5
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_DEFAULT_BUCKETS: cod-doc-ci
-        options: >-
-          --health-cmd "curl -fsS http://localhost:9000/minio/health/live"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -154,7 +143,26 @@ jobs:
         with:
           python-version: "3.14"
           activate-environment: true
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 127.0.0.1:9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            "pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372" \
+            server /data
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:9000/minio/health/live && exit 0
+            sleep 1
+          done
+          docker logs minio
+          exit 1
       - run: uv sync --frozen --extra dev
+      - name: Бакет для контракта
+        run: python -c "import boto3; boto3.client('s3').create_bucket(Bucket='cod-doc-ci')"
+        env:
+          AWS_ENDPOINT_URL: http://127.0.0.1:9000
+          AWS_ACCESS_KEY_ID: minioadmin
+          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_DEFAULT_REGION: us-east-1
       # Креды — тестовые креды контейнера, не секрет.
       - run: pytest tests/infra/remote/ -q --tb=short --timeout=120
         timeout-minutes: 10
@@ -163,7 +171,7 @@ jobs:
           # Строка `s3` не вправе молча пропуститься: опечатка в имени
           # переменной оставила бы джобу зелёной без единого запроса к MinIO.
           TEST_S3_REQUIRED: "1"
-          AWS_ENDPOINT_URL: http://localhost:9000
+          AWS_ENDPOINT_URL: http://127.0.0.1:9000
           AWS_ACCESS_KEY_ID: minioadmin
           AWS_SECRET_ACCESS_KEY: minioadmin
           AWS_DEFAULT_REGION: us-east-1
