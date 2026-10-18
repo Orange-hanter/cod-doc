@@ -120,6 +120,37 @@ def test_golden_sha() -> None:
     assert sha(_golden()) == GOLDEN_SHA
 
 
+def test_resolution_marker_rides_in_changeset_v1() -> None:
+    """CLO-045: маркер разрешения — операция v1 с зарезервированным видом сущности.
+
+    Формат не меняется: та же версия, тот же круг encode → decode, и имя вида
+    не занято таблицей схемы (иначе маркер спутался бы со строкой).
+    """
+    from cod_doc.infra import sync_capture as cap
+    from cod_doc.infra.models import Base
+    from cod_doc.services.sync_service import markers
+
+    marker = _op(
+        "01K7Z0000000000000000000C3",
+        1760000000003,
+        entity_kind=markers.MARKER_KIND,
+        entity_uid="0199f2b0-7c3a-7000-8000-0000000000cc",
+        fields={
+            "entity_kind": "task",
+            "entity_uid": "0199f2b0-7c3a-7000-8000-0000000000aa",
+            "field": "status",
+            "kind": "status",
+        },
+        base={},
+    )
+    cs = dataclasses.replace(_golden(), ops=(*_golden().ops, marker), hlc_max=marker.hlc)
+    assert cs.v == 1
+    assert decode(encode(cs), sha(cs)) == cs
+    assert encode(cs)[:4] == b"CDC1"
+    assert markers.MARKER_KIND not in Base.metadata.tables
+    assert markers.MARKER_KIND not in cap.CAPTURED_TABLES
+
+
 def test_sha_ignores_insertion_order_of_ops_and_keys() -> None:
     golden = _golden()
     shuffled = dataclasses.replace(

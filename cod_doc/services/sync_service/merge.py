@@ -21,6 +21,12 @@ counter, replica_uid)``: ничья по времени решается uid р�
 **Что делает применение** (``fields_to_apply``) для каждого поля чужой
 операции над существующей строкой:
 
+Поля стратегии ``status`` (``task.status``, ``checked_out_*``) идут не так:
+их значение — проигрывание всей цепочки записей поля (``status_merge``), а
+свои записи этих полей из хвоста не обрезаются никогда — проигравшая тоже
+уезжает, чтобы цепочка у всех реплик была полной (CLO-044). Для остальных
+полей:
+
 1. Хвост пишет то же поле. Равные значения поглощаются: поле уходит из
    хвоста, операции нет (§3.7, Q-013). Иначе — стратегия по виду поля
    (``classify``): победил чужой — поле применяется и уходит из хвоста;
@@ -40,7 +46,7 @@ counter, replica_uid)``: ничья по времени решается uid р�
 | Вид | Задача | Модуль | Что модуль экспортирует |
 |---|---|---|---|
 | ``text`` (``text_columns`` реестра) | CLO-019 | ``text_merge`` | ``resolve(clash: FieldClash) -> Resolution`` |
-| ``status`` (``task.status``, ``task.checked_out_*``) | CLO-020 | ``status_merge`` | ``resolve(clash: FieldClash) -> Resolution`` |
+| ``status`` (``task.status``, ``task.checked_out_*``) | CLO-020, CLO-044 | ``status_merge`` | ``replay(column, writes) -> Replay`` (цепочка; ``resolve`` — пара) |
 | ``edge`` (удаление ребра против его же правки) | CLO-021 | ``set_merge`` | ``resolve_entity(session, ctx, clash: EntityClash) -> bool`` |
 | ``delete_edit`` (удаление против правки, FK на удалённое) | CLO-022 | ``tombstone`` | ``resolve_entity(session, ctx, clash: EntityClash) -> bool`` |
 | ``key_merge`` (совпал натуральный ключ при вставке) | CLO-023 | ``keys`` | ``resolve_key(session, ctx, clash: KeyClash) -> bool`` |
@@ -71,18 +77,20 @@ from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import Hlc, clock_for
 from cod_doc.infra.models import Base, SyncOpModel
 from cod_doc.infra.models.sync import SYNC_CONFLICT_KINDS
-from cod_doc.services.sync_service import _local
+from cod_doc.services.sync_service import _conflict_rows, _local, markers
 from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
 from cod_doc.services.sync_service.errors import MergeRequiredError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from types import ModuleType
 
     from sqlalchemy import Table
     from sqlalchemy.orm import Session
 
     from cod_doc.services.sync_service.changeset import Op
+    from cod_doc.services.sync_service.status_merge import Rejection, Replay
+    from cod_doc.services.sync_service.status_merge import Write as _Write
 
 __all__ = [
     "DELETE_EDIT",
@@ -157,8 +165,11 @@ class ConflictSpec:
     ours: FieldValue
     theirs: FieldValue
     base: FieldValue
-    #: ``op_id`` чужой операции.
+    #: ``op_id`` чужой операции (у цепочки статуса — отвергнутой записи).
     theirs_op: str
+    #: Старший штамп записей, сошедшихся в конфликте (``sync_conflict.opened_hlc``,
+    #: CLO-045); ``None`` — штамп ``theirs_op``.
+    hlc: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in SYNC_CONFLICT_KINDS:
@@ -240,6 +251,9 @@ class Context:
     #: Поле ``(entity_uid, column)`` → конфликт, который оно открыло в текущем
     #: changeset'е. Решает последняя чужая запись поля, а не промежуточная.
     by_field: dict[tuple[str, str], ConflictSpec] = field(default_factory=dict)
+    #: Операции применяемого changeset'а: они ложатся в ``sync_op`` после всех
+    #: операций, а цепочке статуса нужны сразу (CLO-044).
+    batch: tuple[Op, ...] = ()
 
     def drain(self) -> list[ConflictSpec]:
         out, self.conflicts = self.conflicts, []
@@ -276,6 +290,19 @@ type FieldStrategy = Callable[[FieldClash], Resolution]
 
 class _FieldPlugin(Protocol):
     def resolve(self, clash: FieldClash) -> Resolution: ...
+
+
+class _ChainPlugin(Protocol):
+    """``status_merge`` для ядра: цепочка статуса (CLO-044)."""
+
+    CHAIN_COLUMNS: tuple[str, ...]
+    STATUS: str
+    DOUBLE_CHECKOUT: str
+    Write: type[_Write]
+
+    def replay(self, column: str, writes: Iterable[_Write]) -> Replay: ...
+
+    def conflict_kind(self, column: str) -> str: ...
 
 
 class _EntityPlugin(Protocol):
@@ -529,6 +556,8 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
     merged_base: dict[str, object] = {}
     theirs_stamp = _stamp(op)
     for column, theirs in op.fields.items():
+        if (op.entity_kind, column) in _STATUS_FIELDS:
+            continue  # цепочка статуса — после цикла
         mine = _latest(tail, column)
         if mine is None:
             seen = _history_stamp(rows, column)
@@ -581,10 +610,101 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
                     theirs=theirs,
                     base=clash.theirs_base,
                     theirs_op=op.op_id,
+                    hlc=max(clash.ours_stamp[0], clash.theirs_stamp[0]),
                 ),
             )
     if merged:
         _append(session, ctx, op, merged, merged_base)
+    if any((op.entity_kind, c) in _STATUS_FIELDS for c in op.fields):
+        out.update(_chain(session, ctx, op, rows))
+    return out
+
+
+# --- цепочка статуса (CLO-044) -------------------------------------------------------
+
+
+def _chain_ops(ctx: Context, op: Op, rows: Sequence[SyncOpModel]) -> list[Op]:
+    """Известные реплике upsert'ы сущности: журнал, хвост, текущий changeset.
+
+    Только после последнего удаления: восстановленная строка (``delete_edit
+    --take theirs``) с тем же uid начинает цепочку заново со своей вставки.
+    """
+    known = {row.op_id: _local.op_of(row) for row in rows}
+    for other in (*ctx.batch, op):
+        if (other.entity_kind, other.entity_uid) == (op.entity_kind, op.entity_uid):
+            known.setdefault(other.op_id, other)
+    deleted = max((_stamp(o) for o in known.values() if o.kind == _DELETE), default=None)
+    return [
+        o for o in known.values() if o.kind == _UPSERT and (deleted is None or _stamp(o) > deleted)
+    ]
+
+
+def _chain(
+    session: Session, ctx: Context, op: Op, rows: Sequence[SyncOpModel]
+) -> dict[str, FieldValue]:
+    """Поля статуса и замка — проигрыванием цепочки (``status_merge``); отказы — конфликты.
+
+    Значение записывается для полей чужой операции. Конфликт открывается по
+    последнему отказу новее последнего маркера разрешения подписи (CLO-045):
+    отвергнутая запись остаётся в цепочке навсегда, а решённый конфликт от неё
+    заново не открывается ни здесь, ни там, куда доехал маркер. Конфликт
+    цепочки, которой больше нечего отвергнуть (доехала промежуточная запись),
+    закрывается.
+    """
+    status_merge = cast("_ChainPlugin", _strategy_module(STATUS))
+    ops = _chain_ops(ctx, op, rows)
+    out: dict[str, FieldValue] = {}
+    rejected: dict[str, list[tuple[str, Rejection]]] = {}
+    for column in status_merge.CHAIN_COLUMNS:
+        writes = [
+            status_merge.Write(o.hlc, o.op_id, o.fields[column], o.base.get(column))
+            for o in ops
+            if column in o.fields
+        ]
+        if not writes:
+            continue
+        result = status_merge.replay(column, writes)
+        if column in op.fields:
+            out[column] = result.value
+        kind = status_merge.conflict_kind(column)
+        rejected.setdefault(kind, []).extend((column, r) for r in result.rejected)
+    for column in status_merge.CHAIN_COLUMNS:
+        ctx.retract(op.entity_uid, column)
+    for kind in (status_merge.STATUS, status_merge.DOUBLE_CHECKOUT):
+        field_name = "status" if kind == status_merge.STATUS else None
+        signature = (op.entity_kind, op.entity_uid, field_name, kind)
+        found = rejected.get(kind, [])
+        if not found:
+            stale = _conflict_rows.open_rows(session, ctx.project_id, signature)
+            _conflict_rows.close(
+                session,
+                ctx.project_id,
+                stale,
+                resolved_by="sync:chain",
+                take="chain",
+                author=ctx.author,
+                why="цепочка статуса больше ничего не отвергает",
+            )
+            continue
+        decided = markers.latest(session, ctx.project_id, signature)
+        open_ = [(c, r) for c, r in found if decided is None or r.write.hlc > decided]
+        if not open_:
+            continue
+        column, last = max(open_, key=lambda cr: cr[1].write.stamp)
+        ctx.add(
+            column,
+            ConflictSpec(
+                entity_kind=op.entity_kind,
+                entity_uid=op.entity_uid,
+                field=field_name,
+                kind=kind,
+                ours=last.current,
+                theirs=last.write.value,
+                base=last.write.base,
+                theirs_op=last.write.op_id,
+                hlc=last.write.hlc,
+            ),
+        )
     return out
 
 

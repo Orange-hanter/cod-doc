@@ -13,6 +13,7 @@ Acceptance: «При правке status на двух репликах побе
 from __future__ import annotations
 
 import itertools
+import random
 from typing import TYPE_CHECKING
 
 import pytest
@@ -111,6 +112,46 @@ def test_lock_fields_conflict_only_when_both_took_a_free_lock() -> None:
     assert merge.classify("task", "checked_out_at") == merge.STATUS
 
 
+@pytest.mark.parametrize("column", status_merge.CHAIN_COLUMNS)
+def test_replay_of_any_number_of_writes_does_not_depend_on_their_order(column: str) -> None:
+    """CLO-044: итог цепочки — функция множества записей, а не порядка их прихода.
+
+    Сколько угодно записей с любыми значениями и ``base``; повтор операции
+    (тот же ``op_id``, доставленный дважды) считается один раз.
+    """
+    rng = random.Random(column)
+    values: list[object] = (
+        [*ALLOWED_TRANSITIONS, "pending", "review", None]
+        if column == "status"
+        else ["agent:x", "agent:y", None]
+    )
+    for _ in range(400):
+        writes = [
+            status_merge.Write(
+                f"17600000{rng.randrange(100):05d}.{rng.randrange(3):04d}.{rng.choice('abc')}",
+                f"op{i:02d}",
+                rng.choice(values),  # type: ignore[arg-type]
+                rng.choice(values),  # type: ignore[arg-type]
+            )
+            for i in range(rng.randint(1, 7))
+        ]
+        expected = status_merge.replay(column, writes)
+        shuffled = [*writes, *rng.sample(writes, k=min(2, len(writes)))]
+        rng.shuffle(shuffled)
+        assert status_merge.replay(column, shuffled) == expected
+
+
+def test_sequential_writes_are_not_judged_concurrent_ones_are() -> None:
+    """Запись поверх текущего значения цепочки применяется как есть; поверх иного — судится."""
+    w = status_merge.Write
+    linear = [w("1.0000.a", "1", "done", "todo"), w("2.0000.a", "2", "backlog", "done")]
+    assert status_merge.replay("status", linear) == status_merge.Replay("backlog", ())
+    concurrent = [w("1.0000.a", "1", "cancelled", "todo"), w("2.0000.b", "2", "blocked", "todo")]
+    result = status_merge.replay("status", concurrent)
+    assert result.value == "cancelled"
+    assert [(r.write.op_id, r.current) for r in result.rejected] == [("2", "cancelled")]
+
+
 # --- две реплики --------------------------------------------------------------------
 
 
@@ -154,7 +195,12 @@ def test_later_write_wins_even_when_it_is_the_merging_side(tmp_path: Path) -> No
 def test_forbidden_pair_opens_a_status_conflict_and_converges_after_resolve(
     tmp_path: Path,
 ) -> None:
-    """cancelled (A, раньше) → blocked (B, позже): cancelled→blocked запрещён."""
+    """cancelled (A, раньше) → blocked (B, позже): cancelled→blocked запрещён.
+
+    Цепочка (CLO-044): в БД cancelled на обеих репликах при любом порядке,
+    отказ — запись B; конфликт с одной подписью у обеих — каждая проиграла
+    цепочку с чужой записью. ``ours`` — значение цепочки, ``theirs`` — отказ.
+    """
 
     def edits(a: r.Replica, b: r.Replica) -> None:
         _set_status(a, "cancelled")
@@ -164,21 +210,22 @@ def test_forbidden_pair_opens_a_status_conflict_and_converges_after_resolve(
     signatures = []
     for u in universes:
         pulled = t.exchange(u)
-        second = u.second
-        own, foreign = ("blocked", "cancelled") if second is u.b else ("cancelled", "blocked")
         assert len(pulled.conflicts) == 1
-        assert _task(second).status == own  # в БД остаётся «наше»
-        (row,) = t.open_conflicts(second)
-        assert (row["kind"], row["field"], row["ours"], row["theirs"], row["base"]) == (
-            "status",
-            "status",
-            own,
-            foreign,
-            "todo",
-        )
-        signatures.append(t.signatures(second))
-        # Разрешаем одним значением в обеих вселенных — значением A.
-        t.resolve_all(second, lambda _row, s=second, u=u: "theirs" if s is u.b else "ours")
+        assert _task(u.a).status == _task(u.b).status == "cancelled"
+        for rep in u.replicas:
+            (row,) = t.open_conflicts(rep)
+            assert (row["kind"], row["field"], row["ours"], row["theirs"], row["base"]) == (
+                "status",
+                "status",
+                "cancelled",
+                "blocked",
+                "todo",
+            )
+        assert t.signatures(u.a) == t.signatures(u.b)
+        signatures.append(t.signatures(u.second))
+        # Разрешаем значением цепочки на каждой реплике, где конфликт открыт.
+        for rep in u.replicas:
+            t.resolve_all(rep, lambda _row: "ours")
         t.settle(u)
         assert _task(u.a).status == _task(u.b).status == "cancelled"
         assert t.signatures(u.a) == t.signatures(u.b) == set()
@@ -194,10 +241,12 @@ def test_forbidden_pair_opens_a_status_conflict_and_converges_after_resolve(
 def test_double_offline_checkout_opens_one_conflict_per_task(
     tmp_path: Path, same_agent: bool
 ) -> None:
-    """Обе реплики взяли свободную задачу офлайн: конфликт double_checkout у сливающей.
+    """Обе реплики взяли свободную задачу офлайн: конфликт double_checkout.
 
     Тот же агент на двух машинах — тоже двойной захват: ``checked_out_by``
-    поглощается, различается ``checked_out_at``.
+    совпадает, различается ``checked_out_at``. Цепочка замка (CLO-044): замок
+    у первого по штампу захвата (A) на обеих репликах, отказ — захват B,
+    конфликт с одной подписью у обеих.
     """
     agents = {"a": "agent:laptop", "b": "agent:laptop" if same_agent else "agent:desktop"}
 
@@ -213,19 +262,19 @@ def test_double_offline_checkout_opens_one_conflict_per_task(
     universes = t.two_orders(tmp_path, _setup, edits)
     signatures = []
     for u in universes:
-        before = _task(u.second)
+        before = _task(u.a)
         pulled = t.exchange(u)
         assert len(pulled.conflicts) == 1
         (row,) = t.open_conflicts(u.second)
         assert (row["kind"], row["field"]) == ("double_checkout", None)
-        after = _task(u.second)  # свой замок остался
-        assert (after.status, after.checked_out_by, after.checked_out_at) == (
-            "in_progress",
-            before.checked_out_by,
-            before.checked_out_at,
-        )
-        first = u.a if u.second is u.b else u.b
-        assert t.signatures(first) == set()
+        for rep in u.replicas:  # замок первого захвата — у обеих
+            after = _task(rep)
+            assert (after.status, after.checked_out_by, after.checked_out_at) == (
+                "in_progress",
+                before.checked_out_by,
+                before.checked_out_at,
+            )
+        assert t.signatures(u.a) == t.signatures(u.b)
         signatures.append(t.signatures(u.second))
         # Разрешение — механика аренды CLO-031; до неё граница, а не запись.
         with transactional(u.second.sf) as s, pytest.raises(MergeRequiredError, match="CLO-031"):

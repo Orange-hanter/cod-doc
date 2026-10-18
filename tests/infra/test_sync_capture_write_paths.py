@@ -96,6 +96,7 @@ from cod_doc.infra.models import (
     StorySectionModel,
     StoryTagModel,
     StructureWaiverModel,
+    SyncConflictModel,
     SyncOpModel,
     TagModel,
     TaskDocumentModel,
@@ -1605,6 +1606,26 @@ def _(w: World) -> Expect:
     return [("task", w.now(TaskModel, task_id="PLN-001"))]
 
 
+@case("sync_service.close")
+def _(w: World) -> Expect:
+    from cod_doc.services.sync_service import _conflict_rows
+    from cod_doc.services.sync_service.markers import Marker, close
+
+    uid = _open_title_conflict(w)
+    w.commit()
+    row = w.session.get_one(SyncConflictModel, uid)
+    signature = _conflict_rows.signature_of(row)
+    close(w.session, w.pid, Marker("m", "9999999999999.0000.x", signature), author=AUTHOR)
+    assert row.status == "resolved"
+    return []
+
+
+NO_OPS["sync_service.close"] = (
+    cap.CAPTURED_TABLES,
+    "автозакрытие конфликта (CLO-044/045) пишет только local sync_conflict и событие",
+)
+
+
 @case("sync_service.resolve_key")
 def _(w: World) -> Expect:
     from cod_doc.infra.hlc import self_replica
@@ -1786,6 +1807,9 @@ def _params() -> list[Any]:
 
 
 def _allowed_fields(table: str) -> frozenset[str]:
+    if table == "sync_resolution":
+        # Маркер разрешения (CLO-045): поля — подпись конфликта, не колонки таблицы.
+        return frozenset({"entity_kind", "entity_uid", "field", "kind"})
     spec = reg.spec_for(table)
     if spec.cls is reg.SyncClass.AUTHORED:
         return reg.SHIPPED_COLUMNS[table] - {"uid"}

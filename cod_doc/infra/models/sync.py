@@ -188,3 +188,7 @@ class SyncConflictModel(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     resolved_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Старший штамп записей, сошедшихся в конфликте (CLO-045): маркер разрешения
+    #: закрывает конфликты подписи с ``opened_hlc`` меньше своего штампа. ``NULL`` —
+    #: конфликт открыт до миграции 0052, раньше любого маркера.
+    opened_hlc: Mapped[str | None] = mapped_column(Text, nullable=True)
