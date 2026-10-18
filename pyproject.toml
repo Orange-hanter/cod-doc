@@ -41,6 +41,10 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "python-ulid>=2.2",
+    # CLO-028: S3Remote. Нижняя граница — conditional PUT в botocore
+    # (`IfNoneMatch` с 1.35.0, `IfMatch` на PutObject с конца 2024). Импорт
+    # ленивый — только в cod_doc/infra/remote/s3.py, CLI на старте его не тянет.
+    "boto3>=1.36",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +67,7 @@ dev = [
     "mypy>=1.11",
     "types-PyYAML>=6.0",  # PR#5: стабы для mypy strict
     "pre-commit>=3.8",
+    "boto3-stubs[s3]>=1.36",  # CLO-028: boto3 без типов, а mypy strict + disallow_any_unimported
 ]
 # COD-043: opt-in local embeddings backend. Pulls torch (~200 MB on first
 # install) and sentence-transformers. Use when offline or when the OpenAI

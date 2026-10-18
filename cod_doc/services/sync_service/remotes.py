@@ -4,10 +4,11 @@
 трогается, сеть не ходит, токенов нет (они — ``remote login``, CLO-038). В MCP
 не выставляется намеренно (§10.7): настройка remote — дело человека.
 
-Схемы: ``file://`` работает; ``s3://`` (CLO-028) и ``https://`` (CLO-035)
-записываются с предупреждением, но push/pull по ним до своих задач отвечают
-``SYNC-110``. Неизвестная схема и ``--kind``, не совпавший со схемой, —
-``SYNC-110`` сразу.
+Схемы: ``file://`` и ``s3://`` (CLO-028; креды — стандартная цепочка AWS)
+работают; ``https://`` (CLO-035) записывается с предупреждением, но push/pull
+по нему до своей задачи отвечают ``SYNC-110``. ``s3://``-URL проверяется
+сразу (бакет, сегменты префикса, нет кредов в URL), в сеть ``add`` не ходит.
+Неизвестная схема и ``--kind``, не совпавший со схемой, — ``SYNC-110`` сразу.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ AUTO: Final = "auto"
 #: §10.8: ``s3://`` — плоское хранилище, роли и токены там не проверяются.
 S3_WARNING: Final = "s3-remote без разграничения доступа: любой с ключами бакета читает и пишет всё"
 _PENDING: Final = {
-    "s3": "s3-remote пока не поддержан (CLO-028): fetch/pull/push ответят SYNC-110",
     "https": "https-remote пока не поддержан (CLO-035): fetch/pull/push ответят SYNC-110",
 }
 
@@ -85,6 +85,10 @@ def add(project: str, name: str, url: str, *, kind: str = AUTO) -> AddedRemote:
         from cod_doc.infra.remote.file import FileRemote
 
         FileRemote.from_url(url)  # путь абсолютный и на этой машине — иначе SYNC-110
+    elif resolved == "s3":
+        from cod_doc.infra.remote.s3 import parse_url
+
+        parse_url(url)  # бакет и префикс допустимы, кредов в URL нет — иначе SYNC-110
     existing = _registered(project)
     Config.load().set_project_remote(project, name, {"url": url, "kind": resolved})
     warnings: list[str] = []
