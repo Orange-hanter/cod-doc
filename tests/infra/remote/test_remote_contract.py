@@ -22,13 +22,15 @@ import multiprocessing
 import os
 import queue
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
 
 from cod_doc.infra.remote.base import RefValue, RemoteStore, SnapshotRef, open_remote
 from cod_doc.infra.remote.errors import ObjectMissingError, RemoteConfigError
-from cod_doc.services.sync_service import leases
+from cod_doc.services.sync_service import checkout_lease, leases
+from cod_doc.services.sync_service.errors import CheckoutLeaseHeldError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -439,3 +441,83 @@ def test_lease_blocks_never_overlap_under_cas_contention(remote: RemoteStore) ->
     assert body["next"] == mine[1] + 1  # последний CAS — мой, после двух блоков соперника
     # Соперник начал с 1 (его floor), два его блока — 1..40; мой floor 5 уже позади.
     assert mine[0] == 2 * leases.LEASE_BLOCK + 1
+
+
+# --- аренда замка checkout (CLO-031) ---------------------------------------------------
+
+TASK_UID = "0199f2b0-7c3a-7000-8000-0000000000aa"
+
+
+def _holder(agent: str, replica: str, *, minutes_ago: int = 0) -> checkout_lease.Holder:
+    return checkout_lease.Holder(
+        task_id="ADO-230",
+        agent=agent,
+        replica=replica,
+        acquired_at=datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=minutes_ago),
+    )
+
+
+def test_checkout_lease_claim_is_exclusive_and_drop_is_owner_only(remote: RemoteStore) -> None:
+    """``leases/checkout/<task_uid>`` (RFC 29 §3.6): CAS «ключа нет», снятие — по etag."""
+    mine, rival = _holder("agent:a", "rep-a"), _holder("agent:b", "rep-b")
+    got, etag, created = checkout_lease.claim(remote, PROJECT, TASK_UID, mine)
+    assert (got, created) == (mine, True)
+    assert checkout_lease.read(remote, PROJECT, TASK_UID) == (mine, etag)
+    assert checkout_lease.claim(remote, PROJECT, TASK_UID, mine) == (mine, etag, False)
+    with pytest.raises(CheckoutLeaseHeldError) as held:
+        checkout_lease.claim(remote, PROJECT, TASK_UID, rival)
+    assert held.value.code == "SYNC-108"
+    assert not checkout_lease.drop(remote, PROJECT, TASK_UID, replica="rep-b")
+    assert not checkout_lease.drop(remote, PROJECT, TASK_UID, replica="rep-a", agent="agent:b")
+    assert checkout_lease.drop(
+        remote, PROJECT, TASK_UID, replica="rep-a", agent="agent:a", etag=etag
+    )
+    assert checkout_lease.read(remote, PROJECT, TASK_UID) is None
+    # После снятия (на S3 — надгробие) ключ снова берётся CAS'ом «ключа нет».
+    assert checkout_lease.claim(remote, PROJECT, TASK_UID, rival)[2] is True
+
+
+def test_checkout_lease_take_over_and_expired_drop(remote: RemoteStore) -> None:
+    """Разрешение ``double_checkout`` переписывает аренду; истёкшую чужую снимает ``expired_ok``."""
+    stale = _holder("agent:ghost", "rep-x", minutes_ago=checkout_lease.DEFAULT_TTL_MINUTES + 5)
+    checkout_lease.claim(remote, PROJECT, TASK_UID, stale)
+    fresh = _holder("agent:a", "rep-a")
+    checkout_lease.take_over(remote, PROJECT, TASK_UID, fresh)
+    assert checkout_lease.read(remote, PROJECT, TASK_UID) is not None
+    assert not checkout_lease.drop(remote, PROJECT, TASK_UID, replica="rep-x", expired_ok=True)
+    checkout_lease.take_over(remote, PROJECT, TASK_UID, stale)
+    assert checkout_lease.drop(remote, PROJECT, TASK_UID, replica="rep-a", expired_ok=True)
+    assert checkout_lease.read(remote, PROJECT, TASK_UID) is None
+
+
+class _RivalTakesLease:
+    """Транспорт, перед ``cas_json`` которого соперник берёт аренду checkout."""
+
+    def __init__(self, inner: RemoteStore) -> None:
+        self.inner = inner
+        self.armed = True
+
+    def get_json(self, project_uid: str, key: str) -> tuple[dict[str, JsonValue], str] | None:
+        return self.inner.get_json(project_uid, key)
+
+    def cas_json(
+        self,
+        project_uid: str,
+        key: str,
+        expected_etag: str | None,
+        body: Mapping[str, JsonValue],
+    ) -> str | None:
+        if self.armed:
+            self.armed = False
+            checkout_lease.claim(self.inner, project_uid, TASK_UID, _holder("agent:b", "rep-b"))
+        return self.inner.cas_json(project_uid, key, expected_etag, body)
+
+
+def test_checkout_lease_lost_race_is_sync_108_not_overwrite(remote: RemoteStore) -> None:
+    """Соперник взял аренду между чтением и CAS: мой CAS отвергнут, перечитал — SYNC-108."""
+    racing = _RivalTakesLease(remote)
+    with pytest.raises(CheckoutLeaseHeldError, match="agent:b"):
+        checkout_lease.claim(racing, PROJECT, TASK_UID, _holder("agent:a", "rep-a"))  # type: ignore[arg-type]
+    current = checkout_lease.read(remote, PROJECT, TASK_UID)
+    assert current is not None
+    assert current[0].agent == "agent:b"

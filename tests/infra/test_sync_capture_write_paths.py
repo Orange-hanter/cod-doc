@@ -1684,6 +1684,48 @@ NO_OPS["sync_service.pin_provisional"] = (
 )
 
 
+def _reconcile_case(w: World, *, quietly: bool) -> Expect:
+    """Провизорный замок checkout (CLO-031): сверка берёт аренду и снимает отметку."""
+    from cod_doc.services.sync_service import checkout_lease
+
+    now = datetime.now(UTC)
+    with cap.suspended(w.session):  # замок, как его поставил бы checkout --offline
+        task = w.task("PLN-001")
+        task.checked_out_by, task.checked_out_at = "agent:x", now
+        checkout_lease.mark_offline(w.session, w.pid, str(task.uid), now)
+    w.commit()
+    store = _sync_store(w)
+    engine = make_engine(w.db_url)
+    try:
+        sf = make_session_factory(engine)
+        if quietly:
+            checkout_lease.reconcile_quietly(sf, "w", store, "origin")
+        else:
+            assert checkout_lease.reconcile(sf, "w", store=store, remote="origin") == {
+                "PLN-001": "leased"
+            }
+    finally:
+        engine.dispose()
+    return []
+
+
+@case("sync_service.reconcile")
+def _(w: World) -> Expect:
+    return _reconcile_case(w, quietly=False)
+
+
+@case("sync_service.reconcile_quietly")
+def _(w: World) -> Expect:
+    return _reconcile_case(w, quietly=True)
+
+
+for _name in ("sync_service.reconcile", "sync_service.reconcile_quietly"):
+    NO_OPS[_name] = (
+        cap.CAPTURED_TABLES,
+        "пишет local-отметку sync_ref и событие task.checkout_leased; замок уже записан checkout",
+    )
+
+
 @case("project_service.init_project")
 def _(w: World) -> Expect:
     from cod_doc.config import ProjectEntry

@@ -1128,6 +1128,11 @@ def task_add_dep(
     multiple=True,
     help="Allowed pre-checkout statuses (repeatable; default: todo, pending)",
 )
+@click.option(
+    "--offline",
+    is_flag=True,
+    help="Remote unreachable: take a provisional lock; the next push/pull leases it (CLO-031)",
+)
 @click.pass_context
 def task_checkout(
     ctx: click.Context,
@@ -1135,16 +1140,22 @@ def task_checkout(
     project: str,
     agent: str,
     expected_statuses: tuple[str, ...],
+    offline: bool,
 ) -> None:
     """Atomically lock TASK_ID and move it to in-progress.
 
     ADO-039 makes this the only legal path out of `pending`: `task status`
     refuses the direct transition. Until ADO-157 the command existed only as
     the MCP tool, so a CLI-only workflow could not follow the protocol at all.
+
+    With a remote configured (CLO-031) the lock is leased on the remote first:
+    SYNC-108 — taken by another agent/replica, SYNC-109 — remote unreachable
+    (use --offline), SYNC-110 — remote misconfigured.
     """
     from cod_doc.infra.db import transactional
     from cod_doc.services import checkout_service
     from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
+    from cod_doc.services.sync_service.errors import SyncError
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
@@ -1159,24 +1170,31 @@ def task_checkout(
                 project_id=_require_project_id(session, project),
                 agent=agent,
                 expected_statuses=list(expected_statuses) or None,
+                offline=offline,
             )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
     except CheckoutConflictError as exc:
-        # 409: чужой замок. Повторять бесполезно — это не гонка, а занятость.
+        # 409: чужой замок (SYNC-108 — на remote). Повторять бесполезно — это
+        # не гонка, а занятость.
         console.print(f"[red]{exc}[/red]")
         sys.exit(1)
-    except CheckoutStatusError as exc:
+    except (CheckoutStatusError, SyncError) as exc:
         console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
+    lease = {"leased": ", аренда на remote", "offline": ", провизорный замок (офлайн)"}.get(
+        result.lease or "", ""
+    )
     if result.idempotent:
-        console.print(f"[yellow]{task_id}: уже за {agent}, статус {result.new_status}[/yellow]")
+        console.print(
+            f"[yellow]{task_id}: уже за {agent}, статус {result.new_status}{lease}[/yellow]"
+        )
     else:
         console.print(
             f"[green]🔒 {task_id}: {result.expected_status_at_checkout} → "
-            f"{result.new_status}, держит {agent}[/green]"
+            f"{result.new_status}, держит {agent}{lease}[/green]"
         )
 
 

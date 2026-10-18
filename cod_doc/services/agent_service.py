@@ -703,6 +703,7 @@ def pick(
     from cod_doc.services import checkout_service
     from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
     from cod_doc.services.plan_service import reads as plan_reads
+    from cod_doc.services.sync_service.errors import SyncError
     from cod_doc.services.task_service import TaskNotFoundError
 
     repo = TaskRepository(session)
@@ -767,9 +768,9 @@ def pick(
             project_id=project_id,
             agent=agent_id,
         )
-    except (CheckoutConflictError, CheckoutStatusError, TaskNotFoundError) as exc:
+    except (CheckoutConflictError, CheckoutStatusError, TaskNotFoundError, SyncError) as exc:
         # Гонка за замок, дрейф статуса, задачу удалили между выборкой и
-        # чекаутом — тексты доменные. Ошибки драйвера не перехватываются:
+        # чекаутом, аренда на remote (SYNC-108/109, CLO-031) — тексты доменные. Ошибки драйвера не перехватываются:
         # str() от них несёт SQL и параметры, наружу им незачем.
         return {
             "task": None,

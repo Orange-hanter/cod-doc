@@ -33,7 +33,6 @@ from cod_doc.services.sync_service import conflicts
 from cod_doc.services.sync_service.errors import (
     ConflictNotFoundError,
     ConflictResolveError,
-    MergeRequiredError,
 )
 from tests.services.sync import _replicas as r
 
@@ -269,11 +268,12 @@ def test_conflict_of_another_project_is_sync_302(rep: r.Replica) -> None:
         assert conflicts.list_conflicts(s, rep.project_id + 1) == []
 
 
-def test_double_checkout_waits_for_clo_031(rep: r.Replica) -> None:
-    """Двойной офлайн-checkout — механика CLO-031; до неё — граница до записи."""
+def test_double_checkout_without_theirs_op_in_journal_is_sync_301(rep: r.Replica) -> None:
+    """``--take theirs`` берёт чужой замок из операции журнала (CLO-031); её нет — отказ до записи."""
     uid = _open(rep, kind="double_checkout", field=None, ours=None, theirs=None)
-    with pytest.raises(MergeRequiredError, match="CLO-031"):
+    with pytest.raises(ConflictResolveError, match="журнале нет") as refused:
         _resolve(rep, uid, "theirs")
+    assert refused.value.code == "SYNC-301"
     with transactional(rep.sf) as s:
         assert s.get_one(SyncConflictModel, uid).status == "open"
 

@@ -71,7 +71,13 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
 from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
-from cod_doc.services import activity_service, event_bus, search_service, validation
+from cod_doc.services import (
+    activity_service,
+    checkout_service,
+    event_bus,
+    search_service,
+    validation,
+)
 from cod_doc.services import revision_service as rev
 from cod_doc.services.sync_service import leases
 from cod_doc.services.task_errors import CheckoutConflictError
@@ -1572,6 +1578,9 @@ def complete(
         payload={"commit_sha": commit_sha, "reason": reason},
         summary=f"Task {task_id} completed by {author}",
     )
+    # CLO-031: закрытая задача замка на remote не держит — аренда своей
+    # реплики снимается после коммита (локальный замок снимает task_release).
+    checkout_service.schedule_lease_release(session, model, author, agent=None)
     search_service.index_task(session, model)
 
     # COD-022: signal plan staleness so callers know projection may be outdated.
