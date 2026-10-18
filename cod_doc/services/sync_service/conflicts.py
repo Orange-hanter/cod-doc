@@ -28,8 +28,7 @@ changeset'а: в БД остаётся «наше», «их» лежит в ко
 **Коды** (§10.10). ``SYNC-302`` — конфликта нет в проекте или он уже
 разрешён; ``SYNC-301`` — ``take`` не подходит к виду: свой текст — только у
 ``text``, у остальных видов — ``ours``/``theirs``. Проверки идут до первой
-записи. ``double_checkout`` разрешается механикой CLO-031 — до неё
-``MergeRequiredError`` с номером задачи, тоже до записи.
+записи.
 
 Конфликт на сущности, которую позже снёс чужой changeset (удаление
 выигрывает, Q-008), разрешается без записи: значение класть некуда, событие
@@ -47,6 +46,17 @@ changeset'а: в БД остаётся «наше», «их» лежит в ко
 - ``key_merge`` (CLO-023, ``keys``): ``ours``/``theirs`` — ``{uid, fields}``
   обеих склеенных строк по разошедшимся телам; выбранные поля пишутся в
   выжившую строку.
+- ``double_checkout`` (открывает цепочка ``status_merge``, CLO-020/044;
+  разрешает CLO-031, Q-011): обе реплики взяли свободный замок. Держатель
+  остаётся один. ``--take ours`` — замок, на котором стоит цепочка (он уже в
+  БД на каждой реплике; операция пишется заново со свежим штампом),
+  ``--take theirs`` — отвергнутый захват, операция ``theirs_op`` из журнала
+  (оба поля, ``checked_out_by`` и ``checked_out_at``: в самом конфликте лежит
+  только то поле, что его открыло). Реплика держателя — по операции,
+  записавшей его ``checked_out_at``. Свой провизорный замок, если держатель
+  не эта реплика, снимается, а аренда ``leases/checkout/<task_uid>`` после
+  коммита переписывается на держателя (``checkout_lease.schedule_take_over``)
+  — сеть вне транзакции.
 """
 
 from __future__ import annotations
@@ -61,16 +71,23 @@ from sqlalchemy import inspect, select
 from cod_doc.domain.entities import EntityKind
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
+from cod_doc.infra.hlc import Hlc, self_replica
 from cod_doc.infra.models import ProjectModel, SyncConflictModel, SyncOpModel
 from cod_doc.infra.models.sync import SYNC_CONFLICT_KINDS
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _conflict_rows, _local, apply, markers, tombstone
-from cod_doc.services.sync_service._values import to_wire
-from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
+from cod_doc.services.sync_service import (
+    _conflict_rows,
+    _local,
+    apply,
+    checkout_lease,
+    markers,
+    tombstone,
+)
+from cod_doc.services.sync_service._values import from_wire, to_wire
+from cod_doc.services.sync_service.changeset import FieldValue, canonical_json, format_time
 from cod_doc.services.sync_service.errors import (
     ConflictNotFoundError,
     ConflictResolveError,
-    MergeRequiredError,
 )
 from cod_doc.services.sync_service.merge import ConflictSpec
 
@@ -98,8 +115,8 @@ _CUSTOM: Final = "custom"
 FIELD_KINDS: Final = frozenset({"field", "text", "status"})
 #: Виды, которые открывает проигрывание цепочки статуса (``status_merge``).
 CHAIN_KINDS: Final = frozenset({"status", "double_checkout"})
-#: Виды со своей механикой разрешения → задача, которая её строит.
-DEFERRED_KINDS: Final = {"double_checkout": "CLO-031"}
+#: Поля замка, которые переписывает разрешение ``double_checkout`` (CLO-031).
+_LOCK_COLUMNS: Final = ("checked_out_by", "checked_out_at")
 _ENTITY_KINDS: Final = {table: kind for kind, table in reg.ENTITY_KIND_TABLES.items()}
 _UUID7: Final = 7
 #: Сдвиг до 48 бит времени в начале uuid7: 128 − 48.
@@ -283,11 +300,8 @@ def _open_row(session: Session, project_id: int, conflict_uid: str) -> SyncConfl
 
 
 def _chosen(row: SyncConflictModel, take: str) -> tuple[object, str]:
-    """(значение, метка take) или SYNC-301/граница задачи — до первой записи."""
+    """(значение, метка take) или SYNC-301 — до первой записи."""
     if take in (_OURS, _THEIRS):
-        if row.kind in DEFERRED_KINDS:
-            msg = f"разрешение конфликта {row.kind}"
-            raise MergeRequiredError(msg, task=DEFERRED_KINDS[row.kind])
         return _decode(row.ours if take == _OURS else row.theirs), take
     if row.kind != "text":
         msg = f"конфликт {row.kind}: take — ours или theirs, свой текст только у text"
@@ -393,6 +407,90 @@ def _resolve_key_merge(
     return entity_id, diff
 
 
+def _lock_ops(session: Session, table: str, entity_uid: str) -> list[SyncOpModel]:
+    return list(
+        session.scalars(
+            select(SyncOpModel)
+            .where(SyncOpModel.entity_kind == table, SyncOpModel.entity_uid == entity_uid)
+            .order_by(SyncOpModel.hlc, SyncOpModel.op_id)
+        )
+    )
+
+
+def _writer_replica(
+    session: Session, project: _local.ProjectRef, row: SyncConflictModel, at: FieldValue
+) -> str:
+    """Реплика, чья операция записала замок с ``checked_out_at = at``; нет такой — своя.
+
+    Своя — для замка, взятого до журнала: его операции нет нигде, а значит, и
+    другой реплики, которая могла бы его держать.
+    """
+    for op_row in _lock_ops(session, row.entity_kind, row.entity_uid):
+        if _local.op_of(op_row).fields.get("checked_out_at") == at and at is not None:
+            return op_row.replica_uid
+    return self_replica(session, project.row_id)
+
+
+def _lock_wire(obj: object, info: cap.TableInfo) -> dict[str, FieldValue]:
+    """Замок строки в форме changeset'а (§10.4): время — строка UTC, как у операций."""
+    out: dict[str, FieldValue] = {}
+    for column in _LOCK_COLUMNS:
+        value = getattr(obj, info.attr(column))
+        out[column] = format_time(value) if isinstance(value, datetime) else value
+    return out
+
+
+def _theirs_lock(
+    session: Session, row: SyncConflictModel, ours: Mapping[str, FieldValue]
+) -> tuple[dict[str, FieldValue], str]:
+    """Отвергнутый захват из операции ``theirs_op`` журнала → (поля на проводе, реплика)."""
+    found = _local.journal_ops(session, [row.theirs_op]).get(row.theirs_op)
+    if found is None:
+        msg = f"конфликт {row.uid}: операции {row.theirs_op} в журнале нет — чужой замок не взять"
+        raise ConflictResolveError(msg)
+    op, _changeset = found
+    lock = {column: op.fields.get(column, ours[column]) for column in _LOCK_COLUMNS}
+    return lock, Hlc.parse(op.hlc).replica_uid
+
+
+def _resolve_double_checkout(
+    session: Session, project: _local.ProjectRef, row: SyncConflictModel, take: str, author: str
+) -> tuple[int, dict[str, object]]:
+    """Двойной захват (Q-011): держатель один — цепочки или отвергнутый; аренда — на него."""
+    obj, info = _target(session, project, row)
+    ours = _lock_wire(obj, info)
+    if take == _OURS:
+        values = ours
+        replica = _writer_replica(session, project, row, ours["checked_out_at"])
+    else:
+        values, replica = _theirs_lock(session, row, ours)
+    entity_id, previous = _write_fields(session, project, row, values, author)
+    task_uid = str(getattr(obj, info.attr("uid")))
+    agent = values["checked_out_by"]
+    acquired = from_wire(row.entity_kind, "checked_out_at", values["checked_out_at"])
+    if replica != self_replica(session, project.row_id):
+        checkout_lease.unmark(session, project.row_id, task_uid)
+    if isinstance(agent, str) and isinstance(acquired, datetime):
+        holder = checkout_lease.Holder(
+            task_id=str(getattr(obj, "task_id")),  # noqa: B009
+            agent=agent,
+            replica=replica,
+            acquired_at=acquired,
+        )
+        checkout_lease.schedule_take_over(session, project.row_id, task_uid, holder)
+    else:  # замка к разрешению уже нет — своей аренды тоже быть не должно
+        checkout_lease.schedule_release(session, project.row_id, task_uid, agent=None)
+    diff: dict[str, object] = {
+        "op": "sync.resolve",
+        "take": take,
+        "fields": list(_LOCK_COLUMNS),
+        "old": {k: _jsonable(v) for k, v in previous.items()},
+        "new": dict(values),
+        "replica": replica,
+    }
+    return entity_id, diff
+
+
 def _journal_knows(session: Session, project_id: int, table: str, uid: str) -> bool:
     found = session.scalars(
         select(SyncOpModel.op_id).where(
@@ -464,6 +562,9 @@ def resolve_conflict(
         summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: {label}"
     elif row.kind == "key_merge":
         entity_id, diff = _resolve_key_merge(session, project, row, label, author)
+        summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: {label}"
+    elif row.kind == "double_checkout":
+        entity_id, diff = _resolve_double_checkout(session, project, row, label, author)
         summary = f"конфликт {row.kind} {row.entity_kind} {row.entity_uid}: {label}"
     else:
         column = cast("str", row.field)

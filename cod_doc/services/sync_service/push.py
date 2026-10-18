@@ -46,7 +46,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, digest, leases
+from cod_doc.services.sync_service import _local, checkout_lease, digest, leases
 from cod_doc.services.sync_service.changeset import Changeset, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, PushRejectedError
 
@@ -190,11 +190,13 @@ def push(
         _, head, packed = _pack(sf, project, author)
         if packed is None:
             leases.refill_quietly(sf, project, store)
+            checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
             return PushResult(changesets=[], ops=0, head=head, retries=retries, pinned=pinned)
         new_ref = _exchange(store, packed)
         if new_ref is not None:
             _commit(sf, packed, new_ref, remote, author)
             leases.refill_quietly(sf, project, store)
+            checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
             return PushResult(
                 changesets=[packed.sha],
                 ops=len(packed.op_ids),

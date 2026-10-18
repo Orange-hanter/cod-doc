@@ -24,7 +24,6 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.models import TaskModel
 from cod_doc.services import checkout_service
 from cod_doc.services.sync_service import conflicts, merge, status_merge
-from cod_doc.services.sync_service.errors import MergeRequiredError
 from cod_doc.services.task_status_machine import ALLOWED_TRANSITIONS
 from tests.services.sync import _replicas as r
 from tests.services.sync import _two_orders as t
@@ -250,10 +249,14 @@ def test_double_offline_checkout_opens_one_conflict_per_task(
     """
     agents = {"a": "agent:laptop", "b": "agent:laptop" if same_agent else "agent:desktop"}
 
+    locks: dict[str, tuple[object, object]] = {}
+
     def take(rep: r.Replica) -> None:
         t.tick()
         with transactional(rep.sf) as s:
             checkout_service.checkout(s, TASK, project_id=rep.project_id, agent=agents[rep.name])
+        got = _task(rep)
+        locks[rep.name] = (got.checked_out_by, got.checked_out_at)
 
     def edits(a: r.Replica, b: r.Replica) -> None:
         take(a)
@@ -276,11 +279,19 @@ def test_double_offline_checkout_opens_one_conflict_per_task(
             )
         assert t.signatures(u.a) == t.signatures(u.b)
         signatures.append(t.signatures(u.second))
-        # Разрешение — механика аренды CLO-031; до неё граница, а не запись.
-        with transactional(u.second.sf) as s, pytest.raises(MergeRequiredError, match="CLO-031"):
+        # Разрешение (CLO-031): держатель один — отвергнутый захват B; после
+        # обмена он у обеих, а маркер разрешения закрывает конфликт везде.
+        b_lock = locks["b"]
+        with transactional(u.second.sf) as s:
             conflicts.resolve_conflict(
-                s, u.second.project_id, str(row["uid"]), take="ours", author=r.AUTHOR
+                s, u.second.project_id, str(row["uid"]), take="theirs", author=r.AUTHOR
             )
+        t.settle(u)
+        for rep in u.replicas:
+            got = _task(rep)
+            assert (got.checked_out_by, got.checked_out_at) == b_lock
+        assert t.open_conflicts(u.a) == t.open_conflicts(u.b) == []
+        t.assert_converged(u)
     assert signatures[0] == signatures[1]
     t.dispose(*universes)
 

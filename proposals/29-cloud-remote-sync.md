@@ -418,6 +418,15 @@ sequenceDiagram
   Без сети `task_checkout` отказывает; `task_checkout --offline` берёт провизорный
   замок, а двойной захват ловится при pull как `sync_conflict`. Проект без remote
   работает по ADO-039 как сегодня.
+  Реализация (CLO-031, `sync_service/checkout_lease.py`): значение аренды —
+  `{task_id, agent, replica, acquired_at, ttl_minutes}`, держатель — пара
+  (агент, реплика); снятие — `delete_json` по etag после коммита (хук сессии),
+  откат транзакции checkout снимает аренду, взятую этим вызовом. Чужую аренду
+  снимают только `release_stale` и `release --force`, и только истёкшую по её
+  `ttl_minutes`; checkout истёкшую чужую не перехватывает. Провизорный замок —
+  отметка `sync_ref("@checkout", task_uid)`; push/pull берёт по ней аренду,
+  занятую — оставляет до разрешения `double_checkout`, которое переписывает
+  аренду на выбранного держателя.
 - **Пересборка derived** после pull: `link_sync` по затронутым секциям, FTS по
   затронутым документам, routine-находки — при следующем прогоне рутины.
 

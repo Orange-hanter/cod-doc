@@ -22,6 +22,7 @@ from cod_doc.services import checkout_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
 from cod_doc.services.revision_service import RevisionConflictError
+from cod_doc.services.sync_service.errors import SyncError
 from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
 from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
@@ -87,7 +88,8 @@ def task_status_update(
                 strict=False,  # web UI allows direct jumps (user may skip steps)
             )
         session.commit()
-    except (CheckoutConflictError, CheckoutStatusError) as exc:
+    except (CheckoutConflictError, CheckoutStatusError, SyncError) as exc:
+        # SyncError — аренда замка на remote (SYNC-109/110, CLO-031).
         session.rollback()
         updated = existing
         inline_alert = ("error", str(exc))
