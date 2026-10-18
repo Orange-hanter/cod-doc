@@ -51,6 +51,7 @@ from cod_doc.infra.models import (
 from cod_doc.infra.models.adrs import ADR_RELATION_KINDS
 from cod_doc.services import activity_service, adr_topic_service, search_service
 from cod_doc.services import revision_service as rev
+from cod_doc.services.sync_service import leases
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import InstrumentedAttribute, Session
@@ -103,8 +104,21 @@ def _validate_adr_id(adr_id: str) -> None:
         raise ValueError(f"invalid adr_id {adr_id!r}; expected format 'ADR-NNN' (3 digits)")
 
 
-def _next_adr_id(session: Session, project_id: int) -> str:
-    """Assign ``ADR-NNN`` as max-existing-N + 1, zero-padded to 3."""
+_ADR_PREFIX = "ADR"
+
+
+def _next_adr_id(session: Session, project_id: int, *, consume: bool = False) -> str:
+    """Assign ``ADR-NNN`` as max-existing-N + 1, zero-padded to 3.
+
+    CLO-030: с настроенным remote — номер из аренды (``consume=True``) или
+    провизорный ``ADR-~xxxx`` с ``SYNC-107``; подсказка остаток не тратит.
+    """
+    if leases.enabled(session, project_id):
+        if consume:
+            return leases.lease_number(session, project_id, _ADR_PREFIX, kind="adr")
+        hint = leases.peek_number(session, project_id, _ADR_PREFIX, kind="adr")
+        if hint is not None:
+            return hint
     rows = (
         session.execute(select(ADRModel.adr_id).where(ADRModel.project_id == project_id))
         .scalars()
@@ -128,12 +142,7 @@ def next_adr_id(session: Session, project_id: int) -> str:
 
 
 def _require(session: Session, project_id: int, adr_id: str) -> ADRModel:
-    row = session.execute(
-        select(ADRModel).where(
-            ADRModel.project_id == project_id,
-            ADRModel.adr_id == adr_id,
-        )
-    ).scalar_one_or_none()
+    row = get(session, project_id, adr_id)
     if row is None:
         raise ADRNotFoundError(f"ADR not found: {adr_id} (project_id={project_id})")
     return row
@@ -171,7 +180,7 @@ def create(
         if existing is not None:
             raise ADRAlreadyExistsError(f"ADR {adr_id} already exists in project")
     else:
-        adr_id = _next_adr_id(session, project_id)
+        adr_id = _next_adr_id(session, project_id, consume=True)
 
     now = datetime.now(UTC)
     row = ADRModel(
@@ -215,12 +224,19 @@ def create(
 
 
 def get(session: Session, project_id: int, adr_id: str) -> ADRModel | None:
-    return session.execute(
-        select(ADRModel).where(
-            ADRModel.project_id == project_id,
-            ADRModel.adr_id == adr_id,
-        )
-    ).scalar_one_or_none()
+    """ADR проекта; закреплённый провизорный ``ADR-~xxxx`` — по алиасу (CLO-030)."""
+
+    def _by_id(value: str) -> ADRModel | None:
+        return session.execute(
+            select(ADRModel).where(ADRModel.project_id == project_id, ADRModel.adr_id == value)
+        ).scalar_one_or_none()
+
+    row = _by_id(adr_id)
+    if row is None:
+        current = leases.current_id(session, project_id, "adr", adr_id)
+        if current is not None:
+            row = _by_id(current)
+    return row
 
 
 def list_for_project(

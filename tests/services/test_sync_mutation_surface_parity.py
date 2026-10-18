@@ -48,6 +48,7 @@ SPEC = ServiceSpec(
             "resolve_key",
             "apply_changeset",
             "close",
+            "pin_provisional",
         }
     ),
     known_reads=frozenset(
@@ -78,6 +79,10 @@ SPEC = ServiceSpec(
         }
     ),
     internal_only={
+        "pin_provisional": (
+            "закрепление провизорных ID (CLO-030) — первый шаг push, а не отдельное "
+            "действие; событие sync.alias_created пишется в его транзакции"
+        ),
         "open_conflict": (
             "конфликт открывает слияние внутри pull (merge), а не пользователь; "
             "событие sync.conflict_opened пишется в транзакции применения changeset'а"
@@ -131,6 +136,7 @@ def test_discovered_mutations_exact() -> None:
         "resolve_key",
         "apply_changeset",
         "close",
+        "pin_provisional",
     }
 
 

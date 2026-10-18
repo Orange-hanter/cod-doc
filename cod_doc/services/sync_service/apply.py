@@ -654,14 +654,13 @@ def _natural_twin(
     """Своя строка другого uid с тем же натуральным ключом-именем (Q-007, CLO-023).
 
     Без проверки вставка упала бы ``IntegrityError`` на UNIQUE (находка F2
-    секции B); арендованные номера (``leased``) не сталкиваются по построению.
+    секции B). Арендованный номер (``leased``) из аренды не совпадает, но номер,
+    выданный мимо неё, — может: его отдаёт своя строка (``keys``, CLO-030).
     """
     if not info.has_uid:
         return None
     model = mapper.class_
     for key in reg.spec_for(info.table).natural_keys:
-        if key.kind is reg.KeyKind.LEASED:
-            continue
         values = [getattr(obj, info.attr(c)) for c in key.columns]
         if any(v is None for v in values):
             continue

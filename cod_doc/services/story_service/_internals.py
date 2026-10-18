@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.infra.models import UserStoryModel
+from cod_doc.services.sync_service import leases
 
 from ._types import StoryNotFoundError
 
@@ -22,6 +23,10 @@ def _require_story(session: Session, story_id: str, *, project_id: int) -> UserS
     )
     m = session.execute(stmt).scalar_one_or_none()
     if m is None:
+        # CLO-030: провизорный ID, закреплённый push'ем, резолвится алиасом.
+        current = leases.current_id(session, project_id, "user_story", story_id)
+        if current is not None:
+            return _require_story(session, current, project_id=project_id)
         raise StoryNotFoundError(story_id)
     return m
 

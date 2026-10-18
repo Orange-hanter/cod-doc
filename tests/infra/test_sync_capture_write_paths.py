@@ -1660,6 +1660,30 @@ NO_OPS["sync_service.resolve_key"] = (
 )
 
 
+@case("sync_service.pin_provisional")
+def _(w: World) -> Expect:
+    from cod_doc.services.sync_service import leases
+
+    with cap.suspended(w.session):  # провизорный ID, как его выдал бы генератор
+        w.task("PLN-001").task_id = "PLN-~abcd"
+    w.commit()
+    engine = make_engine(w.db_url)
+    try:
+        pinned = leases.pin_provisional(
+            make_session_factory(engine), "w", store=_sync_store(w), author=AUTHOR
+        )
+    finally:
+        engine.dispose()
+    assert set(pinned) == {"PLN-~abcd"}
+    return []
+
+
+NO_OPS["sync_service.pin_provisional"] = (
+    cap.CAPTURED_TABLES,
+    "закрепление переписывает ID на месте под suspended: провизорный ID не уезжает",
+)
+
+
 @case("project_service.init_project")
 def _(w: World) -> Expect:
     from cod_doc.config import ProjectEntry

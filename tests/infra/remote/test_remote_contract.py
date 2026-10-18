@@ -28,11 +28,14 @@ import pytest
 
 from cod_doc.infra.remote.base import RefValue, RemoteStore, SnapshotRef, open_remote
 from cod_doc.infra.remote.errors import ObjectMissingError, RemoteConfigError
+from cod_doc.services.sync_service import leases
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Mapping
     from multiprocessing.synchronize import Barrier
     from pathlib import Path
+
+    from cod_doc.infra.remote.base import JsonValue
 
 PROJECT = "0199f2b0-7c3a-7000-8000-0000000000ff"
 OTHER = "0199f2b0-7c3a-7000-8000-0000000000ee"
@@ -392,3 +395,47 @@ def test_concurrent_cas_has_exactly_one_winner(remote_url: str) -> None:
         body = remote.get_json(PROJECT, f"leases/RACE{i}")
         assert body is not None
         assert body[0] == {"owner": json_winner, "phase": "update"}
+
+
+# --- аренда номеров (CLO-030) ----------------------------------------------------
+
+
+class _RivalBeforeCas:
+    """Транспорт, перед ``cas_json`` которого соперник успевает взять блок."""
+
+    def __init__(self, inner: RemoteStore, rounds: int) -> None:
+        self.inner = inner
+        self.rounds = rounds
+
+    def get_json(self, project_uid: str, key: str) -> tuple[dict[str, JsonValue], str] | None:
+        return self.inner.get_json(project_uid, key)
+
+    def cas_json(
+        self,
+        project_uid: str,
+        key: str,
+        expected_etag: str | None,
+        body: Mapping[str, JsonValue],
+    ) -> str | None:
+        if self.rounds > 0:
+            self.rounds -= 1
+            leases.claim_block(self.inner, project_uid, key.split("/")[-1], replica="rival")
+        return self.inner.cas_json(project_uid, key, expected_etag, body)
+
+
+def test_lease_blocks_never_overlap_under_cas_contention(remote: RemoteStore) -> None:
+    """``leases/<PREFIX>`` (RFC 29 §3.5): проигравший CAS перечитывает и берёт следующий блок."""
+    racing = _RivalBeforeCas(remote, rounds=2)
+    mine = leases.claim_block(racing, PROJECT, "ADO", replica="me", floor=5)  # type: ignore[arg-type]
+    got = remote.get_json(PROJECT, "leases/ADO")
+    assert got is not None
+    body, _etag = got
+    holders = body["holders"]
+    assert isinstance(holders, dict)
+    rival = holders["rival"]
+    assert isinstance(rival, list)
+    assert holders["me"] == list(mine)
+    assert not set(range(mine[0], mine[1] + 1)) & set(range(int(rival[0]), int(rival[1]) + 1))
+    assert body["next"] == mine[1] + 1  # последний CAS — мой, после двух блоков соперника
+    # Соперник начал с 1 (его floor), два его блока — 1..40; мой floor 5 уже позади.
+    assert mine[0] == 2 * leases.LEASE_BLOCK + 1

@@ -36,6 +36,7 @@ from cod_doc.infra.repositories import (
 from cod_doc.infra.sql_helpers import is_unique_violation
 from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
+from cod_doc.services.sync_service import leases
 
 from ._internals import _diff, _require_story
 from ._types import SectionNotFoundError, StoryAlreadyExistsError
@@ -67,7 +68,8 @@ def create(
     гарантирует, что ссылка однажды повиснет; `revision_revert` эти
     diff'ы проигрывает.
     """
-    validation.validate_story_id(story_id)
+    if not leases.is_provisional(story_id):  # next_story_id без аренды (CLO-030)
+        validation.validate_story_id(story_id)
     if (
         session.execute(
             select(UserStoryModel.row_id).where(
@@ -177,7 +179,14 @@ def _is_story_id_conflict(exc: IntegrityError) -> bool:
 
 
 def get(session: Session, story_id: str, *, project_id: int) -> UserStory | None:
-    return UserStoryRepository(session).get_by_story_id(story_id, project_id=project_id)
+    """История проекта; закреплённый провизорный ``US-~xxxx`` — по алиасу (CLO-030)."""
+    repo = UserStoryRepository(session)
+    found = repo.get_by_story_id(story_id, project_id=project_id)
+    if found is None:
+        current = leases.current_id(session, project_id, "user_story", story_id)
+        if current is not None:
+            found = repo.get_by_story_id(current, project_id=project_id)
+    return found
 
 
 def list_for_project(session: Session, project_id: int) -> list[UserStory]:
@@ -189,7 +198,12 @@ def next_story_id(session: Session, project_id: int, prefix: str = "US") -> str:
 
     Used by AI-driven story generation flows where the LLM proposes drafts
     and the route persists them with sequential ids.
+
+    CLO-030: с настроенным remote — номер из аренды или провизорный ``US-~xxxx``
+    с ``SYNC-107`` (номер выдаётся под создание, остаток тратится).
     """
+    if leases.enabled(session, project_id):
+        return leases.lease_number(session, project_id, prefix, kind="user_story")
     # ``%`` и ``_`` в префиксе — метасимволы LIKE; экранируем, как regex ниже.
     like_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = session.execute(

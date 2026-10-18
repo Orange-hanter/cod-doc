@@ -281,10 +281,10 @@ jobs:
           # Ростер — тот, на котором движок замерен на OpenRouter (RFC 20 §4–6
           # ai-reviewer, приёмочный прогон Orakul #603: 0 сбоев, 0 пустых ответов).
           # Каталог — https://openrouter.ai/api/v1/models.
-          MOA_REFERENCE_MODELS: deepseek/deepseek-v4.1-flash,openai/gpt-6-luna
+          MOA_REFERENCE_MODELS: deepseek/deepseek-v4.1-flash-1017,openai/gpt-6-luna
           # security — отдельная модель на самой дорогой по последствиям роли;
-          # correctness и architecture — deepseek-v4.1-flash.
-          MOA_SPECIALIST_MODELS: security:z-ai/glm-5.3-flash,correctness:deepseek/deepseek-v4.1-flash,architecture:deepseek/deepseek-v4.1-flash
+          # correctness и architecture — deepseek-v4.1-flash-1017 (снимок 2026-10-17).
+          MOA_SPECIALIST_MODELS: security:z-ai/glm-5.3-flash,correctness:deepseek/deepseek-v4.1-flash-1017,architecture:deepseek/deepseek-v4.1-flash-1017
           # Жюри: 5/5 и меньше всего лишних находок в A/B промпта.
           MOA_AGGREGATOR: anthropic/claude-haiku-5.5
           MOA_REFERENCE_TEMPERATURE: '0.3'
@@ -294,7 +294,7 @@ jobs:
           # deepseek на effort=low тратит весь бюджет на рассуждение и отдаёт
           # пустой ответ — ему none. glm-5.3-flash на none отвечает 400, а на
           # чанке 49 КБ рассуждает 3.5–7.5k токенов — high и бюджет 12000.
-          LLM_MODEL_SETTINGS: '{"deepseek/deepseek-v4.1-flash":{"effort":"none"},"z-ai/glm-5.3-flash":{"effort":"high","maxTokens":12000}}'
+          LLM_MODEL_SETTINGS: '{"deepseek/deepseek-v4.1-flash-1017":{"effort":"none"},"z-ai/glm-5.3-flash":{"effort":"high","maxTokens":12000}}'
           REVIEW_BLOCK_ON: critical,major
           REVIEW_BLOCK_SINGLE: critical
           REVIEW_CONFIDENCE_MIN: '0.8'
