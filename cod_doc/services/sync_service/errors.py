@@ -4,13 +4,14 @@
 определены в ``cod_doc.infra.remote.errors`` — их бросает транспорт, а ``infra``
 не импортирует ``services``; здесь они реэкспортируются теми же объектами.
 
-``SYNC-108`` (``CheckoutLeaseHeldError(CheckoutConflictError)``) появится с
-арендой checkout: его основа живёт в ``checkout_service``, и тянуть её сюда
-раньше — лишний импорт сервисного слоя в пакет, у которого пока нет
-потребителя.
+``SYNC-108`` (``CheckoutLeaseHeldError``) — подкласс и ``SyncError``, и
+``CheckoutConflictError`` из листового ``task_errors`` (CLO-031): поверхности,
+ловящие занятый замок, ловят и занятую аренду, не зная о remote.
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from cod_doc.infra.remote.errors import (
     ObjectMissingError,
@@ -20,9 +21,14 @@ from cod_doc.infra.remote.errors import (
     RemoteUnavailableError,
     SyncError,
 )
+from cod_doc.services.task_errors import CheckoutConflictError
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 __all__ = [
     "AuthorMismatchError",
+    "CheckoutLeaseHeldError",
     "CheckoutLeaseUnavailableError",
     "ConflictNotFoundError",
     "ConflictResolveError",
@@ -77,6 +83,30 @@ class ProvisionalIdWarning(UserWarning):
 
     def __init__(self, message: str) -> None:
         super().__init__(f"{self.code}: {message}")
+
+
+class CheckoutLeaseHeldError(SyncError, CheckoutConflictError):
+    """SYNC-108: аренда ``leases/checkout/<task_uid>`` на remote занята (CLO-031).
+
+    Отказ сразу и без повтора, как у ``CheckoutConflictError``: «взята
+    dakh@macbook в 14:02» — сообщение называет держателя, его реплику и время.
+    """
+
+    code = "SYNC-108"
+
+    def __init__(
+        self, *, task_id: str, locked_by: str, replica: str, acquired_at: datetime
+    ) -> None:
+        when = acquired_at.strftime("%Y-%m-%d %H:%M UTC")
+        Exception.__init__(
+            self,
+            f"{self.code}: задача {task_id} взята {locked_by} (реплика {replica}) "
+            f"в {when}; never retry on conflict",
+        )
+        self.task_id = task_id
+        self.locked_by = locked_by
+        self.replica = replica
+        self.acquired_at = acquired_at
 
 
 class CheckoutLeaseUnavailableError(RemoteUnavailableError):

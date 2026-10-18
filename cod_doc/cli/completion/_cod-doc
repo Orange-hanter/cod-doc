@@ -4282,6 +4282,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--agent)--agent=[Lock holder]:agent' \
     '*--expect=[Allowed pre-checkout statuses (repeatable; default; todo, pending)]:expected-statuses' \
+    '(--offline)--offline[Remote unreachable; take a provisional lock; the next push/pull lea…]' \
     '(- *)--help[Show this message and exit.]' \
     '1:task-id:_cod_doc_tasks' && ret=0
   return ret

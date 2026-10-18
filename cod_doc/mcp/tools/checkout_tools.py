@@ -22,6 +22,7 @@ def register(mcp: FastMCP) -> None:
         task_id: str,
         agent: str,
         expected_statuses: list[str] | None = None,
+        offline: bool = False,
     ) -> dict[str, Any]:
         """Atomically lock a task and transition it to ``in_progress``.
 
@@ -41,6 +42,17 @@ def register(mcp: FastMCP) -> None:
 
         On success the task's status becomes ``in_progress`` (canonical bucket).
 
+        Remote (RFC 29 §3.6, CLO-031): when the project has a remote, the lock
+        is first leased on the remote (``leases/checkout/<task_uid>``, CAS):
+        - lease held elsewhere → ValueError ``SYNC-108: задача … взята <agent>
+          (реплика …) в <time>`` — never retry;
+        - remote unreachable → ValueError ``SYNC-109`` (retry with
+          ``offline=True`` to take a provisional lock; the next sync_push /
+          sync_pull leases it, a double capture surfaces as a
+          ``double_checkout`` conflict);
+        - remote misconfigured → ValueError ``SYNC-110``.
+        ``lease`` in the answer: ``"leased"`` | ``"offline"`` | null (no remote).
+
         See also: skill ``task-standard``; cod_doc/services/task_status_machine.py.
         """
         from cod_doc.infra.db import transactional
@@ -49,6 +61,7 @@ def register(mcp: FastMCP) -> None:
             CheckoutConflictError,
             CheckoutStatusError,
         )
+        from cod_doc.services.sync_service.errors import SyncError
 
         sf, _ = session_factory(project)
         # Событие `task.checked_out` пишет сам сервис; второй emit здесь давал
@@ -61,10 +74,11 @@ def register(mcp: FastMCP) -> None:
                     project_id=require_project_id(session, project),
                     agent=agent,
                     expected_statuses=expected_statuses,
+                    offline=offline,
                 )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc
-        except (CheckoutConflictError, CheckoutStatusError) as exc:
+        except (CheckoutConflictError, CheckoutStatusError, SyncError) as exc:
             raise ValueError(str(exc)) from exc
         return {
             "task_id": result.task_id,
@@ -73,6 +87,7 @@ def register(mcp: FastMCP) -> None:
             "expected_status_at_checkout": result.expected_status_at_checkout,
             "new_status": result.new_status,
             "idempotent": result.idempotent,
+            "lease": result.lease,
         }
 
     @mcp.tool(name="task_release")
@@ -86,6 +101,9 @@ def register(mcp: FastMCP) -> None:
 
         force=True: release regardless of who holds the lock (admin).
         Status is unchanged — call task_complete or task_update_status separately.
+
+        With a remote (CLO-031) this replica's lease ``leases/checkout/<task_uid>``
+        is dropped after commit; ``force`` also drops a foreign lease past its TTL.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import checkout_service

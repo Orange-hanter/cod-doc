@@ -19,7 +19,9 @@ RFC 29 §3.9, §10.6: гейты паритета расширяются на ``
 ``sync resolve`` в CLI и ``sync_resolve`` в MCP (CLO-026); ``open_conflict``
 — внутренний: конфликт открывает слияние внутри pull. ``close`` — тоже
 внутренний: автозакрытие конфликтов цепочкой статуса (CLO-044) и маркером
-разрешения с другой реплики (CLO-045) идёт внутри pull.
+разрешения с другой реплики (CLO-045) идёт внутри pull. ``reconcile`` —
+шаг push/pull: провизорный замок checkout (``--offline``) получает аренду
+(CLO-031); сам checkout выставлен как ``task checkout``/``task_checkout``.
 """
 
 from __future__ import annotations
@@ -49,6 +51,8 @@ SPEC = ServiceSpec(
             "apply_changeset",
             "close",
             "pin_provisional",
+            "reconcile",
+            "reconcile_quietly",
         }
     ),
     known_reads=frozenset(
@@ -79,6 +83,14 @@ SPEC = ServiceSpec(
         }
     ),
     internal_only={
+        "reconcile": (
+            "сверка провизорных замков checkout с арендой на remote (CLO-031) — шаг "
+            "push/pull, а не отдельное действие; событие task.checkout_leased в её транзакции"
+        ),
+        "reconcile_quietly": (
+            "обёртка reconcile для push/pull (CLO-031): сбой сети не отменяет обмен; "
+            "сама по себе выставлена как push/pull и task_checkout"
+        ),
         "pin_provisional": (
             "закрепление провизорных ID (CLO-030) — первый шаг push, а не отдельное "
             "действие; событие sync.alias_created пишется в его транзакции"
@@ -137,6 +149,8 @@ def test_discovered_mutations_exact() -> None:
         "apply_changeset",
         "close",
         "pin_provisional",
+        "reconcile",
+        "reconcile_quietly",
     }
 
 
