@@ -160,17 +160,22 @@ def check_snapshot(ref: SnapshotRef) -> SnapshotRef:
 def open_remote(url: str, *, credentials: Credentials | None = None) -> RemoteStore:
     """Транспорт по схеме URL; неизвестная схема — ``RemoteConfigError`` (SYNC-110).
 
-    ``s3://`` (CLO-028) и ``https://`` (CLO-035) пока тоже SYNC-110: remote с
-    такой схемой настроить нельзя, пока нет реализации.
+    ``file://`` — ``FileRemote`` (кредов не читает), ``s3://`` — ``S3Remote``
+    (CLO-028; креды — ``credentials`` или стандартная цепочка AWS). ``https://``
+    (CLO-035) пока SYNC-110: remote с такой схемой настроить нельзя, пока нет
+    реализации. Открытие в сеть не ходит.
     """
-    del credentials  # file:// без кредов; S3/Http возьмут их, когда появятся
     scheme = urlparse(url).scheme
     if scheme == "file":
         from cod_doc.infra.remote.file import FileRemote
 
         return FileRemote.from_url(url)
-    if scheme in {"s3", "https"}:
-        msg = f"remote {url!r}: транспорт {scheme}:// ещё не реализован"
+    if scheme == "s3":
+        from cod_doc.infra.remote.s3 import S3Remote
+
+        return S3Remote.from_url(url, credentials=credentials)
+    if scheme == "https":
+        msg = "remote https://: транспорт ещё не реализован (CLO-035)"
         raise RemoteConfigError(msg)
-    msg = f"remote {url!r}: неизвестная схема, ожидается file://, s3:// или https://"
+    msg = "remote: неизвестная схема URL, ожидается file://, s3:// или https://"
     raise RemoteConfigError(msg)
