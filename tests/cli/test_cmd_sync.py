@@ -154,10 +154,16 @@ def test_remote_add_list_remove_round_trip(
     assert "SYNC-110" in err
 
 
-def test_remote_add_s3_warns_and_push_reports_sync_110(
+def test_remote_add_s3_warns_and_unreachable_push_reports_sync_101(
     machines: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """CLO-028: ``s3://`` больше не SYNC-110 — push идёт в сеть; недоступный
+    адрес — SYNC-101, и ни креды, ни адрес запроса в текст ошибки не попадают."""
     _machine(machines["a"], monkeypatch)
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI-secret")
+    monkeypatch.setenv("AWS_MAX_ATTEMPTS", "1")
 
     code, out, err = _run("remote", "add", "origin", "s3://bucket/cod-doc", "-p", SLUG)
 
@@ -167,14 +173,23 @@ def test_remote_add_s3_warns_and_push_reports_sync_110(
     assert _json("remote", "list", "-p", SLUG) == [
         {"name": "origin", "url": "s3://bucket/cod-doc", "kind": "s3"}
     ]
+    assert "пока не поддержан" not in err
     code, _out, err = _run("push", "-p", SLUG)
     assert code == 1
-    assert err.strip().splitlines()[-1].startswith("Error: SYNC-110")
+    assert err.strip().splitlines()[-1].startswith("Error: SYNC-101")
+    assert "wJalrXUtnFEMI-secret" not in err
 
 
 @pytest.mark.parametrize(
     ("url", "kind"),
-    [("ftp://host/x", "auto"), ("file:///tmp/x", "s3"), ("file://relative", "auto")],
+    [
+        ("ftp://host/x", "auto"),
+        ("file:///tmp/x", "s3"),
+        ("file://relative", "auto"),
+        ("s3://Bad_Bucket/x", "auto"),
+        ("s3://bucket/../x", "s3"),
+        ("s3://AKID:secret@bucket/x", "auto"),
+    ],
 )
 def test_remote_add_rejects_bad_url_or_kind(
     machines: dict[str, Path], monkeypatch: pytest.MonkeyPatch, url: str, kind: str

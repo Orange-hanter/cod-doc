@@ -7,13 +7,21 @@
 
 Гонка идёт через URL, а не через объект: каждый процесс открывает remote сам,
 как это делают две реплики на разных машинах.
+
+Строка ``s3`` (CLO-028) ходит в настоящее S3-совместимое хранилище: бакет —
+``TEST_S3_BUCKET``, адрес и креды — стандартная цепочка AWS
+(``AWS_ENDPOINT_URL``, ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``). Без
+переменной бакета строка пропускается; в CI её гоняет джоба ``S3 remote
+(MinIO)`` с ``TEST_S3_REQUIRED=1``, где пропуск — падение. Каждый тест получает свой префикс и убирает его за собой.
 """
 
 from __future__ import annotations
 
 import hashlib
 import multiprocessing
+import os
 import queue
+import uuid
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,7 +30,7 @@ from cod_doc.infra.remote.base import RefValue, RemoteStore, SnapshotRef, open_r
 from cod_doc.infra.remote.errors import ObjectMissingError, RemoteConfigError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
     from multiprocessing.synchronize import Barrier
     from pathlib import Path
 
@@ -34,16 +42,47 @@ def _file_url(tmp_path: Path) -> str:
     return (tmp_path / "remote").as_uri()
 
 
-FACTORIES: dict[str, Callable[[Path], str]] = {"file": _file_url}
+#: Бакет для строки ``s3``; без него строка пропускается.
+S3_BUCKET_ENV = "TEST_S3_BUCKET"
+#: В CI строка ``s3`` обязана идти: пропуск при этом флаге — падение.
+S3_REQUIRED_ENV = "TEST_S3_REQUIRED"
+
+
+def _s3_url(tmp_path: Path) -> str:
+    del tmp_path
+    bucket = os.environ.get(S3_BUCKET_ENV, "").strip()
+    if not bucket:
+        if os.environ.get(S3_REQUIRED_ENV):
+            pytest.fail(f"{S3_REQUIRED_ENV} задан, а {S3_BUCKET_ENV} нет")
+        pytest.skip(f"{S3_BUCKET_ENV} не задан — S3-хранилища для контракта нет")
+    return f"s3://{bucket}/contract-{uuid.uuid4().hex}"
+
+
+FACTORIES: dict[str, Callable[[Path], str]] = {"file": _file_url, "s3": _s3_url}
 
 
 def _sha(seed: str) -> str:
     return hashlib.sha256(seed.encode()).hexdigest()
 
 
+def _drop_s3_prefix(url: str) -> None:
+    """Убрать всё под префиксом теста: бакет может быть долгоживущим."""
+    from cod_doc.infra.remote.s3 import S3Remote
+
+    store = S3Remote.from_url(url)
+    paginator = store.client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=store.bucket, Prefix=f"{store.prefix}/"):
+        keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+        if keys:
+            store.client.delete_objects(Bucket=store.bucket, Delete={"Objects": keys})
+
+
 @pytest.fixture(params=sorted(FACTORIES))
-def remote_url(request: pytest.FixtureRequest, tmp_path: Path) -> str:
-    return FACTORIES[request.param](tmp_path)
+def remote_url(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[str]:
+    url = FACTORIES[request.param](tmp_path)
+    yield url
+    if url.startswith("s3://"):
+        _drop_s3_prefix(url)
 
 
 @pytest.fixture
@@ -181,6 +220,11 @@ def test_json_delete_requires_current_etag(remote: RemoteStore) -> None:
     assert remote.delete_json(PROJECT, key, etag) is True
     assert remote.get_json(PROJECT, key) is None
     assert remote.delete_json(PROJECT, key, etag) is False
+    # Удалённый ключ снова создаётся «с нуля» и только один раз.
+    again = remote.cas_json(PROJECT, key, None, {"replica_uid": "r2", "actor": "dakh"})
+    assert again is not None
+    assert remote.cas_json(PROJECT, key, None, {"replica_uid": "r3"}) is None
+    assert remote.get_json(PROJECT, key) == ({"replica_uid": "r2", "actor": "dakh"}, again)
 
 
 def test_meta_json_is_addressable(remote: RemoteStore) -> None:
@@ -243,6 +287,22 @@ def test_open_remote_rejects_unknown_url(url: str) -> None:
     with pytest.raises(RemoteConfigError) as exc:
         open_remote(url, credentials=None)
     assert exc.value.code == "SYNC-110"
+
+
+def test_open_remote_dispatches_s3_without_network() -> None:
+    """``s3://`` — ``S3Remote``, а не SYNC-110; открытие в сеть не ходит."""
+    from cod_doc.infra.remote.s3 import S3Remote
+
+    store = open_remote(
+        "s3://cod-doc-bucket/team/main",
+        credentials={
+            "access_key": "AKIDEXAMPLE",
+            "secret_key": "wJalrXUtnFEMI",
+            "endpoint_url": "http://127.0.0.1:1",
+        },
+    )
+    assert isinstance(store, S3Remote)
+    assert (store.bucket, store.prefix) == ("cod-doc-bucket", "team/main")
 
 
 # --- межпроцессная гонка CAS ----------------------------------------------------
