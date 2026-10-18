@@ -11,8 +11,12 @@ uid, и чужая вставка упирается в UNIQUE своей стр
   склеиваются;
 - **метка-порядок** (``KeyKind.LABEL``: ``plan_section.letter``) — буква ничего
   не значит, вторая перебуквляется;
-- **арендованный номер** (``KeyKind.LEASED``) по построению не совпадает;
-  совпадение провизорных — закрепление CLO-030 (``MergeRequiredError``).
+- **арендованный номер** (``KeyKind.LEASED``) из аренды не совпадает по
+  построению, а провизорный ID реплику не покидает (CLO-030). Совпасть может
+  только номер, выданный мимо аренды (явный ID, ``max+1`` без remote); push
+  fast-forward'ный, поэтому своя строка в этот момент ещё в хвосте — она
+  уступает номер (``leases.yield_number``: провизорный ID на месте, событие
+  ``sync.id_yielded``), а следующий push закрепит её номером из аренды.
 
 **Кто первый.** Порядок — ``(hlc создания, uid)``: HLC первой операции строки в
 журнале (вставка, ``base`` пуст), ничью решает uid. Сравнивают одни и те же два
@@ -72,10 +76,10 @@ from cod_doc.infra.models import (
     SyncOpModel,
 )
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, apply
+from cod_doc.services.sync_service import _local, apply, leases
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import FieldValue, canonical_json
-from cod_doc.services.sync_service.errors import MergeRequiredError, ObjectMissingError
+from cod_doc.services.sync_service.errors import ObjectMissingError
 from cod_doc.services.sync_service.merge import KEY_MERGE, ConflictSpec
 
 if TYPE_CHECKING:
@@ -155,10 +159,9 @@ def resolve_key(session: Session, ctx: Context, clash: KeyClash) -> bool:
     вставила чужую строку под новой буквой.
     """
     key = _key(clash.table, clash.key)
-    if key.kind is reg.KeyKind.LEASED:
-        msg = f"совпал арендованный номер {clash.table} {clash.key}"
-        raise MergeRequiredError(msg, task="CLO-030")
     project = _project(session, ctx.project_id)
+    if key.kind is reg.KeyKind.LEASED:
+        return _yield_leased(session, ctx, project, clash, key)
     found = apply.entity_by_uid(session, project, clash.table, clash.ours_uid)
     if found is None:  # _natural_twin только что её нашёл
         msg = f"{clash.table} {clash.ours_uid}: строки с совпавшим ключом нет"
@@ -189,6 +192,37 @@ def resolve_key(session: Session, ctx: Context, clash: KeyClash) -> bool:
         theirs_first=theirs_first,
     )
     return False
+
+
+# --- арендованный номер -------------------------------------------------------------
+
+
+def _yield_leased(
+    session: Session,
+    ctx: Context,
+    project: _local.ProjectRef,
+    clash: KeyClash,
+    key: reg.NaturalKey,
+) -> bool:
+    """Своя неуехавшая строка отдаёт номер чужой вставке (CLO-030); ``True`` — вставлять."""
+    found = apply.entity_by_uid(session, project, clash.table, clash.ours_uid)
+    if found is None:  # _natural_twin только что её нашёл
+        msg = f"{clash.table} {clash.ours_uid}: строки с совпавшим номером нет"
+        raise ObjectMissingError(msg)
+    obj, info = found
+    old = str(getattr(obj, info.attr(key.columns[-1])))
+    new = leases.yield_number(session, ctx.project_id, clash.table, old, clash.ours_uid)
+    activity_service.emit_for_write(
+        session,
+        ctx.project_id,
+        "sync.id_yielded",
+        ctx.author,
+        scope_kind=clash.table,
+        scope_id=clash.ours_uid,
+        payload={"from": old, "to": new, "uid": clash.ours_uid, "to_uid": clash.theirs.entity_uid},
+        summary=f"{clash.table}: {old} занят чужой строкой — своя временно {new}",
+    )
+    return True
 
 
 # --- склейка ----------------------------------------------------------------------

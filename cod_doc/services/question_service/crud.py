@@ -26,6 +26,7 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel, QuestionOptionModel
 from cod_doc.infra.repositories import OpenQuestionRepository
 from cod_doc.services import activity_service, search_service
+from cod_doc.services.sync_service import leases
 
 from ._internals import (
     _next_question_id,
@@ -92,7 +93,8 @@ def create(
 
     repo = OpenQuestionRepository(session)
     qid = question_id or _next_question_id(session, project_id)
-    validate_question_id(qid)
+    if not leases.is_provisional(qid):  # провизорный ID генератора (CLO-030)
+        validate_question_id(qid)
     if repo.get_by_question_id(project_id, qid) is not None:
         raise QuestionAlreadyExistsError(qid)
 
@@ -145,7 +147,14 @@ def create(
 
 
 def get(session: Session, project_id: int, question_id: str) -> OpenQuestion | None:
-    return OpenQuestionRepository(session).get_by_question_id(project_id, question_id)
+    """Вопрос проекта; закреплённый провизорный ``Q-~xxxx`` — по алиасу (CLO-030)."""
+    repo = OpenQuestionRepository(session)
+    found = repo.get_by_question_id(project_id, question_id)
+    if found is None:
+        current = leases.current_id(session, project_id, "open_question", question_id)
+        if current is not None:
+            found = repo.get_by_question_id(project_id, current)
+    return found
 
 
 def list_for_project(

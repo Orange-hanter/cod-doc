@@ -45,6 +45,21 @@ def config_file() -> Path:
 _LOAD_CACHE: dict[str, tuple[float, int, dict[str, Any]]] = {}
 
 
+def _raw_config() -> dict[str, Any] | None:
+    """Разобранный ``config.yaml`` из кэша (mtime, size); ``None`` — файла нет."""
+    path = config_file()
+    if not path.exists():
+        return None
+    st = path.stat()
+    key = str(path)
+    cached = _LOAD_CACHE.get(key)
+    if cached is not None and cached[0] == st.st_mtime and cached[1] == st.st_size:
+        return cached[2]
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    _LOAD_CACHE[key] = (st.st_mtime, st.st_size, data)
+    return data
+
+
 class ProjectEntry(BaseSettings):
     """Запись о проекте в реестре."""
 
@@ -262,18 +277,25 @@ class Config(BaseSettings):
         fresh ``Config`` is still constructed each call, so callers never share
         a mutable instance.
         """
-        path = config_file()
-        if not path.exists():
-            return cls()
-        st = path.stat()
-        key = str(path)
-        cached = _LOAD_CACHE.get(key)
-        if cached is not None and cached[0] == st.st_mtime and cached[1] == st.st_size:
-            data = cached[2]
-        else:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            _LOAD_CACHE[key] = (st.st_mtime, st.st_size, data)
-        return cls(**data)
+        data = _raw_config()
+        return cls() if data is None else cls(**data)
+
+    @staticmethod
+    def has_project_remotes(name: str) -> bool:
+        """У проекта в ``config.yaml`` есть ``remotes`` (RFC 29 §10.12).
+
+        Без конструирования ``Config``: генераторы ID зовут это на каждую
+        выдачу (CLO-030), а сборка pydantic-settings читает окружение и
+        ``.env`` заново — разобранного YAML из кэша STB-011 хватает.
+        """
+        data = _raw_config() or {}
+        for project in data.get("projects") or []:
+            if isinstance(project, dict) and project.get("name") == name:
+                remotes = project.get("remotes")
+                return isinstance(remotes, dict) and any(
+                    isinstance(spec, dict) for spec in remotes.values()
+                )
+        return False
 
     @classmethod
     def clear_cache(cls) -> None:

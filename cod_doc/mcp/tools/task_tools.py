@@ -354,7 +354,13 @@ def register(mcp: FastMCP) -> None:
                 pid = None
             t = None if pid is None else task_service.get(session, task_id, project_id=pid)
             if t is not None:
-                return task_to_dict(t, session=session)
+                out = task_to_dict(t, session=session)
+                if t.task_id != task_id:
+                    # CLO-030: провизорный ID закреплён push'ем — нашли по алиасу.
+                    out["renamed_from"] = task_id
+                    out["renamed_to"] = t.task_id
+                    out["note"] = f"{task_id} переименовано в {t.task_id}"
+                return out
 
         # Fallback: search YAML tasks when task_id looks like an 8-char hex hash
         if re.match(r"^[0-9a-f]{8}$", task_id, re.IGNORECASE):

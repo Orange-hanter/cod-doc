@@ -52,7 +52,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ChangesetModel, SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, apply, conflicts, merge
+from cod_doc.services.sync_service import _local, apply, conflicts, leases, merge
 from cod_doc.services.sync_service.changeset import Changeset, decode
 from cod_doc.services.sync_service.errors import (
     MergeRequiredError,
@@ -377,6 +377,7 @@ def pull(
         if not dry_run:
             with transactional(sf) as session:
                 _local.set_remote_ref(session, ref.row_id, remote, fetched.remote_ref)
+            leases.refill_quietly(sf, project, store)
         return PullResult(applied=[], ops=0, fast_forward=True, head=fetched.head)
 
     checked = _check_all(sf, fetched)
@@ -427,6 +428,7 @@ def pull(
                 },
                 summary=f"pull {remote}: {len(applied)} changeset'ов, {ops} операций",
             )
+    leases.refill_quietly(sf, project, store)  # аренда номеров впрок (CLO-030)
     return PullResult(
         applied=applied, ops=ops, fast_forward=fast_forward, conflicts=opened, head=head
     )
