@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.infra.models import DocumentModel, ScenarioModel, SectionModel
+from cod_doc.services.sync_service import leases
 
 from ._types import ScenarioNotFoundError
 
@@ -17,21 +18,38 @@ if TYPE_CHECKING:
 
 _SCENARIO_ID_RE = re.compile(r"^SCN-(\d{3})$")
 _ID_WIDTH = 3
+_PREFIX = "SCN"
+
+
+def _find_scenario(session: Session, project_id: int, scenario_id: str) -> ScenarioModel | None:
+    """Сценарий проекта; закреплённый провизорный ``SCN-~xxxx`` — по алиасу (CLO-030)."""
+    for value in (scenario_id, leases.current_id(session, project_id, "scenario", scenario_id)):
+        if value is None:
+            continue
+        stmt = select(ScenarioModel).where(
+            ScenarioModel.project_id == project_id,
+            ScenarioModel.scenario_id == value,
+        )
+        m = session.execute(stmt).scalar_one_or_none()
+        if m is not None:
+            return m
+    return None
 
 
 def _require_scenario(session: Session, project_id: int, scenario_id: str) -> ScenarioModel:
-    stmt = select(ScenarioModel).where(
-        ScenarioModel.project_id == project_id,
-        ScenarioModel.scenario_id == scenario_id,
-    )
-    m = session.execute(stmt).scalar_one_or_none()
+    m = _find_scenario(session, project_id, scenario_id)
     if m is None:
         raise ScenarioNotFoundError(scenario_id)
     return m
 
 
 def _next_scenario_id(session: Session, project_id: int) -> str:
-    """Allocate ``SCN-NNN`` as max+1 within the project (mirrors ``_next_adr_id``)."""
+    """Allocate ``SCN-NNN`` as max+1 within the project (mirrors ``_next_adr_id``).
+
+    CLO-030: с настроенным remote — номер из аренды или провизорный ``SCN-~xxxx``.
+    """
+    if leases.enabled(session, project_id):
+        return leases.lease_number(session, project_id, _PREFIX, kind="scenario")
     stmt = select(ScenarioModel.scenario_id).where(ScenarioModel.project_id == project_id)
     highest = 0
     for value in session.execute(stmt).scalars():

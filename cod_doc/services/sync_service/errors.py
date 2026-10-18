@@ -30,6 +30,7 @@ __all__ = [
     "MergeRequiredError",
     "ObjectMissingError",
     "PendingOpsError",
+    "ProvisionalIdWarning",
     "PushRejectedError",
     "RemoteAuthError",
     "RemoteConfigError",
@@ -62,6 +63,20 @@ class PendingOpsError(SyncError, RuntimeError):
     """SYNC-106: ``cod-doc update`` при незапушенных операциях."""
 
     code = "SYNC-106"
+
+
+class ProvisionalIdWarning(UserWarning):
+    """SYNC-107: аренда номеров пуста — выдан провизорный ID (не ошибка, §10.10).
+
+    Предупреждение, а не исключение: провизорный ``PREFIX-~xxxx`` рабочий, на
+    него можно ссылаться, а ближайший push закрепит за ним номер (CLO-030).
+    Текст начинается с кода, как у исключений ``SyncError``.
+    """
+
+    code = "SYNC-107"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(f"{self.code}: {message}")
 
 
 class CheckoutLeaseUnavailableError(RemoteUnavailableError):

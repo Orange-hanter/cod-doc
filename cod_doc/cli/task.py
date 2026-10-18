@@ -263,11 +263,14 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
 
+    # CLO-030: провизорный ID, закреплённый push'ем, находится по алиасу.
+    renamed = {"renamed_from": task_id, "renamed_to": t.task_id} if t.task_id != task_id else {}
     if as_json:
         click.echo(
             _json.dumps(
                 {
                     "task_id": t.task_id,
+                    **renamed,
                     "title": t.title,
                     "status": t.status.value,
                     "type": t.type.value,
@@ -286,6 +289,8 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
 
     icon = _STATUS_ICON.get(t.status.value, "⚪")
     console.rule(f"[bold cyan]{t.task_id}[/bold cyan]")
+    if renamed:
+        console.print(f"  [yellow]{task_id} переименовано в {t.task_id}[/yellow]")
     console.print(f"  Title:    {t.title}")
     console.print(f"  Status:   {icon} {t.status.value}")
     console.print(f"  Type:     {t.type.value}")

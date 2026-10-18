@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import EntityKind, QuestionLinkKind
 from cod_doc.infra.models import OpenQuestionModel
+from cod_doc.services.sync_service import leases
 from cod_doc.services.validation import ValidationError
 
 from ._types import QuestionNotFoundError
@@ -20,34 +21,55 @@ if TYPE_CHECKING:
 
 _QUESTION_ID_RE = re.compile(r"^Q-(\d{3,})$")
 _ID_WIDTH = 3
+_PREFIX = "Q"
 
 # Форма ссылки проверяется при записи, существование цели — в ``verify``:
 # вопрос часто пишут раньше задачи, которая его закроет (та же логика, что у
 # ``scenario_link``).
 _REF_SHAPES: dict[QuestionLinkKind, re.Pattern[str]] = {
-    QuestionLinkKind.TASK: re.compile(r"^[A-Z]{2,5}-\d{3}[A-Z]?$"),
-    QuestionLinkKind.ADR: re.compile(r"^ADR-\d{3,}$"),
-    QuestionLinkKind.STORY: re.compile(r"^[A-Z]{2,4}-\d{3}$"),
-    QuestionLinkKind.SCENARIO: re.compile(r"^SCN-\d{3,}$"),
+    # CLO-030: и провизорный ``PREFIX-~xxxx`` — push закрепит его вместе с ссылкой.
+    QuestionLinkKind.TASK: re.compile(r"^[A-Z]{2,5}-(?:\d{3}[A-Z]?|~[a-z2-7]{4})$"),
+    QuestionLinkKind.ADR: re.compile(r"^ADR-(?:\d{3,}|~[a-z2-7]{4})$"),
+    QuestionLinkKind.STORY: re.compile(r"^[A-Z]{2,4}-(?:\d{3}|~[a-z2-7]{4})$"),
+    QuestionLinkKind.SCENARIO: re.compile(r"^SCN-(?:\d{3,}|~[a-z2-7]{4})$"),
     QuestionLinkKind.SECTION: re.compile(r"^[^#\s][^#]*#[^#\s]+$"),
     QuestionLinkKind.URL: re.compile(r"^https?://\S+$"),
 }
 _MAX_REF_LEN = 512
 
 
+def _find_question(session: Session, project_id: int, question_id: str) -> OpenQuestionModel | None:
+    """Вопрос проекта; закреплённый провизорный ``Q-~xxxx`` — по алиасу (CLO-030)."""
+    for value in (
+        question_id,
+        leases.current_id(session, project_id, "open_question", question_id),
+    ):
+        if value is None:
+            continue
+        stmt = select(OpenQuestionModel).where(
+            OpenQuestionModel.project_id == project_id,
+            OpenQuestionModel.question_id == value,
+        )
+        m = session.execute(stmt).scalar_one_or_none()
+        if m is not None:
+            return m
+    return None
+
+
 def _require_question(session: Session, project_id: int, question_id: str) -> OpenQuestionModel:
-    stmt = select(OpenQuestionModel).where(
-        OpenQuestionModel.project_id == project_id,
-        OpenQuestionModel.question_id == question_id,
-    )
-    m = session.execute(stmt).scalar_one_or_none()
+    m = _find_question(session, project_id, question_id)
     if m is None:
         raise QuestionNotFoundError(question_id)
     return m
 
 
 def _next_question_id(session: Session, project_id: int) -> str:
-    """Allocate ``Q-NNN`` as max+1 within the project (mirrors ``_next_scenario_id``)."""
+    """Allocate ``Q-NNN`` as max+1 within the project (mirrors ``_next_scenario_id``).
+
+    CLO-030: с настроенным remote — номер из аренды или провизорный ``Q-~xxxx``.
+    """
+    if leases.enabled(session, project_id):
+        return leases.lease_number(session, project_id, _PREFIX, kind="open_question")
     stmt = select(OpenQuestionModel.question_id).where(OpenQuestionModel.project_id == project_id)
     highest = 0
     for value in session.execute(stmt).scalars():

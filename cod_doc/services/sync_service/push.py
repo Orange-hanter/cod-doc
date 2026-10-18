@@ -26,6 +26,13 @@
 Сбой между CAS и фиксацией оставляет remote на changeset'е, операции которого
 локально ещё хвост. Следующий ``pull`` узнаёт свои ``op_id`` и только
 фиксирует их (``pull._own``), не применяя второй раз.
+
+**Аренда номеров** (CLO-030). Перед каждой упаковкой провизорные ID
+закрепляются номерами аренды (``leases.pin_provisional``): провизорный ID
+реплику не покидает. Перед каждой, а не один раз: pull внутри повтора может
+отдать номер своей неуехавшей строки двойнику (``leases.yield_number``). После
+push с настроенным remote аренда добирается впрок (``leases.refill``); сбой
+добора push не отменяет — он уже на remote.
 """
 
 from __future__ import annotations
@@ -39,7 +46,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, digest
+from cod_doc.services.sync_service import _local, digest, leases
 from cod_doc.services.sync_service.changeset import Changeset, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, PushRejectedError
 
@@ -61,7 +68,7 @@ class PushResult:
     ops: int
     head: str | None
     retries: int
-    #: Закреплённые провизорные ID (CLO-030); до аренды номеров пусто.
+    #: Закреплённые провизорные ID: ``{провизорный: постоянный}`` (CLO-030).
     pinned: dict[str, str] = field(default_factory=dict)
 
 
@@ -177,18 +184,23 @@ def push(
 
     store = store if store is not None else _local.open_store(project, remote)
     retries = 0
+    pinned: dict[str, str] = {}
     while True:
+        pinned.update(leases.pin_provisional(sf, project, store=store, author=author))
         _, head, packed = _pack(sf, project, author)
         if packed is None:
-            return PushResult(changesets=[], ops=0, head=head, retries=retries)
+            leases.refill_quietly(sf, project, store)
+            return PushResult(changesets=[], ops=0, head=head, retries=retries, pinned=pinned)
         new_ref = _exchange(store, packed)
         if new_ref is not None:
             _commit(sf, packed, new_ref, remote, author)
+            leases.refill_quietly(sf, project, store)
             return PushResult(
                 changesets=[packed.sha],
                 ops=len(packed.op_ids),
                 head=packed.sha,
                 retries=retries,
+                pinned=pinned,
             )
         if retries >= max_retries:
             suffix = f"; повторов: {max_retries}" if max_retries else ""
