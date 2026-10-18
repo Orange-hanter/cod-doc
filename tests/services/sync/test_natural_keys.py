@@ -472,6 +472,60 @@ def test_scn_091_same_letter_is_relettered_deterministically(pair: tuple, first_
     _converged(a, b, store)
 
 
+def _sections_kl(rep: r.Replica, tag: str) -> list[str]:
+    """Две секции плана, K и L, одной транзакцией за другой: обе уедут одним changeset'ом."""
+    uids = []
+    for letter in ("K", "L"):
+        time.sleep(_TICK)
+        with transactional(rep.sf) as s:
+            plan_service.create_section(
+                s,
+                project_id=rep.project_id,
+                plan_scope="demo-plan",
+                letter=letter,
+                title=f"{tag} {letter}",
+                author=r.AUTHOR,
+            )
+            uids.append(
+                str(
+                    s.scalars(
+                        select(PlanSectionModel.uid).where(
+                            PlanSectionModel.title == f"{tag} {letter}"
+                        )
+                    ).one()
+                )
+            )
+    return uids
+
+
+@pytest.mark.parametrize("first_push", ["a", "b"])
+def test_letters_of_rows_inserted_earlier_in_the_same_changeset_count(
+    pair: tuple, first_push: str
+) -> None:
+    """CLO-047, сид 35: A и B завели по секции K и L, A — раньше.
+
+    B сливает changeset A, где обе вставки. Вставка K перебуквила свою K в M;
+    на вставке L заявка только что вставленной K по журналу не находилась —
+    операции changeset'а ложатся в ``sync_op`` после всех вставок, — и строка
+    считалась заведённой до журнала, проигрывая всем: на B выходило
+    bK=K, aK=M, на A — aK=K, bK=M.
+    """
+    a, b, store = pair
+    _sync(a, b, store)
+    ak, al = _sections_kl(a, "a")
+    bk, bl = _sections_kl(b, "b")
+
+    _sync(*_order(a, b, first_push), store)
+
+    for rep in (a, b):
+        with transactional(rep.sf, commit=False) as s:
+            letters = dict(
+                s.execute(select(PlanSectionModel.uid, PlanSectionModel.letter)).tuples().all()
+            )
+        assert [letters[u] for u in (ak, al, bk, bl)] == ["K", "L", "M", "N"], rep.name
+    _converged(a, b, store)
+
+
 # --- F2: две реплики, заведённые project add по отдельности ------------------------
 
 
