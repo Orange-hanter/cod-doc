@@ -9,6 +9,11 @@ SYNC-102), потом каждый применяется в своей тран
 0. **Эпоха** (CLO-032). ``meta.json["epoch"]`` новее эпохи схемы реплики —
    ``SYNC-105`` до скачивания: changeset'ы новой эпохи на старой схеме не
    применяются; хвост старой эпохи — ``export-pending``, затем ``update``.
+   Схема догнала remote, а голова реплики осталась в прошлой эпохе (CLO-050)
+   — changeset'ы между ней и снапшотом эпохи не применяются: реплика встаёт
+   на снапшот (``epoch_rebase``, проверка как у clone, событие
+   ``sync.epoch_rebased``), и дальше pull идёт от его головы. Changeset эпохи
+   старше ``meta.epoch`` среди скачанных — ``SYNC-105``.
 1. **Схема** (SCN-085, Q-012). Changeset с ``schema_head`` новее головы
    миграций этой БД — ``SYNC-104`` «remote на схеме X, у вас Y — cod-doc
    update»; не применяется ни один changeset этого pull, даже более старые.
@@ -61,6 +66,7 @@ from cod_doc.services.sync_service import (
     checkout_lease,
     conflicts,
     digest,
+    epoch_rebase,
     epochs,
     leases,
     markers,
@@ -91,8 +97,7 @@ _REWRITTEN: Final = "CLO-032"
 #: недоверенных объектов, и без потолка подделка заставила бы качать без конца.
 #: Больше — работа clone со снапшота (CLO-029).
 MAX_FETCH_CHANGESETS: Final = 10_000
-#: Потолок родителей одного changeset'а: у merge-changeset'а их два (§3.6).
-MAX_PARENTS: Final = 16
+MAX_PARENTS: Final = _local.MAX_PARENTS
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +110,8 @@ class PullResult:
     conflicts: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     head: str | None = None
+    #: Голова снапшота эпохи, на который встала отставшая реплика (CLO-050).
+    rebased: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,15 +241,78 @@ def fetch(
 # --- проверки до записи -----------------------------------------------------------
 
 
-def _check_epoch(sf: sessionmaker[Session], project: str, store: RemoteStore) -> None:
+def _check_epoch(
+    sf: sessionmaker[Session], project: str, store: RemoteStore
+) -> epochs.RemoteMeta | None:
     """Эпоха remote новее эпохи реплики — ``SYNC-105`` до скачивания (§3.6, CLO-032)."""
     with transactional(sf, commit=False) as session:
         ref = _local.project_ref(session, project)
         epoch = _local.epoch(session)
         pending = digest.pending_count(session, ref.row_id)
-    epochs.check_pull(
-        epochs.read_meta(store, ref.uid), project=project, epoch=epoch, pending=pending
-    )
+    meta = epochs.read_meta(store, ref.uid)
+    epochs.check_pull(meta, project=project, epoch=epoch, pending=pending)
+    return meta
+
+
+def _rebase(
+    sf: sessionmaker[Session],
+    project: str,
+    store: RemoteStore,
+    meta: epochs.RemoteMeta | None,
+    *,
+    author: str,
+    dry_run: bool,
+) -> str | None:
+    """Голова в прошлой эпохе — встать на снапшот эпохи ``meta.epoch`` (CLO-050).
+
+    ``None`` — не нужно (или голову сдвинул параллельный pull). Сеть и
+    проверки — до транзакции; замена строк, история и голова — одной
+    транзакцией, голова сдвигается CAS'ом первой записью, как в ``_apply_one``.
+    """
+    with transactional(sf, commit=False) as session:
+        ref = _local.project_ref(session, project)
+        stale = epoch_rebase.needed(session, ref.row_id, meta)
+        if stale is None or meta is None:
+            return None
+        head = _local.local_head(session, ref.row_id)
+        pending = digest.pending_count(session, ref.row_id)
+        applied = _applied_shas(session, ref.row_id)
+        me = self_replica(session, ref.row_id)
+    assert head is not None  # needed() без головы — None
+    epoch_rebase.refuse_pending(project, pending, stale, meta.epoch)
+    tgt = epoch_rebase.target(store, ref.uid, meta)
+    if dry_run:
+        return tgt.sha
+    found = _download(store, ref, tgt.sha, applied)
+    if not any(head in cs.parents for cs in found.values()):
+        msg = f"голова реплики {head[:12]} не предок снапшота эпохи {tgt.sha[:12]}"
+        raise MergeRequiredError(msg, task=_REWRITTEN)
+    for cs in found.values():
+        apply.check_clock(cs, self_replica_uid=me)
+    history = [(sha, found[sha]) for sha in _topological(found)]
+    with transactional(sf) as session:
+        if not _local.cas_local_head(session, ref.row_id, head, tgt.sha):
+            session.rollback()
+            return None
+        loaded = epoch_rebase.replace(session, ref, tgt, history)
+        activity_service.emit_for_write(
+            session,
+            ref.row_id,
+            "sync.epoch_rebased",
+            author,
+            scope_kind="project",
+            scope_id=ref.slug,
+            payload={
+                "epoch": meta.epoch,
+                "snapshot": tgt.sha,
+                "from": head,
+                "from_epoch": stale,
+                "changesets": len(history),
+                "rows": loaded.rows,
+            },
+            summary=f"эпоха {meta.epoch}: реплика встала на снапшот {tgt.sha[:12]}",
+        )
+    return tgt.sha
 
 
 def _check_schema(sf: sessionmaker[Session], fetched: _Fetched) -> None:
@@ -371,10 +441,13 @@ class _Checked:
     diverged: bool
 
 
-def _check_all(sf: sessionmaker[Session], fetched: _Fetched) -> _Checked:
-    """Всё, что проверяется до первой записи: схема, «свои», штампы, расхождение."""
+def _check_all(
+    sf: sessionmaker[Session], fetched: _Fetched, meta: epochs.RemoteMeta | None
+) -> _Checked:
+    """Всё, что проверяется до первой записи: схема, эпоха, «свои», штампы, расхождение."""
     ref = fetched.project
     _check_schema(sf, fetched)
+    epoch_rebase.check_changesets(fetched.changesets, meta)  # capability §5, CLO-050
     with transactional(sf) as session:
         me = self_replica(session, ref.row_id)
         own = _own(session, fetched.changesets, me)
@@ -397,7 +470,11 @@ def pull(
 ) -> PullResult:
     """Fetch + merge: чужие changeset'ы поверх своей головы, хвост слит по §3.7 (§10.6)."""
     store = store if store is not None else _local.open_store(project, remote)
-    _check_epoch(sf, project, store)
+    meta = _check_epoch(sf, project, store)
+    rebased = _rebase(sf, project, store, meta, author=author, dry_run=dry_run)
+    if dry_run and rebased is not None:
+        # Хвост после снапшота покажет следующий dry-run — когда реплика на нём встанет.
+        return PullResult(applied=[], ops=0, fast_forward=True, head=rebased, rebased=rebased)
     fetched = _fetch(sf, project, store)
     ref = fetched.project
     if not fetched.changesets:
@@ -406,9 +483,9 @@ def pull(
                 _local.set_remote_ref(session, ref.row_id, remote, fetched.remote_ref)
             leases.refill_quietly(sf, project, store)
             checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
-        return PullResult(applied=[], ops=0, fast_forward=True, head=fetched.head)
+        return PullResult(applied=[], ops=0, fast_forward=True, head=fetched.head, rebased=rebased)
 
-    checked = _check_all(sf, fetched)
+    checked = _check_all(sf, fetched, meta)
     own, foreign = checked.own, checked.foreign
     if dry_run:
         # Что сделал бы pull: те же changeset'ы и та голова, на которой он встал бы.
@@ -459,5 +536,10 @@ def pull(
     leases.refill_quietly(sf, project, store)  # аренда номеров впрок (CLO-030)
     checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
     return PullResult(
-        applied=applied, ops=ops, fast_forward=fast_forward, conflicts=opened, head=head
+        applied=applied,
+        ops=ops,
+        fast_forward=fast_forward,
+        conflicts=opened,
+        head=head,
+        rebased=rebased,
     )

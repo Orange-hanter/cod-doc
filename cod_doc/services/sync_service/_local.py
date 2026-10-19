@@ -50,6 +50,9 @@ DIGEST_PENDING: Final = "0" * 64
 _CHUNK: Final = 500
 #: Потолок обхода локальной истории (предок ли голова remote).
 MAX_HISTORY: Final = 100_000
+#: Потолок родителей одного changeset'а: у merge-changeset'а их два (§3.6).
+#: Здесь, а не в ``pull``: его читает и ``snapshot``, которого зовёт ``pull``.
+MAX_PARENTS: Final = 16
 
 
 @dataclass(frozen=True, slots=True)

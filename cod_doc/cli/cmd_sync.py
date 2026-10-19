@@ -243,6 +243,13 @@ def pull(
         _echo_json(_as_dict(result))
         return
     prefix = "dry-run: применилось бы" if dry_run else "применено"
+    if result.rebased is not None:
+        verb = "встала бы" if dry_run else "встала"
+        console.print(
+            f"реплика {verb} на снапшот эпохи {_short(result.rebased)} "
+            "(changeset'ы прошлой эпохи не проигрываются)",
+            markup=False,
+        )
     console.print(
         f"{prefix} changeset'ов {len(result.applied)}, операций {result.ops}; "
         f"голова {_short(result.head)}",

@@ -487,9 +487,28 @@ sequenceDiagram
     `gate.check_ops`, что у push (CLO-033), restricted не уходит и в файл.
     Файл новый, 0600, без `--out` — stdout. Обратного импорта нет: операции
     старой эпохи на новую схему не ложатся, переносятся руками через CLI/MCP.
-    Changeset'ы старой эпохи, запушенные до открытия новой, отставшая
-    реплика после `update` применяет как обычно; старт отставших со
-    снапшота эпохи (п. 3) не реализован.
+  - п. 3 для отставших (CLO-050, `sync_service/epoch_rebase.py`): pull
+    реплики, чья схема уже в эпохе `meta.epoch`, а changeset головы — в
+    прошлой (после `cod-doc update`), не проигрывает changeset'ы между ними:
+    реплика встаёт на снапшот по указателю `meta.json["snapshot"]` (указатель
+    обязан быть в эпохе `meta.epoch`, иначе `SYNC-102`). Проверка — как у
+    clone: changeset'ы от головы снапшота до применённых читаются по
+    адресам, штампы — `check_clock`, голова реплики обязана быть их предком
+    (иначе `MergeRequiredError`, как у переписанной истории); они ложатся в
+    журнал и индекс историей, строки снапшота идут через `snapshot.load`, и
+    дайджест загруженного сверяется с changeset'ом головы до коммита. Строки
+    кладутся поверх своих одной транзакцией: уезжающая строка без пары в
+    снапшоте удаляется, отличающаяся правится на месте (`row_id` остаётся),
+    недостающая создаётся; local-строки, local-колонки и local-таблицы не
+    трогаются. Незапушенные операции снапшот не примет — `SYNC-105` «сначала
+    export-pending, затем проект заново через clone»; молча они не
+    выбрасываются. Событие `sync.epoch_rebased`, `PullResult.rebased`;
+    `--dry-run` называет снапшот, хвост после него — следующим прогоном;
+  - changeset эпохи старше `meta.epoch` среди скачанных pull'ом — `SYNC-105`
+    до первой записи (такой поверх истории новой эпохи пишет только клиент
+    без CLO-032; реплике без головы — `clone`). Changeset'ы эпохи, которую
+    remote ещё не сменил, реплика на новой схеме применяет как обычно: так
+    она догоняет remote перед push'ем, открывающим эпоху.
 - **Checkout (Q-011).** Если у проекта настроен remote, `task_checkout` берёт замок
   `leases/checkout/<task_uid>` тем же CAS, что и `refs/main`, — на S3 и на умном
   remote одинаково. Занятый замок — отказ сразу: «взята dakh@macbook в 14:02».
@@ -1158,6 +1177,7 @@ def open_remote(url: str, *, credentials: Credentials | None) -> RemoteStore
 @dataclass(frozen=True) class PullResult:
     applied: list[str]; ops: int; fast_forward: bool; conflicts: list[str];
     aliases: list[str]; head: str
+    rebased: str | None                                               # CLO-050
 @dataclass(frozen=True) class SyncStatus:
     remote: str | None; head_local: str | None; head_remote: str | None
     ahead: int; behind: int; pending_ops: int; open_conflicts: int
@@ -1275,7 +1295,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `SYNC-102` | объект не найден или sha не совпал | `ObjectMissingError(LookupError)` | ValueError / 1 / 404, 400 |
 | `SYNC-103` | push не прошёл после `max_retries` | `PushRejectedError(RuntimeError)` | ValueError / 1 / — |
 | `SYNC-104` | схема changeset новее своей / push старше `schema_min` | `SchemaMismatchError(RuntimeError)` | ValueError / 1 / 422 |
-| `SYNC-105` | эпоха remote новее эпохи реплики: push с незапушенными операциями, pull (CLO-032) | `EpochPassedError(RuntimeError)` | ValueError / 1 / — |
+| `SYNC-105` | эпоха remote новее эпохи реплики: push с незапушенными операциями, pull (CLO-032); changeset эпохи старше `meta.epoch` среди скачанных, незапушенные операции у реплики, встающей на снапшот эпохи (CLO-050) | `EpochPassedError(RuntimeError)` | ValueError / 1 / — |
 | `SYNC-106` | `cod-doc update` перед миграцией, открывающей эпоху, при незапушенных операциях проекта с remote; или проверка не прочитала БД (CLO-032) | `PendingOpsError(RuntimeError)` | — / 1 / — |
 | `SYNC-107` | аренда номеров исчерпана офлайн (не ошибка: выдаётся провизорный ID, код — в предупреждении) | — | warning |
 | `SYNC-108` | замок checkout занят; аренда не по форме — тоже занят (CLO-048) | `CheckoutLeaseHeldError(CheckoutConflictError)`; не по форме — `CheckoutLeaseMalformedError(CheckoutLeaseHeldError)` | ValueError / 1 / 409 |
@@ -1303,6 +1323,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `plan_section.relettered` | перебуквление | `plan` / `{from, to, section_uid}` |
 | `sync.epoch_opened` | первый push новой эпохи | `project` / `{epoch, snapshot}` |
 | `sync.cloned` | clone завершён (CLO-029) | `project` / `{remote, url, snapshot, head, applied, ops}` |
+| `sync.epoch_rebased` | отставшая реплика встала на снапшот эпохи (CLO-050) | `project` / `{epoch, snapshot, from, from_epoch, changesets, rows}` |
 | `task.checkout_leased` / `task.checkout_lease_released` | аренда замка | `task` / `{remote, offline}` |
 | `task.checkout_lease_taken_over` | checkout перехватил истёкшую чужую аренду (CLO-048) | `task` / `{remote, previous_agent, previous_replica, previous_acquired_at, previous_ttl_minutes}` |
 | `auth.denied` (сервер) | 401/403/429 | `project` / `{token_label?, ip, path, code}` |
