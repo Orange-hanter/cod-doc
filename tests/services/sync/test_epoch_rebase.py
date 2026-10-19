@@ -33,6 +33,7 @@ from cod_doc.infra.models import (
     ActivityEventModel,
     ChangesetModel,
     DocumentModel,
+    EntityAliasModel,
     ProjectModel,
     SyncOpModel,
     TaskModel,
@@ -302,6 +303,62 @@ def test_invariant_changeset_of_a_past_epoch_is_never_applied_to_a_new_epoch_rep
     assert all(epoch == NEW for _, epoch in applied)
     local, expected = _digest_and_expected(b)
     assert local == expected
+
+
+def _aliases(rep: r.Replica) -> list[tuple[str, str, str, str]]:
+    with transactional(rep.sf, commit=False) as s:
+        rows = s.scalars(select(EntityAliasModel).order_by(EntityAliasModel.alias))
+        return [(x.entity_kind, x.alias, x.uid, x.reason) for x in rows]
+
+
+def _doc_uid(rep: r.Replica, doc_key: str) -> str:
+    with transactional(rep.sf, commit=False) as s:
+        return str(
+            s.scalars(select(DocumentModel.uid).where(DocumentModel.doc_key == doc_key)).one()
+        )
+
+
+def test_glue_inside_the_skipped_history_gives_the_rebased_replica_the_same_alias(
+    world: tuple, tmp_path: Path
+) -> None:
+    """CLO-052: склейка в истории, которую B не проигрывала, — алиас из журнала, не из снапшота.
+
+    A и C заводят документ ``twin`` (A раньше); C пушит первым, A склеивает и пушит —
+    оба uid в истории старой эпохи, алиас у A и C. A открывает эпоху; B, отставшая
+    до склейки, кладёт снапшот и получает тот же алиас и тот же журнал двойника.
+    """
+    a, b, store = world
+    c = r.replica_b(tmp_path, a, name="c")
+    _set_schema(c, OLD)
+    _push(a, store)
+    _pull(b, store)
+    _pull(c, store)
+    r.make_doc(a, "twin", {"from-a": "A"})
+    r.make_doc(c, "twin", {"from-c": "C"})
+    uid_a, uid_c = _doc_uid(a, "twin"), _doc_uid(c, "twin")
+    _push(c, store)
+    _pull(a, store)
+    _push(a, store)
+    _pull(c, store)
+    expected = [("document", uid_c, uid_a, "merged")]
+    assert _aliases(a) == _aliases(c) == expected
+
+    _set_schema(a, NEW)
+    r.make_task(a, "DEM-100")
+    assert _push(a, store).epoch_opened == NEW
+    _set_schema(b, NEW)
+    assert _pull(b, store).rebased is not None
+
+    assert _aliases(b) == expected
+    with transactional(b.sf, commit=False) as sb, transactional(c.sf, commit=False) as sc:
+        query = select(SyncOpModel.op_id, SyncOpModel.entity_uid).where(
+            SyncOpModel.entity_kind == "document"
+        )
+        mine = {op: uid for op, uid in sb.execute(query)}
+        theirs = {op: uid for op, uid in sc.execute(query)}
+    assert {k: v for k, v in mine.items() if k in theirs} == theirs
+    local, head_digest = _digest_and_expected(b)
+    assert local == head_digest
 
 
 # --- отказы -------------------------------------------------------------------------

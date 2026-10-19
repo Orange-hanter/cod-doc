@@ -31,7 +31,10 @@ Changeset'ы прошлой эпохи несут операции в форме
    месте (``row_id`` сохраняется: на него ссылаются local-строки и ревизии);
    нет у реплики — создаётся, как у clone. Local-строки (restricted-документы
    и всё под ними), local-колонки (``project.root_path``, ``config_json``…) и
-   local-таблицы (конфликты, аренды, алиасы ``pinned``) не трогаются.
+   local-таблицы (конфликты, аренды, алиасы ``pinned``) не трогаются. Свои
+   алиасы склейки остаются; новые — из склеек в истории эпохи — ``snapshot.load``
+   выводит из проверенного журнала (``clone_aliases``, CLO-052), строки ``alias``
+   снапшота не читаются.
 6. **Changeset прошлой эпохи** в обычном pull (``check_changesets``) —
    ``SYNC-105``, до первой записи: такой changeset поверх истории новой эпохи
    мог записать только клиент без CLO-032, а на реплике без головы он значит
@@ -48,13 +51,12 @@ import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.hlc import Hlc, clock_for, self_replica
-from cod_doc.infra.models import ChangesetModel, EntityAliasModel
+from cod_doc.infra.models import ChangesetModel
 from cod_doc.services.sync_service import _local, apply, epochs, snapshot
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.errors import EpochPassedError, ObjectMissingError
@@ -80,7 +82,6 @@ __all__ = [
 _PROJECT: Final = "project"
 _ROW: Final = "row"
 _ROW_LEN: Final = 4
-_PAIR_LEN: Final = 2
 
 Key = tuple[str, str]
 
@@ -236,24 +237,6 @@ class Rebaser(snapshot._Loader):
             later = snapshot.deferred_columns().get(table, frozenset())
             return {c: v for c, v in fields.items() if c in later}
         return super().deferred(table, uid, fields)
-
-    def alias(self, item: list[object]) -> None:
-        """Алиас, который реплика уже знает, принимается, только если он тот же."""
-        body = item[1] if len(item) == _PAIR_LEN else None
-        if isinstance(body, dict):
-            existing = self.session.scalars(
-                select(EntityAliasModel).where(
-                    EntityAliasModel.project_id == self.project.row_id,
-                    EntityAliasModel.entity_kind == body.get("entity_kind"),
-                    EntityAliasModel.alias == body.get("alias"),
-                )
-            ).one_or_none()
-            if existing is not None:
-                if (existing.uid, existing.reason) != (body.get("uid"), body.get("reason")):
-                    msg = f"алиас {existing.entity_kind} {existing.alias}: на реплике → {existing.uid}"
-                    raise snapshot._bad(msg)
-                return
-        super().alias(item)
 
 
 def replace(
