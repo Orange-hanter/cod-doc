@@ -4133,12 +4133,13 @@ _cod-doc() {
     (cod_doc_sync_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-sync-$words[1]:"
       case $words[1] in
-        (conflicts) _cod_doc_sync_conflicts && ret=0 ;;
-        (log)       _cod_doc_sync_log && ret=0 ;;
-        (resolve)   _cod_doc_sync_resolve && ret=0 ;;
-        (status)    _cod_doc_sync_status && ret=0 ;;
-        (verify)    _cod_doc_sync_verify && ret=0 ;;
-        (*)         _default && ret=0 ;;
+        (conflicts)      _cod_doc_sync_conflicts && ret=0 ;;
+        (export-pending) _cod_doc_sync_export_pending && ret=0 ;;
+        (log)            _cod_doc_sync_log && ret=0 ;;
+        (resolve)        _cod_doc_sync_resolve && ret=0 ;;
+        (status)         _cod_doc_sync_status && ret=0 ;;
+        (verify)         _cod_doc_sync_verify && ret=0 ;;
+        (*)              _default && ret=0 ;;
       esac
       ;;
   esac
@@ -4149,6 +4150,7 @@ _cod-doc() {
   local -a cmds
   cmds=(
     'conflicts:Конфликты слияния; в БД «наше», «их» лежит в конфликте (RFC 29 §3.7…'
+    'export-pending:Незапушенные операции — в файл, для ручного переноса после смены эп…'
     'log:Changeset'\''ы истории реплики; автор, реплика, число операций.'
     'resolve:Разрешить конфликт; значение, операция, ревизия и событие — уедут p…'
     'status:Голова, ahead/behind, неотправленные операции, restricted-документы.'
@@ -4165,6 +4167,17 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--status)--status=:status:(open resolved all)' \
     '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_sync_export_pending] )) || _cod_doc_sync_export_pending() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--out)--out=[Файл выгрузки (новый, 0600); без опции — в stdout]:out:_files' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }

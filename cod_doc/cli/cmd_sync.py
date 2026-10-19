@@ -7,9 +7,10 @@
 сообщением, начинающимся с кода ``SYNC-NNN`` (§10.10).
 
 ``clone URL [DIR]`` (CLO-029) заводит проект с remote: снапшот + хвост,
-регистрация в реестре. Команды поздних секций ещё не выставлены: ``remote
-login``, ``sync export-pending``, ``member``, ``token`` — их сервисов пока нет
-(CLO-032, CLO-038).
+регистрация в реестре. ``sync export-pending`` (CLO-032) выгружает
+незапушенные операции в файл или stdout. Команды поздних секций ещё не
+выставлены: ``remote login``, ``member``, ``token`` — их сервисов пока нет
+(CLO-038).
 """
 
 from __future__ import annotations
@@ -276,6 +277,8 @@ def push(
         f"отправлено операций {result.ops} в {_short(result.head)} (повторов: {result.retries})",
         markup=False,
     )
+    if result.epoch_opened:
+        console.print(f"открыта эпоха {result.epoch_opened} (снапшот записан)", markup=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -313,7 +316,7 @@ def sync_status(
         f"ahead / behind:  {st.ahead} / {st.behind}",
         f"не отправлено:   {st.pending_ops} операций",
         f"конфликты:       {st.open_conflicts}",
-        f"эпоха:           {st.epoch_local}",
+        f"эпоха:           {st.epoch_local} (remote: {st.epoch_remote or '—'})",
         f"restricted:      {st.restricted_local} документов не уезжают",
     ]
     if st.verify is not None:
@@ -375,6 +378,33 @@ def sync_verify(ctx: click.Context, project: str, remote_name: str, as_json: boo
         )
     if not result.equal:
         ctx.exit(1)
+
+
+@sync.command("export-pending")
+@_project_opt
+@click.option(
+    "--out",
+    "out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Файл выгрузки (новый, 0600); без опции — в stdout",
+)
+@click.pass_context
+def sync_export_pending(ctx: click.Context, project: str, out: Path | None) -> None:
+    """Незапушенные операции — в файл, для ручного переноса после смены эпохи (CLO-032)."""
+    from cod_doc.services.sync_service import epochs
+
+    sf = _factory(ctx, project)
+    with _sync_errors():
+        if out is None:
+            data, _count = epochs.render_pending(sf, project)
+            click.echo(data.decode("utf-8"), nl=False)
+            return
+        try:
+            count = epochs.export_pending(sf, project, path=out)
+        except FileExistsError as exc:
+            raise click.ClickException(f"{out}: файл уже есть — выбери другой --out") from exc
+    click.echo(f"{epochs.pending_phrase(count)} выгружено в {out}", err=True)
 
 
 def _project_id(session: Session, project: str) -> int:

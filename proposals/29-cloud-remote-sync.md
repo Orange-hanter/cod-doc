@@ -439,6 +439,44 @@ sequenceDiagram
      переноса.
   Push со схемой старше `meta.schema_min` отвергается тем же сообщением про
   `cod-doc update`. Миграция, не трогающая `authored`-колонки, эпоху не открывает.
+  Реализация (CLO-032, `infra/sync_epochs.py`, `sync_service/epochs.py`):
+  - эпоха называется открывшей её ревизией; эпоха реплики — последняя
+    открывающая ревизия не новее головы миграций её БД. Решение «открывает /
+    не открывает» записано застывшим реестром `sync_epochs.MIGRATIONS` для
+    каждой ревизии после `0049_sync_identity`; гейт
+    `tests/infra/test_sync_epochs_registry.py` прогоняет цепочку по шагу и
+    сверяет решение с фактическим изменением уезжающих колонок
+    (`SHIPPED_COLUMNS`: колонка или её тип, таблица; исчезнувшая колонка —
+    всегда изменение). Сейчас эпоха одна — `0050_sync_rank`;
+  - `cod-doc update`, фаза B: перед миграцией, открывающей эпоху, БД с
+    проектом, у которого настроен remote и есть неупакованные операции, не
+    мигрируется — `SYNC-106` «3 незапушенные операции — сначала cod-doc
+    push -p P» с подсказками `cod-doc runtime rollback` (push сборкой, на
+    которой операции записаны) и `export-pending`. Проект без remote не
+    проверяется. Hub-БД держит любой её проект. БД, которую проверка не
+    прочитала, тоже не мигрируется (fail closed); URL в лог и отчёт не
+    попадает (пароль hub-БД);
+  - push сверяет `meta.json` до обмена: эпоха remote новее — `SYNC-105` с
+    подсказкой `export-pending`; схема старше `schema_min` — `SYNC-104`;
+    эпоха реплики новее — снапшот после push пишется вне каденции, тот же CAS
+    `meta.json` поднимает `epoch` и `schema_min`, событие `sync.epoch_opened`,
+    `PushResult.epoch_opened`. Не записался снапшот — эпоха не открыта,
+    следующий push попробует снова;
+  - pull реплики, чья эпоха старше `meta.epoch`, — `SYNC-105` до скачивания
+    (с хвостом — «сначала export-pending, затем cod-doc update»);
+  - `meta.json` — недоверенный ввод: `v` = 1, `project_uid` = uid проекта,
+    `epoch`/`schema_min` — имена ревизий ≤ 128 символов, `snapshot_every` —
+    1…10⁷; иначе `SYNC-102`. Незнакомое коду, но правильно записанное имя
+    эпохи — эпоха новее своей (`SYNC-105`, «cod-doc update»);
+  - `export-pending` — конверт `{v, kind: "pending", slug, exported_at, ops,
+    changeset}`, где `changeset` — форма §10.4 (`to_dict`) с нулевым
+    дайджестом, операции — те же, что упаковал бы push. Файл новый, 0600,
+    без `--out` — stdout. Обратного импорта нет: операции старой эпохи на
+    новую схему не ложатся, переносятся руками через CLI/MCP. Экспорт читает
+    только колонки `project` и журнал — работает и на схеме старше кода.
+    Changeset'ы старой эпохи, запушенные до открытия новой, отставшая
+    реплика после `update` применяет как обычно; старт отставших со
+    снапшота эпохи (п. 3) не реализован.
 - **Checkout (Q-011).** Если у проекта настроен remote, `task_checkout` берёт замок
   `leases/checkout/<task_uid>` тем же CAS, что и `refs/main`, — на S3 и на умном
   remote одинаково. Занятый замок — отказ сразу: «взята dakh@macbook в 14:02».
@@ -953,7 +991,9 @@ ALTER TABLE <t> ADD COLUMN rank TEXT;         -- document: node_rank
 Remote-раскладка — §3.5; `meta.json`:
 `{"v": 1, "project_uid", "epoch", "schema_min", "created", "snapshot_every": 5000,
 "snapshot": {"epoch", "sha", "ops"}}` — `snapshot` — указатель на последний снапшот
-и число операций журнала в нём (CLO-029).
+и число операций журнала в нём (CLO-029). `epoch` и `schema_min` — имя ревизии,
+открывшей эпоху; поднимает их первый push новой эпохи тем же CAS, что двигает
+указатель (CLO-032).
 Аренда номеров на remote — `leases/<PREFIX>`:
 `{"next": 261, "block": 20, "holders": {"<replica_uid>": [241, 260]}}`.
 Замок checkout — `leases/checkout/<task_uid>`:
@@ -1101,6 +1141,7 @@ def open_remote(url: str, *, credentials: Credentials | None) -> RemoteStore
 @dataclass(frozen=True) class PushResult:
     changesets: list[str]; ops: int; head: str; retries: int; pinned: dict[str, str]
     snapshot: str | None                                              # CLO-029
+    epoch_opened: str | None                                          # CLO-032
 @dataclass(frozen=True) class PullResult:
     applied: list[str]; ops: int; fast_forward: bool; conflicts: list[str];
     aliases: list[str]; head: str
@@ -1122,6 +1163,7 @@ def verify(sf, project: str, *, remote: str = "origin") -> VerifyResult
 def clone(url: str, *, root: Path | None = None, slug: str | None = None,
           author: str) -> CloneResult                                 # CLO-029
 def export_pending(sf, project: str, *, path: Path) -> int            # → число операций
+def render_pending(sf, project: str) -> tuple[bytes, int]             # stdout, CLO-032
 
 # конфликты — обычные write-сервисы (ревизия + activity, ADO-040):
 def list_conflicts(session, project_id: int, *, status: str = "open") -> list[dict]
@@ -1177,7 +1219,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `cod-doc sync status -p P` | `--verify`, `--json` | |
 | `cod-doc sync conflicts -p P` | `--status open\|resolved\|all`, `--json` | |
 | `cod-doc sync resolve UID -p P` | `--take ours\|theirs\|--text-file F`, `--reason` | |
-| `cod-doc sync verify / log / export-pending` | `-p P`, `log -n 20`, `export-pending --out F` | |
+| `cod-doc sync verify / log / export-pending` | `-p P`, `log -n 20`, `export-pending --out F` | `export-pending` без `--out` — в stdout; `--out` — новый файл 0600 (существующий не перезаписывается) |
 | `cod-doc member add/list/remove`, `cod-doc token create/revoke` | только против `https://`-remote, роль admin | `token create` печатает токен один раз |
 | `cod-doc task checkout ID` (есть) | `+ --offline` | |
 
@@ -1219,8 +1261,8 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `SYNC-102` | объект не найден или sha не совпал | `ObjectMissingError(LookupError)` | ValueError / 1 / 404, 400 |
 | `SYNC-103` | push не прошёл после `max_retries` | `PushRejectedError(RuntimeError)` | ValueError / 1 / — |
 | `SYNC-104` | схема changeset новее своей / push старше `schema_min` | `SchemaMismatchError(RuntimeError)` | ValueError / 1 / 422 |
-| `SYNC-105` | эпоха сменилась при незапушенных операциях | `EpochPassedError(RuntimeError)` | ValueError / 1 / — |
-| `SYNC-106` | `cod-doc update` при незапушенных операциях | `PendingOpsError(RuntimeError)` | — / 1 / — |
+| `SYNC-105` | эпоха remote новее эпохи реплики: push с незапушенными операциями, pull (CLO-032) | `EpochPassedError(RuntimeError)` | ValueError / 1 / — |
+| `SYNC-106` | `cod-doc update` перед миграцией, открывающей эпоху, при незапушенных операциях проекта с remote; или проверка не прочитала БД (CLO-032) | `PendingOpsError(RuntimeError)` | — / 1 / — |
 | `SYNC-107` | аренда номеров исчерпана офлайн (не ошибка: выдаётся провизорный ID, код — в предупреждении) | — | warning |
 | `SYNC-108` | замок checkout занят; аренда не по форме — тоже занят (CLO-048) | `CheckoutLeaseHeldError(CheckoutConflictError)`; не по форме — `CheckoutLeaseMalformedError(CheckoutLeaseHeldError)` | ValueError / 1 / 409 |
 | `SYNC-109` | remote недоступен для checkout без `--offline` | `CheckoutLeaseUnavailableError(RemoteUnavailableError)` | ValueError / 1 / — |

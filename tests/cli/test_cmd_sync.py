@@ -348,3 +348,30 @@ def test_clone_refuses_when_the_slug_is_taken(
     assert "SYNC-110" in err
     assert "уже есть в реестре" in err
     assert not (machines["a"] / "second").exists()
+
+
+# --- export-pending (CLO-032) ------------------------------------------------------
+
+
+def test_sync_export_pending_to_file_and_stdout(
+    machines: dict[str, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _machine(machines["a"], monkeypatch)
+    _seed_task("DEM-001")
+    out = tmp_path / "pending.json"
+
+    code, _stdout, err = _run("sync", "export-pending", "-p", SLUG, "--out", str(out))
+    assert code == 0, err
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["kind"] == "pending"
+    assert doc["ops"] > 0
+    assert "выгружено" in err
+    assert {op["entity_kind"] for op in doc["changeset"]["ops"]} >= {"task"}
+
+    code, stdout, _err = _run("sync", "export-pending", "-p", SLUG)
+    assert code == 0
+    assert json.loads(stdout)["ops"] == doc["ops"]
+
+    code, _stdout, err = _run("sync", "export-pending", "-p", SLUG, "--out", str(out))
+    assert code == 1
+    assert "файл уже есть" in err

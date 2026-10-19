@@ -6,8 +6,9 @@ pull): ``behind`` — число скачанных и ещё не примен�
 Без remote — только локальное состояние, ``remote=None``.
 
 Поля, у которых в секции B нет источника, отдаются нейтральными значениями и
-заполнятся своими задачами: ``epoch_remote`` — ``None`` (``meta.json``,
-CLO-032). ``leases`` — остатки аренды номеров ``{префикс: (следующий,
+заполнятся своими задачами. ``epoch_local`` — эпоха схемы БД, ``epoch_remote``
+— ``meta.json["epoch"]`` или ``None`` без remote и до первого снапшота
+(CLO-032). ``leases`` — остатки аренды номеров ``{префикс: (следующий,
 последний)}`` (CLO-030). ``open_conflicts`` — открытые
 строки ``sync_conflict`` (CLO-017).
 
@@ -27,7 +28,7 @@ from sqlalchemy import func, select
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import Base, ChangesetModel, SyncOpModel, SyncRefModel
-from cod_doc.services.sync_service import _local, conflicts, digest, leases, remotes
+from cod_doc.services.sync_service import _local, conflicts, digest, epochs, leases, remotes
 from cod_doc.services.sync_service import pull as pull_mod
 
 if TYPE_CHECKING:
@@ -126,11 +127,17 @@ def status(
     spec = remotes.get(project, remote)
     configured = store is not None or spec is not None
     behind = 0
+    epoch_remote: str | None = None
     if configured:
         store = store if store is not None else _local.open_store(project, remote)
         behind = len(pull_mod.fetch(sf, project, remote=remote, store=store))
     with transactional(sf, commit=False) as session:
         ref = _local.project_ref(session, project)
+        epoch_local = _local.epoch(session)
+    if configured and store is not None:
+        meta = epochs.read_meta(store, ref.uid)
+        epoch_remote = None if meta is None else meta.epoch
+    with transactional(sf, commit=False) as session:
         head = _local.local_head(session, ref.row_id)
         seen = session.get(SyncRefModel, (ref.row_id, remote, _local.MAIN))
         head_remote = seen.sha if configured and seen is not None else None
@@ -157,8 +164,8 @@ def status(
         behind=behind,
         pending_ops=pending,
         open_conflicts=open_conflicts,
-        epoch_local=_local.EPOCH,
-        epoch_remote=None,
+        epoch_local=epoch_local,
+        epoch_remote=epoch_remote,
         restricted_local=restricted,
         leases=lease_left,
         drift_hint=hint,

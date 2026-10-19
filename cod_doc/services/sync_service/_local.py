@@ -15,7 +15,6 @@ base.py``), поэтому с настоящим не совпадёт. Вычи
 
 from __future__ import annotations
 
-import functools
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,6 +22,7 @@ from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import select, text, update
 
+from cod_doc.infra import sync_epochs
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ChangesetModel, ProjectModel, SyncOpModel, SyncRefModel
 from cod_doc.infra.sync_capture import SyncCaptureError
@@ -31,6 +31,8 @@ from cod_doc.services.sync_service.changeset import Changeset, Op
 from cod_doc.services.sync_service.errors import RemoteConfigError, SchemaMismatchError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlalchemy.dialects.postgresql import Insert as PgInsert
     from sqlalchemy.dialects.sqlite import Insert as SqliteInsert
     from sqlalchemy.orm import Session, sessionmaker
@@ -41,9 +43,6 @@ if TYPE_CHECKING:
 MAIN: Final = "main"
 #: Псевдо-remote локальной головы (см. докстринг модуля).
 LOCAL_REMOTE: Final = "@local"
-#: Эпоха — голова миграций, последней менявшая authored-колонки (§3.6). Эпохами
-#: и ``meta.json`` управляет CLO-032; до него эпоха одна.
-EPOCH: Final = "0050_sync_rank"
 #: Нулевой дайджест — «не посчитан»: так упакованы changeset'ы до CLO-014.
 #: ``verify`` сверять с ним не берётся (``digest.VerifyResult.remote is None``).
 DIGEST_PENDING: Final = "0" * 64
@@ -152,24 +151,26 @@ def schema_head(session: Session) -> str:
     return str(head)
 
 
-@functools.cache
-def _revision_order() -> dict[str, int]:
-    """Ревизии поставляемых миграций → порядковый номер от корня.
+def _revision_order() -> Mapping[str, int]:
+    """Порядок ревизий поставляемой цепочки (``sync_epochs.revision_order``)."""
+    try:
+        return sync_epochs.revision_order()
+    except sync_epochs.UnknownRevisionError as exc:
+        raise SchemaMismatchError(str(exc)) from exc
 
-    Каталог миграций берётся через ``as_file``: у ``files()`` из wheel или zip
-    ``str()`` — не путь на ФС, и ``ScriptDirectory`` молча увидел бы пустую
-    цепочку. Пустая цепочка — отказ, а не «всё новее».
-    """
-    from importlib.resources import as_file, files
 
-    from alembic.script import ScriptDirectory
-
-    with as_file(files("cod_doc.infra.migrations")) as path:
-        chain = [rev.revision for rev in ScriptDirectory(str(path)).walk_revisions()]
-    if not chain:
-        msg = "цепочка миграций не прочитана — порядок схем неизвестен"
+def epoch(session: Session) -> str:
+    """Эпоха этой БД (§3.6, CLO-032): последняя открывающая ревизия не новее её схемы."""
+    head = schema_head(session)
+    try:
+        current = sync_epochs.epoch_of(head)
+    except sync_epochs.UnknownRevisionError as exc:
+        msg = f"схема БД {head} незнакома коду — эпоху не определить"
+        raise SchemaMismatchError(msg) from exc
+    if current is None:
+        msg = f"схема БД {head} старше эпох синхронизации — cod-doc update"
         raise SchemaMismatchError(msg)
-    return {rev: i for i, rev in enumerate(reversed(chain))}
+    return current
 
 
 def schema_is_newer(remote_head: str, local: str) -> bool:
