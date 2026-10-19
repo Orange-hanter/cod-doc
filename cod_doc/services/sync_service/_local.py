@@ -193,7 +193,14 @@ def open_store(project: str, remote: str) -> RemoteStore:
 
     ``ProjectEntry.remotes`` — ``{name: {url, kind}}``; запись заводит
     ``cod-doc remote add`` (``remotes.add``, CLO-015). Нет записи — ``SYNC-110``.
+
+    Креды — из ``~/.cod-doc/credentials`` по URL remote (CLO-051); записи нет —
+    транспорт берёт их сам (S3 — цепочка AWS). ``file://`` файл кредов не
+    читает: небезопасный файл ключей локальному remote не помеха.
     """
+    from urllib.parse import urlparse
+
+    from cod_doc.infra.credentials import credentials_for
     from cod_doc.infra.remote.base import open_remote
     from cod_doc.services.sync_service import remotes
 
@@ -201,7 +208,8 @@ def open_store(project: str, remote: str) -> RemoteStore:
     if spec is None:
         msg = f"remote {remote!r} у проекта {project!r} не настроен — cod-doc remote add"
         raise RemoteConfigError(msg)
-    return open_remote(spec.url)
+    creds = None if urlparse(spec.url).scheme == "file" else credentials_for(spec.url)
+    return open_remote(spec.url, credentials=creds)
 
 
 def _payload(row: SyncOpModel, column: str) -> dict[str, object]:

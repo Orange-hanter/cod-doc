@@ -32,7 +32,8 @@ PUT без multipart и без SSE-KMS это MD5 тела, и ABA (X → Y → 
 фиксацией).
 
 **Креды** — из ``credentials`` (``access_key``/``secret_key``/
-``session_token``, ``endpoint_url``, ``region``; §10.12) или из стандартной
+``session_token``, ``endpoint_url``, ``region``; §10.12 — ``open_store`` читает
+их из ``~/.cod-doc/credentials``, ``infra/credentials.py``, CLO-051) или из стандартной
 цепочки AWS (``AWS_ACCESS_KEY_ID``, ``AWS_ENDPOINT_URL``, ``~/.aws/…``). В URL
 кредов быть не может: ``s3://key:secret@bucket`` отвергается, и URL в тексте
 ошибки не повторяется. Текст ошибок транспорта — операция, ``s3://бакет/ключ``,
