@@ -201,9 +201,12 @@ class Holder:
         assert isinstance(task_id, str) and isinstance(agent, str)
         assert isinstance(replica, str) and isinstance(acquired, str)
         try:
+            # OverflowError: «0001-01-01T00:00+05:00» не переводится в UTC, а срок
+            # у «9999-12-31…» за пределом datetime — такую аренду не истечь.
             at = _utc(datetime.fromisoformat(acquired))
-        except ValueError:
-            msg = f"{key}: acquired_at — не момент ISO-8601"
+            _deadline(at, ttl)
+        except ValueError, OverflowError:
+            msg = f"{key}: acquired_at — не момент ISO-8601 в пределах datetime"
             raise ObjectMissingError(msg) from None
         return cls(task_id=task_id, agent=agent, replica=replica, acquired_at=at, ttl_minutes=ttl)
 
@@ -212,8 +215,10 @@ class Holder:
 
     def expired(self, now: datetime | None = None) -> bool:
         """Срок ``ttl_minutes`` и допуск ``CLOCK_SKEW_ALLOWANCE`` прошли по ``now``."""
-        deadline = _utc(self.acquired_at) + timedelta(minutes=self.ttl_minutes)
-        return deadline + CLOCK_SKEW_ALLOWANCE < _utc(now or clock())
+        try:
+            return _deadline(self.acquired_at, self.ttl_minutes) < _utc(now or clock())
+        except OverflowError:
+            return False  # из тела remote такой держатель не выходит — parse отвергает
 
     def held_error(self) -> CheckoutLeaseHeldError:
         return CheckoutLeaseHeldError(
@@ -222,6 +227,11 @@ class Holder:
             replica=self.replica,
             acquired_at=self.acquired_at,
         )
+
+
+def _deadline(acquired_at: datetime, ttl_minutes: int) -> datetime:
+    """Момент, после которого аренда истекла: срок плюс допуск на часы."""
+    return _utc(acquired_at) + timedelta(minutes=ttl_minutes) + CLOCK_SKEW_ALLOWANCE
 
 
 def _short_str(value: object) -> bool:
@@ -254,7 +264,9 @@ class _Lease:
     problem: str | None = None
 
 
-def _fetch(store: RemoteStore, project_uid: str, task_uid: str) -> _Lease | None:
+def _fetch(
+    store: RemoteStore, project_uid: str, task_uid: str, now: datetime | None = None
+) -> _Lease | None:
     """Аренда и её etag; тело не по форме — ``holder=None`` с причиной.
 
     Тело, которое транспорт не отдал вовсе (не JSON, больше потолка), —
@@ -266,9 +278,15 @@ def _fetch(store: RemoteStore, project_uid: str, task_uid: str) -> _Lease | None
         return None
     body, etag = got
     try:
-        return _Lease(etag, Holder.parse(key, body))
+        holder = Holder.parse(key, body)
     except ObjectMissingError as exc:
         return _Lease(etag, None, str(exc))
+    if holder.acquired_at > _utc(now or clock()) + CLOCK_SKEW_ALLOWANCE:
+        # Момент из будущего отодвигает истечение сколь угодно далеко — вечный
+        # замок. Не по форме: держит (fail closed), но снимается release --force.
+        problem = f"{key}: acquired_at впереди часов больше чем на {CLOCK_SKEW_ALLOWANCE}"
+        return _Lease(etag, None, problem)
+    return _Lease(etag, holder)
 
 
 def read(store: RemoteStore, project_uid: str, task_uid: str) -> tuple[Holder, str] | None:
@@ -321,7 +339,7 @@ def claim(
     key = lease_key(task_uid)
     for _ in range(MAX_CAS_ATTEMPTS):
         try:
-            lease = _fetch(store, project_uid, task_uid)
+            lease = _fetch(store, project_uid, task_uid, now)
         except ObjectMissingError as exc:
             raise _malformed(holder.task_id, task_uid, str(exc), fix=_FIX_MANUAL) from exc
         if lease is None:
@@ -382,7 +400,7 @@ def drop(
     """
     key = lease_key(task_uid)
     for _ in range(MAX_CAS_ATTEMPTS):
-        lease = _fetch(store, project_uid, task_uid)
+        lease = _fetch(store, project_uid, task_uid, now)
         if lease is None:
             return True
         if not _droppable(lease, replica, agent, etag, expired_ok, malformed_ok, now):
@@ -418,23 +436,24 @@ def sweep(store: RemoteStore, project_uid: str, *, now: datetime | None = None) 
     ``release_stale`` по своей БД не видит; листинг их находит. Каждая
     снимается ``delete_json`` по etag прочитанной версии: перехваченная между
     чтением и удалением не тронется. Тело не по форме — пропуск (занято, пока
-    не снимут явно).
+    не снимут явно). Сбой на одном ключе — пропуск этого ключа, а не всей
+    чистки; в лог идут ключ и код ошибки, тело — никогда (его пишут чужие).
     """
     dropped: list[str] = []
     for key in store.list_prefix(project_uid, CHECKOUT_PREFIX):
         task_uid = key.removeprefix(CHECKOUT_PREFIX)
         try:
-            lease = _fetch(store, project_uid, task_uid)
-        except ObjectMissingError as exc:
-            logger.warning("аренда checkout %s не читается: %s", key, exc)
-            continue
-        if lease is None:
-            continue
-        if lease.holder is None:
-            logger.warning("аренда checkout %s не по форме — не снимается", key)
-            continue
-        if lease.holder.expired(now) and store.delete_json(project_uid, key, lease.etag):
-            dropped.append(task_uid)
+            lease = _fetch(store, project_uid, task_uid, now)
+            if lease is None:
+                continue
+            if lease.holder is None:
+                logger.warning("аренда checkout %s не по форме — не снимается", key)
+                continue
+            if lease.holder.expired(now) and store.delete_json(project_uid, key, lease.etag):
+                dropped.append(task_uid)
+        except SyncError as exc:
+            code = getattr(exc, "code", type(exc).__name__)
+            logger.warning("аренда checkout %s пропущена: %s", key, code)
     return dropped
 
 
