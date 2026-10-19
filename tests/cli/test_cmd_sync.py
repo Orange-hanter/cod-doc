@@ -348,3 +348,54 @@ def test_clone_refuses_when_the_slug_is_taken(
     assert "SYNC-110" in err
     assert "уже есть в реестре" in err
     assert not (machines["a"] / "second").exists()
+
+
+# --- restricted (CLO-033) -----------------------------------------------------------
+
+
+def _seed_restricted_doc(sf, project: str) -> None:  # type: ignore[no-untyped-def]
+    """Restricted-документ с двумя секциями: ни одна его строка не уезжает."""
+    from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+    from cod_doc.services import doc_service
+
+    with transactional(sf) as s:
+        pid = s.scalars(select(ProjectModel.row_id).where(ProjectModel.slug == project)).one()
+        doc = doc_service.create(
+            s,
+            project_id=pid,
+            doc_key="secret",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="secret",
+            author=AUTHOR,
+            path="docs/secret.md",
+            sensitivity=Sensitivity.RESTRICTED,
+            reindex=False,
+        )
+        for i, anchor in enumerate(("one", "two")):
+            doc_service.add_section(
+                s,
+                project_id=pid,
+                document_id=doc.row_id,
+                anchor=anchor,
+                heading=anchor,
+                level=2,
+                position=i,
+                body="секрет",
+                author=AUTHOR,
+                reindex=False,
+            )
+
+
+def test_status_counts_restricted_documents_and_rows(
+    machines: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _machine(machines["a"], monkeypatch)
+    _seed_restricted_doc(_factory(), SLUG)
+
+    st = _json("sync", "status", "-p", SLUG)
+    assert isinstance(st, dict)
+    assert (st["restricted_local"], st["restricted_rows"]) == (1, 3)
+    code, out, _err = _run("sync", "status", "-p", SLUG)
+    assert code == 0
+    assert "1 документов не уезжают (строк на реплике: 3)" in out

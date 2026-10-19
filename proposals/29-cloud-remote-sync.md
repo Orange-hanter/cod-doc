@@ -136,6 +136,19 @@ derived: каждая реплика считает её сама из эмбе�
 `confidential` и ниже синхронизируются: аудитория — участники проекта. Ссылки на
 restricted-документ с других реплик честно битые (derived `link`).
 
+Три рубежа (CLO-033). Захват не пишет строки restricted-документа и пересверяет
+гейт на commit'е. **Упаковка** push'а пересматривает хвост по *текущим* меткам
+(`sync_service.gate.shippable_tail`): документ, повышенный после захвата, но до
+push, и ни разу не уезжавший, отзыва не пишет, и без этого шага хвост его тела
+уехал бы первым же push'ем. Операции документа, его тела, их ревизий и маркеров
+разрешения из хвоста удаляются (кроме операций отзыва), у ссылок на документ
+вычищаются придержанные колонки. Снапшот судит строки по текущему состоянию сам.
+**Растяжка** перед кодированием changeset'а и на каждой строке снапшота
+(`gate.check_ops` / `check_row`): uid restricted-документа или строки его тела —
+ни сущностью, ни значением; сработала — `RestrictedLeakError` (`SYNC-001`), и
+отправки нет. Экспорт неотправленного (`export_pending`) обязан идти через те же
+две функции. `sync status` показывает `restricted_local` и `restricted_rows`.
+
 **Отзыв (CLO-046).** Повышение до `restricted` документа, который уже уезжал (его
 операция есть в changeset'е — своём отправленном или принятом), в той же
 транзакции пишет одну операцию отзыва: `upsert` документа ровно с полем
@@ -680,7 +693,7 @@ reader.
 | `cod-doc remote login <name>` | — | сохранить токен |
 | `cod-doc clone <url> [--project <slug>] [<dir>]` | — | снапшот + хвост, регистрация в реестре |
 | `cod-doc fetch` / `pull` / `push` `-p <slug>` | `sync_pull`, `sync_push` | §3.6 |
-| `cod-doc sync status -p <slug>` | `sync_status` | ahead/behind, неупакованные операции, открытые конфликты, аренды, эпоха remote, число `restricted`-документов (не уезжают), подсказка про drift |
+| `cod-doc sync status -p <slug>` | `sync_status` | ahead/behind, неупакованные операции, открытые конфликты, аренды, эпоха remote, число `restricted`-документов и их строк (не уезжают), подсказка про drift |
 | `cod-doc task checkout <id> [--offline]` | `task_checkout(offline=…)` | при настроенном remote — замок через CAS (§3.6); `--offline` — провизорный |
 | `cod-doc sync export-pending` | — | выгрузка незапушенных операций в файл после пропущенной смены эпохи |
 | `cod-doc sync conflicts` / `resolve <uid> --take …` | `sync_conflicts`, `sync_resolve` | §3.7 |
@@ -1108,6 +1121,7 @@ def open_remote(url: str, *, credentials: Credentials | None) -> RemoteStore
     remote: str | None; head_local: str | None; head_remote: str | None
     ahead: int; behind: int; pending_ops: int; open_conflicts: int
     epoch_local: str; epoch_remote: str | None; restricted_local: int
+    restricted_rows: int                   # строки этих документов и их тела, CLO-033
     leases: dict[str, tuple[int, int]]; drift_hint: str | None
     clone_url: str | None                         # <URL remote>/<project_uid>, CLO-029
 @dataclass(frozen=True) class VerifyResult: local: str; remote: str | None; equal: bool
@@ -1214,7 +1228,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 
 | Код | Когда | Исключение (stdlib-основа) | MCP / CLI / REST |
 |---|---|---|---|
-| `SYNC-001` | bulk-запись в authored без `record` (ловит гейт, в рантайме — `assert` в тестах) | — | — |
+| `SYNC-001` | bulk-запись в authored без `record` (ловит гейт, в рантайме — `assert` в тестах); растяжка упаковки: restricted-строка в changeset'е или снапшоте (`RestrictedLeakError`, CLO-033) | — | — |
 | `SYNC-101` | remote недоступен | `RemoteUnavailableError(ConnectionError)` | ValueError / 1 / 502 |
 | `SYNC-102` | объект не найден или sha не совпал | `ObjectMissingError(LookupError)` | ValueError / 1 / 404, 400 |
 | `SYNC-103` | push не прошёл после `max_retries` | `PushRejectedError(RuntimeError)` | ValueError / 1 / — |

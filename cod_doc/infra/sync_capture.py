@@ -272,6 +272,15 @@ class SyncCaptureError(RuntimeError):
         super().__init__(f"{self.code} {detail}")
 
 
+class RestrictedLeakError(SyncCaptureError):
+    """В упакованном changeset'е или снапшоте — строка restricted-документа (CLO-033).
+
+    Последний рубеж после гейтов захвата и упаковки (``sync_service.gate``):
+    сработал — значит, гейт пропустил строку, и отправка останавливается, а не
+    уезжает. Сообщение называет вид и число нарушений, без uid и значений.
+    """
+
+
 class _Unresolvable(Exception):
     """Конец ссылки без uid: колонку нельзя сериализовать."""
 

@@ -3,7 +3,7 @@
 Сосед ``sync_capture``: пользуется его чтением строк и сериализацией, а
 захват зовёт его в двух местах — понижение документа (``reship_ops``) и запись
 операции отзыва (``purge_tail``). Применение чужого отзыва зовёт
-``withdraw_locally``. Решение и его границы — решение 20 ``sync_registry``.
+``withdraw_locally``, упаковка push'а — ``hold_restricted`` (CLO-033). Решение и его границы — решение 20 ``sync_registry``.
 
 **Хвост** (``purge_tail``). Операции тела документа, захваченные до
 повышения и ещё не отправленные, уехали бы следующим push'ем: push хвост не
@@ -228,6 +228,155 @@ def _regate_tail(session: Session, project_id: int, tail: Iterable[object]) -> s
                 .values(fields=cap._dumps(fields), base=cap._dumps(base))
             )
     return drop
+
+
+# --- пересверка хвоста при упаковке (CLO-033) --------------------------------------------
+
+
+def restricted_documents(session: Session, project_id: int) -> list[Row]:
+    """Документы проекта, метка которых сейчас не уезжает (Q-015)."""
+    tbl = Base.metadata.tables[_DOCUMENT]
+    return [
+        row
+        for row in _rows(session, _DOCUMENT, tbl.c.project_id == project_id)
+        if not reg.is_cleared(row.get(reg.WITHDRAW_COLUMN))
+    ]
+
+
+def _is_withdraw_op(op: Any) -> bool:  # noqa: ANN401 — строка select'а журнала
+    return (
+        op.entity_kind == _DOCUMENT
+        and op.kind != _DELETE
+        and reg.is_withdraw(_DOCUMENT, _loads(op.fields))
+    )
+
+
+def _relaxed_labels(gate: Mapping[str, object]) -> Row:
+    """Гейт-строка, в которой каждая метка документа заменена на уезжающую."""
+    suffix = f".{reg.WITHDRAW_COLUMN}"
+    return {
+        key: Sensitivity.INTERNAL.value
+        if key == reg.WITHDRAW_COLUMN or key.endswith(suffix)
+        else value
+        for key, value in gate.items()
+    }
+
+
+def _revision_held(lookup: cap._Lookup, project_id: int, revision_id: object) -> bool:
+    """Ревизия не уезжает сейчас и уезжала бы, не будь restricted-документа.
+
+    Ревизия чужой для документа сущности (сценарий, чья ``doc_key`` стала
+    придержанной) — тело документа такую ревизию не находит, а ее ``diff``
+    может нести придержанное значение. Ревизия, которую держит не restricted
+    (сущность удалена, вид без uid), остается как была: это не дело CLO-033.
+    """
+    tbl = Base.metadata.tables[_REVISION]
+    found = lookup.conn.execute(select(tbl).where(tbl.c.revision_id == revision_id)).mappings()
+    first = found.first()
+    if first is None:
+        return False
+    row = dict(first)
+    gate = cap.gating_row(lookup, _REVISION, row, project_id)
+    if cap._ships(_REVISION, gate):
+        return False
+    table = cap._journal_entity_table(row)
+    entity = lookup.row(table, row["entity_id"]) if table is not None else None
+    if table is None or entity is None:
+        return False
+    egate = _relaxed_labels(cap.gating_row(lookup, table, entity, project_id))
+    relaxed = _relaxed_labels(gate)
+    relaxed[reg.ENTITY_SHIPS_KEY] = cap._ships(table, egate) and not reg.withheld_columns(
+        table, egate
+    )
+    return cap._ships(_REVISION, relaxed)
+
+
+def hold_restricted(session: Session, project_id: int) -> list[Row]:
+    """Пересверить неотправленный хвост по текущим меткам перед упаковкой (CLO-033).
+
+    Гейт захвата судит строку на момент commit'а. Документ, повышенный до
+    ``restricted`` позже, но до push, оставлял в хвосте свои операции и
+    операции тела: отзыв (решение 20) пишется только за уехавшим документом,
+    и хвост никогда не уезжавшего документа уходил первым же push'ем. Здесь
+    хвост своей реплики пересматривается так же, как ``purge_tail`` при
+    отзыве, но для каждого документа, restricted сейчас:
+
+    - операции документа, его тела (неподвижная точка ``_subtree``), ревизий
+      и маркеров разрешения о них удаляются — кроме самих операций отзыва;
+    - операции строк со ссылкой на документ — по текущей строке
+      (``_regate_tail``): не проходит — удаляется, придержанные колонки
+      вычищаются из ``fields``/``base``;
+    - ревизии прочих сущностей, которые держит только restricted-документ
+      (``_revision_held``), удаляются.
+
+    Удаленная операция никем, кроме реплики, не виделась; понижение документа
+    отправит его первым upsert'ом целиком (``reship_ops``). Возвращает
+    удаленные операции (``entity_kind``, ``entity_uid``, ``kind``).
+    """
+    docs = restricted_documents(session, project_id)
+    if not docs:
+        return []
+    conn = session.connection()
+    ops = _ops_table()
+    tail = conn.execute(
+        select(
+            ops.c.op_id, ops.c.entity_kind, ops.c.entity_uid, ops.c.kind, ops.c.fields, ops.c.base
+        )
+        .where(
+            ops.c.project_id == project_id,
+            ops.c.changeset.is_(None),
+            ops.c.replica_uid == self_replica(conn, project_id),
+        )
+        .order_by(ops.c.hlc, ops.c.op_id)
+    ).all()
+    if not tail:
+        return []
+    subtree: set[str] = set()
+    for doc in docs:
+        subtree |= _subtree(session, doc, tail)
+    drop = {
+        op.op_id
+        for op in tail
+        if not _is_withdraw_op(op)
+        and _in_subtree(op.entity_kind, op.entity_uid, op.fields, subtree)
+    }
+    rest = [op for op in tail if op.op_id not in drop]
+    drop |= _regate_tail(session, project_id, rest)
+    lookup = cap._Lookup(session)
+    drop |= {
+        op.op_id
+        for op in rest
+        if op.entity_kind == _REVISION
+        and op.op_id not in drop
+        and _revision_held(lookup, project_id, op.entity_uid)
+    }
+    ids = sorted(drop)
+    for i in range(0, len(ids), _CHUNK):
+        conn.execute(delete(ops).where(ops.c.op_id.in_(ids[i : i + _CHUNK])))
+    return [
+        {"entity_kind": op.entity_kind, "entity_uid": op.entity_uid, "kind": op.kind}
+        for op in tail
+        if op.op_id in drop
+    ]
+
+
+def restricted_uids(session: Session, project_id: int) -> tuple[frozenset[str], int, int]:
+    """uid restricted-документов проекта и строк их тела, число строк, число документов.
+
+    Тело — ``DOCUMENT_BODY``; у ``document_tag`` uid нет (ребро), его строки
+    входят только в счет. Растяжка для упаковки (CLO-033) и ``sync status``.
+    """
+    uids: set[str] = set()
+    rows = 0
+    docs = restricted_documents(session, project_id)
+    for doc in docs:
+        rows += 1
+        if isinstance(doc.get(_UID), str):
+            uids.add(str(doc[_UID]))
+        for body in _body_rows(session, doc.get(_ROW_ID)).values():
+            rows += len(body)
+            uids.update(str(b[_UID]) for b in body if isinstance(b.get(_UID), str))
+    return frozenset(uids), rows, len(docs)
 
 
 # --- получатель ------------------------------------------------------------------------

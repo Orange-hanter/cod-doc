@@ -24,10 +24,9 @@ from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import func, select
 
-from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
-from cod_doc.infra.models import Base, ChangesetModel, SyncOpModel, SyncRefModel
-from cod_doc.services.sync_service import _local, conflicts, digest, leases, remotes
+from cod_doc.infra.models import ChangesetModel, SyncOpModel, SyncRefModel
+from cod_doc.services.sync_service import _local, conflicts, digest, gate, leases, remotes
 from cod_doc.services.sync_service import pull as pull_mod
 
 if TYPE_CHECKING:
@@ -60,6 +59,9 @@ class SyncStatus:
     epoch_remote: str | None
     #: Документы, которые не уезжают (restricted, §3.2).
     restricted_local: int
+    #: Строки, которые эти документы держат на реплике: сами документы и их
+    #: тело (секции, комментарии, теги; CLO-033).
+    restricted_rows: int = 0
     leases: dict[str, tuple[int, int]] = field(default_factory=dict)
     drift_hint: str | None = None
     #: ``status(verify=True)`` — сверка дайджеста (§3.7, ``sync verify``).
@@ -78,14 +80,6 @@ class LogEntry:
     ops: int
     hlc_max: str
     applied_at: datetime | None
-
-
-def _restricted(session: Session, project_id: int) -> int:
-    tbl = Base.metadata.tables["document"]
-    rows = session.connection().execute(select(tbl).where(tbl.c.project_id == project_id))
-    return sum(
-        1 for row in rows.mappings() if reg.row_class("document", dict(row)) is reg.SyncClass.LOCAL
-    )
 
 
 def _first_parent_chain(
@@ -136,7 +130,7 @@ def status(
         head_remote = seen.sha if configured and seen is not None else None
         pending = digest.pending_count(session, ref.row_id)
         ahead = _ahead(session, head, head_remote) if configured else 0
-        restricted = _restricted(session, ref.row_id)
+        held = gate.restricted(session, ref.row_id)
         open_conflicts = conflicts.count_open(session, ref.row_id)
         lease_left = leases.lease_status(session, ref.row_id)
     checked = (
@@ -159,7 +153,8 @@ def status(
         open_conflicts=open_conflicts,
         epoch_local=_local.EPOCH,
         epoch_remote=None,
-        restricted_local=restricted,
+        restricted_local=held.documents,
+        restricted_rows=held.rows,
         leases=lease_left,
         drift_hint=hint,
         verify=checked,

@@ -114,3 +114,14 @@ def test_sync_errors_without_code_prefix_are_still_value_errors(
     monkeypatch.setattr(pull_mod, "pull", diverged)
     with pytest.raises(ValueError, match="секция C"):
         _call("sync_pull", project=_PROJECT)
+
+
+def test_status_counts_restricted_rows(project: Path) -> None:
+    from cod_doc.mcp.tools._db import session_factory
+    from tests.cli.test_cmd_sync import _seed_restricted_doc
+
+    sf, _entry = session_factory(_PROJECT)
+    _seed_restricted_doc(sf, _PROJECT)
+
+    st = _call("sync_status", project=_PROJECT)
+    assert (st["restricted_local"], st["restricted_rows"]) == (1, 3)
