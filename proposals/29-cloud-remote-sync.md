@@ -337,8 +337,8 @@ zstd. Первые 4 байта объекта — версия формата: 
   leases/<PREFIX>             # {"next": 261, "holders": {...}}; меняется только CAS
   leases/checkout/<task_uid>  # {"replica", "actor", "at", "ttl"} — замок checkout (Q-011)
   objects/ab/cdef….zst        # changeset'ы
-  snapshots/<epoch>/<sha>.db.zst  # SQLite authored+journal на момент changeset <sha>
-  meta.json                   # {"epoch": "0050_sync_rank", "schema_min": "0050_sync_rank", "created": …}
+  snapshots/<epoch>/<sha>.db.zst  # authored + журнал на момент changeset <sha> (CDS1, ниже)
+  meta.json                   # {"epoch": "0050_sync_rank", "schema_min": "0050_sync_rank", "created": …, "snapshot": {…}}
 ```
 
 **Транспорт** — один интерфейс, три реализации:
@@ -393,6 +393,37 @@ sequenceDiagram
 - **clone** — последний снапшот + changeset'ы после него. Снапшот пишет тот, кто
   делает push, если с прошлого снапшота накопилось больше N операций (по умолчанию
   5000), — иначе clone проекта со 100k операций replay'ил бы их все.
+  Реализация (CLO-029, `sync_service/snapshot.py`, `clone.py`):
+  - снапшот пишет и первый push в remote без снапшота: строки, заведённые до
+    журнала, есть только в снапшоте, и clone без него на них упал бы;
+  - формат — не файл SQLite (с чужого remote это исполняемая схема), а
+    `b"CDS1"` + zstd потока строк канонического JSON §10.4: заголовок
+    `{v, kind: "header", project, head, epoch, schema_head, digest}`, строки
+    `["row", таблица, uid, поля]` (поля — как в операции: без придержанных,
+    FK — uid, restricted не входит), алиасы склейки `["alias", {…}]`, в конце
+    `["end", {lines, sha256}]`. Распаковка потоковая, потолки — строка
+    64 МиБ, поток 16 ГиБ, сжатый 1 ГиБ;
+  - снапшот несёт только то, что покрывает дайджест головы. Журнал `sync_op`
+    (история LWW, штампы создания, цепочки статуса) и индекс `changeset`
+    клон собирает сам из changeset'ов remote — обход `parents` от головы,
+    каждый объект по адресу (`decode`), штампы — `check_clock`; применённым
+    помечается только достижимое от проверенной головы. Алиас принимается,
+    только если выживший — загруженная строка, проигравший — не живая строка
+    и встречается в проверенном журнале;
+  - снапшот собирается только с состояния, равного голове (голова реплики =
+    запушенный changeset, хвоста нет, дайджест совпал); указатель —
+    `meta.json["snapshot"] = {epoch, sha, ops}`, сдвигается CAS; сбой
+    снапшота push не отменяет; `PushResult.snapshot` — sha записанного;
+  - загрузка — тем же путём, что чужая вставка (`apply.create_row`,
+    `journal.apply_row`, часы операций), одной транзакцией под
+    `suspended`; дайджест загруженного обязан совпасть с дайджестом
+    changeset'а `head`, прочитанного с remote по адресу, — иначе `SYNC-102`;
+  - URL clone — каталог проекта на remote: `<URL remote>/<project_uid>`
+    (листинга проектов в `RemoteStore` нет); его печатает `sync status`
+    (`SyncStatus.clone_url`). Слаг — с remote (`project.slug` authored);
+    `--project` обязан совпасть, а без снапшота обязателен;
+  - клон не заводит дефолтные рутины и дерево разделов: они приезжают со
+    снапшота (находка F2 аудита секции B).
 - **Схема и эпохи (Q-012).** Реплика не применяет changeset с `schema_head` новее
   своей головы миграций: `pull` отвечает «remote на схеме 0052_sync_access, у вас 0050_sync_rank —
   `cod-doc update`». Миграция, меняющая `authored`-колонки, открывает **эпоху**:
@@ -920,7 +951,9 @@ ALTER TABLE <t> ADD COLUMN rank TEXT;         -- document: node_rank
 ```
 
 Remote-раскладка — §3.5; `meta.json`:
-`{"v": 1, "project_uid", "epoch", "schema_min", "created", "snapshot_every": 5000}`.
+`{"v": 1, "project_uid", "epoch", "schema_min", "created", "snapshot_every": 5000,
+"snapshot": {"epoch", "sha", "ops"}}` — `snapshot` — указатель на последний снапшот
+и число операций журнала в нём (CLO-029).
 Аренда номеров на remote — `leases/<PREFIX>`:
 `{"next": 261, "block": 20, "holders": {"<replica_uid>": [241, 260]}}`.
 Замок checkout — `leases/checkout/<task_uid>`:
@@ -1067,6 +1100,7 @@ def open_remote(url: str, *, credentials: Credentials | None) -> RemoteStore
 ```python
 @dataclass(frozen=True) class PushResult:
     changesets: list[str]; ops: int; head: str; retries: int; pinned: dict[str, str]
+    snapshot: str | None                                              # CLO-029
 @dataclass(frozen=True) class PullResult:
     applied: list[str]; ops: int; fast_forward: bool; conflicts: list[str];
     aliases: list[str]; head: str
@@ -1075,6 +1109,7 @@ def open_remote(url: str, *, credentials: Credentials | None) -> RemoteStore
     ahead: int; behind: int; pending_ops: int; open_conflicts: int
     epoch_local: str; epoch_remote: str | None; restricted_local: int
     leases: dict[str, tuple[int, int]]; drift_hint: str | None
+    clone_url: str | None                         # <URL remote>/<project_uid>, CLO-029
 @dataclass(frozen=True) class VerifyResult: local: str; remote: str | None; equal: bool
 
 def push(sf, project: str, *, remote: str = "origin", author: str,
@@ -1084,7 +1119,8 @@ def pull(sf, project: str, *, remote: str = "origin", author: str,
          dry_run: bool = False) -> PullResult
 def status(sf, project: str, *, remote: str = "origin", verify: bool = False) -> SyncStatus
 def verify(sf, project: str, *, remote: str = "origin") -> VerifyResult
-def clone(url: str, *, slug: str, root: Path, author: str) -> str     # → project slug
+def clone(url: str, *, root: Path | None = None, slug: str | None = None,
+          author: str) -> CloneResult                                 # CLO-029
 def export_pending(sf, project: str, *, path: Path) -> int            # → число операций
 
 # конфликты — обычные write-сервисы (ревизия + activity, ADO-040):
@@ -1136,7 +1172,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `cod-doc remote add NAME URL -p P` | `--kind auto\|file\|s3\|https` | пишет `remotes:` в `~/.cod-doc/config.yaml`; для `s3://` — предупреждение «без разграничения доступа» |
 | `cod-doc remote list/remove` | `-p P`, `--json` | |
 | `cod-doc remote login NAME -p P` | `--token-stdin` | токен в Keychain (macOS) или `~/.cod-doc/credentials` (0600) |
-| `cod-doc clone URL [DIR]` | `--project SLUG`, `--json` | регистрирует проект |
+| `cod-doc clone URL [DIR]` | `--project SLUG`, `--author`, `--json` | URL — `<URL remote>/<project_uid>`; DIR по умолчанию `./<slug>`; регистрирует проект и remote `origin` |
 | `cod-doc fetch/pull/push -p P` | `--remote NAME`, `--json`, `pull --dry-run` | |
 | `cod-doc sync status -p P` | `--verify`, `--json` | |
 | `cod-doc sync conflicts -p P` | `--status open\|resolved\|all`, `--json` | |
@@ -1210,6 +1246,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `sync.alias_created` | склейка или закрепление | `<entity_kind>` / `{alias, uid, reason}` |
 | `plan_section.relettered` | перебуквление | `plan` / `{from, to, section_uid}` |
 | `sync.epoch_opened` | первый push новой эпохи | `project` / `{epoch, snapshot}` |
+| `sync.cloned` | clone завершён (CLO-029) | `project` / `{remote, url, snapshot, head, applied, ops}` |
 | `task.checkout_leased` / `task.checkout_lease_released` | аренда замка | `task` / `{remote, offline}` |
 | `task.checkout_lease_taken_over` | checkout перехватил истёкшую чужую аренду (CLO-048) | `task` / `{remote, previous_agent, previous_replica, previous_acquired_at, previous_ttl_minutes}` |
 | `auth.denied` (сервер) | 401/403/429 | `project` / `{token_label?, ip, path, code}` |

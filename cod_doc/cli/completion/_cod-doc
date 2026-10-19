@@ -379,6 +379,7 @@ _cod-doc() {
         (agent)      _cod_doc_agent && ret=0 ;;
         (approval)   _cod_doc_approval && ret=0 ;;
         (audit)      _cod_doc_audit && ret=0 ;;
+        (clone)      _cod_doc_clone && ret=0 ;;
         (completion) _cod_doc_completion && ret=0 ;;
         (ctx)        _cod_doc_ctx && ret=0 ;;
         (doc)        _cod_doc_doc && ret=0 ;;
@@ -429,6 +430,7 @@ _cod-doc() {
     'agent:Управление агентом.'
     'approval:Одобрения; предложения куратора и прочие решения человека.'
     'audit:Audit document frontmatter (FM-* rules) and optionally drift (DR-00…'
+    'clone:Завести проект с remote; последний снапшот + хвост, регистрация в р…'
     'completion:Shell-completion для cod-doc.'
     'ctx:Контекст проекта для внешних потребителей (docs / drift / search /…'
     'doc:Manage documents (create, rename, export, drift, import).'
@@ -1046,6 +1048,20 @@ _cod-doc() {
     '(--web-routes)--web-routes[WEB-042; diff live web routes against the capability §3 route table…]' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_clone] )) || _cod_doc_clone() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--project)--project=[Project slug (по умолчанию — с remote)]:slug' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:url' \
+    '2::directory' && ret=0
   return ret
 }
 

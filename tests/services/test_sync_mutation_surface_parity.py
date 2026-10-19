@@ -53,6 +53,7 @@ SPEC = ServiceSpec(
             "pin_provisional",
             "reconcile",
             "reconcile_quietly",
+            "clone",
         }
     ),
     known_reads=frozenset(
@@ -82,6 +83,13 @@ SPEC = ServiceSpec(
             "count_open",
         }
     ),
+    surface_debt={
+        "clone": (
+            frozenset({"mcp"}),
+            "RFC 29 §10.7: clone в MCP нет намеренно — он заводит проект в реестре машины, "
+            "а MCP-демон общий для всех харнессов; это дело человека, как remote add",
+        ),
+    },
     internal_only={
         "reconcile": (
             "сверка провизорных замков checkout с арендой на remote (CLO-031) — шаг "
@@ -151,6 +159,7 @@ def test_discovered_mutations_exact() -> None:
         "pin_provisional",
         "reconcile",
         "reconcile_quietly",
+        "clone",
     }
 
 

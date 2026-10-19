@@ -4,8 +4,7 @@ Acceptance: «Команды и опции по RFC 29 §10.8; ``--json`` печ
 ``click.echo`` и парсится; ``remote add s3://`` пишет предупреждение».
 
 Две «машины» — два ``COD_DOC_HOME`` со своим ``config.yaml`` и своей БД под
-одним слагом. Реплика B получает тот же ``project.uid``, что у A, и пустой
-журнал — так выглядела бы реплика после clone (CLO-029).
+одним слагом. Реплику B заводит ``cod-doc clone`` (CLO-029).
 """
 
 from __future__ import annotations
@@ -96,23 +95,14 @@ def _project_uid() -> str:
         return str(s.scalars(select(ProjectModel.uid).where(ProjectModel.slug == SLUG)).one())
 
 
-def _as_clone_of(uid: str) -> None:
-    """Реплика B: uid проекта как у A, журнал пуст (так её оставил бы clone).
-
-    Рутины и дерево документации, которые ``project add`` заводит на каждой
-    машине, тоже убираются: они приедут с A, а две независимо заведённые
-    строки с одним натуральным ключом — склейка секции C (CLO-023), не
-    fast-forward. Ревизии этих строк — тоже: журнал уезжает с CLO-024, и
-    ревизии строк, которых на A нет, дали бы B лишние строки дайджеста.
-    """
-    sf = _factory()
-    with transactional(sf) as s:
-        s.execute(text("DELETE FROM sync_op"))
-        s.execute(text("DELETE FROM revision"))
-        s.execute(text("DELETE FROM routine"))
-        s.execute(text("UPDATE doc_node SET parent_id = NULL"))
-        s.execute(text("DELETE FROM doc_node"))
-        s.execute(text("UPDATE project SET uid = :u WHERE slug = :s"), {"u": uid, "s": SLUG})
+def _clone_into(home: Path, monkeypatch: pytest.MonkeyPatch, url: str) -> dict[str, object]:
+    """Машина без проекта: ``cod-doc clone`` заводит его с remote (CLO-029)."""
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("COD_DOC_HOME", str(home))
+    Config.clear_cache()
+    cloned = _json("clone", url, str(home / "repo"))
+    assert isinstance(cloned, dict)
+    return cloned
 
 
 @pytest.fixture
@@ -228,14 +218,24 @@ def test_push_fetch_pull_status_log_verify_between_two_machines(
     assert [(e["sha"], e["ops"]) for e in log] == [(head, pushed["ops"])]
     assert _json("sync", "verify", "-p", SLUG)["equal"] is True  # type: ignore[index]
 
-    _machine(machines["b"], monkeypatch)
-    _as_clone_of(uid)
-    _run("remote", "add", "origin", url, "-p", SLUG)
+    clone_url = _json("sync", "status", "-p", SLUG)["clone_url"]  # type: ignore[index]
+    assert clone_url == f"{url}/{uid}"
 
+    cloned = _clone_into(machines["b"], monkeypatch, clone_url)
+    assert (cloned["project"], cloned["head"], cloned["snapshot"]) == (SLUG, head, head)
+    with transactional(_factory()) as s:
+        assert s.scalars(select(TaskModel.task_id)).all() == ["DEM-001"]
+    assert _json("sync", "verify", "-p", SLUG)["equal"] is True  # type: ignore[index]
+
+    _machine(machines["a"], monkeypatch)
+    _seed_task("DEM-002")
+    head = _json("push", "-p", SLUG)["head"]  # type: ignore[index]
+
+    _machine(machines["b"], monkeypatch)
     assert _json("fetch", "-p", SLUG) == {"remote": "origin", "new": [head]}
     st = _json("sync", "status", "-p", SLUG, "--verify")
     assert isinstance(st, dict)
-    assert (st["behind"], st["head_local"], st["head_remote"]) == (1, None, head)
+    assert (st["behind"], st["head_local"], st["head_remote"]) == (1, cloned["head"], head)
     assert st["verify"]["equal"] is False
     assert "doc drift" in st["drift_hint"]
     code, _out, _err = _run("sync", "verify", "-p", SLUG)
@@ -247,7 +247,7 @@ def test_push_fetch_pull_status_log_verify_between_two_machines(
     assert isinstance(pulled, dict)
     assert (pulled["applied"], pulled["head"], pulled["fast_forward"]) == ([head], head, True)
     with transactional(_factory()) as s:
-        assert s.scalars(select(TaskModel.task_id)).all() == ["DEM-001"]
+        assert sorted(s.scalars(select(TaskModel.task_id))) == ["DEM-001", "DEM-002"]
     st = _json("sync", "status", "-p", SLUG, "--verify")
     assert isinstance(st, dict)
     assert (st["behind"], st["ahead"], st["pending_ops"]) == (0, 0, 0)
@@ -277,3 +277,74 @@ def test_pull_without_remote_reports_sync_110(
         code, _out, err = _run(cmd, "-p", SLUG, "--remote", "nope")
         assert code == 1, cmd
         assert "SYNC-110" in err, cmd
+
+
+# --- clone (CLO-029) ---------------------------------------------------------------
+
+
+def test_scn_082_clone_on_a_clean_machine_restores_the_remote_project(
+    machines: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SCN-082: ``cod-doc clone URL --project demo ./demo``, затем ``sync verify`` — равен.
+
+    На remote снапшот (первый push) и changeset после него; на машине B нет ни
+    state.db, ни записи в реестре. Проект A заведён ``project add`` — с
+    дефолтными рутинами и деревом разделов, которые B получает со снапшота, а
+    не заводит сама (находка F2 аудита секции B).
+    """
+    url = machines["remote"].as_uri()
+    _machine(machines["a"], monkeypatch)
+    _run("remote", "add", "origin", url, "-p", SLUG)
+    _seed_task("DEM-001")
+    first = _json("push", "-p", SLUG)
+    assert isinstance(first, dict)
+    assert first["snapshot"] == first["head"]
+    _seed_task("DEM-002")
+    second = _json("push", "-p", SLUG)
+    assert isinstance(second, dict)
+    assert second["snapshot"] is None
+    clone_url = _json("sync", "status", "-p", SLUG)["clone_url"]  # type: ignore[index]
+
+    home = machines["b"]
+    home.mkdir()
+    monkeypatch.setenv("COD_DOC_HOME", str(home))
+    monkeypatch.chdir(home)
+    Config.clear_cache()
+    assert not (home / "config.yaml").exists()
+    code, out, err = _run("clone", str(clone_url), "--project", SLUG, "./demo")
+    assert code == 0, (out, err)
+    assert "со снапшота" in out
+
+    code, out, _err = _run("sync", "verify", "-p", SLUG)
+    assert code == 0, out
+    assert "совпал" in out
+    registry = yaml.safe_load((home / "config.yaml").read_text())
+    (entry,) = registry["projects"]
+    assert (entry["name"], entry["path"]) == (SLUG, str((home / "demo").resolve()))
+    assert entry["remotes"] == {"origin": {"url": url, "kind": "file"}}
+    with transactional(_factory()) as s:
+        assert sorted(s.scalars(select(TaskModel.task_id))) == ["DEM-001", "DEM-002"]
+        replicas = s.execute(text("SELECT uid FROM replica WHERE is_self = 1")).scalars().all()
+    assert len(replicas) == 1
+    st = _json("sync", "status", "-p", SLUG)
+    assert isinstance(st, dict)
+    assert (st["head_local"], st["head_remote"], st["pending_ops"]) == (
+        second["head"],
+        second["head"],
+        0,
+    )
+
+
+def test_clone_refuses_when_the_slug_is_taken(
+    machines: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = machines["remote"].as_uri()
+    _machine(machines["a"], monkeypatch)
+    _run("remote", "add", "origin", url, "-p", SLUG)
+    _json("push", "-p", SLUG)
+    clone_url = _json("sync", "status", "-p", SLUG)["clone_url"]  # type: ignore[index]
+    code, _out, err = _run("clone", str(clone_url), str(machines["a"] / "second"))
+    assert code == 1
+    assert "SYNC-110" in err
+    assert "уже есть в реестре" in err
+    assert not (machines["a"] / "second").exists()

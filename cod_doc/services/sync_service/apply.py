@@ -1180,6 +1180,18 @@ def restore_rows(
     return created
 
 
+def note_written(touched: Touched, table: str, obj: object) -> None:
+    """Строка создана или правлена не через операцию (снапшот, CLO-029): пересобрать derived."""
+    _note(touched, table, obj, deleted=False, base={})
+
+
+def rebuild_derived(session: Session, project: ProjectRef, touched: Touched) -> None:
+    """Позиции из ранга, ссылки секций и FTS — как после применения changeset'а."""
+    _renumber(session, touched)
+    _rebuild_links(session, touched.section_ids)
+    _rebuild_fts(session, project, touched)
+
+
 # --- derived ----------------------------------------------------------------------
 
 

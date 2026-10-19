@@ -45,70 +45,82 @@ from cod_doc.services.sync_service._values import from_wire
 from cod_doc.services.sync_service.errors import ObjectMissingError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlalchemy.orm import Session
 
     from cod_doc.services.sync_service._local import ProjectRef
     from cod_doc.services.sync_service.changeset import Op
 
-__all__ = ["apply_op"]
+__all__ = ["apply_op", "apply_row"]
 
 _TABLE: Final = "revision"
 _REQUIRED: Final = frozenset({"project_id", "entity_kind", "entity_id", "author", "at", "diff"})
 
 
-def _reject(op: Op, why: str) -> ObjectMissingError:
-    return ObjectMissingError(f"{op.entity_kind} {op.entity_uid}: {why}")
+def _reject(uid: str, why: str) -> ObjectMissingError:
+    return ObjectMissingError(f"{_TABLE} {uid}: {why}")
 
 
-def _check_shape(op: Op, info: cap.TableInfo) -> None:
-    if op.kind != "upsert" or op.base:
-        raise _reject(op, "журнал только дописывается — правка или удаление строки")
-    unknown = sorted(set(op.fields) - info.shipped)
+def _check_fields(uid: str, fields: Mapping[str, object], info: cap.TableInfo) -> None:
+    unknown = sorted(set(fields) - info.shipped)
     if unknown:
-        raise _reject(op, f"колонки {unknown} не уезжают — remote их не пишет")
-    missing = sorted(c for c in _REQUIRED if op.fields.get(c) is None)
+        raise _reject(uid, f"колонки {unknown} не уезжают — remote их не пишет")
+    missing = sorted(c for c in _REQUIRED if fields.get(c) is None)
     if missing:
-        raise _reject(op, f"нет обязательных полей {missing}")
+        raise _reject(uid, f"нет обязательных полей {missing}")
 
 
-def _entity_table(op: Op) -> tuple[EntityKind, str]:
+def _entity_table(uid: str, fields: Mapping[str, object]) -> tuple[EntityKind, str]:
     try:
-        kind = EntityKind(str(op.fields["entity_kind"]))
+        kind = EntityKind(str(fields["entity_kind"]))
     except ValueError:
-        raise _reject(op, "незнакомый вид сущности") from None
+        raise _reject(uid, "незнакомый вид сущности") from None
     table = reg.ENTITY_KIND_TABLES.get(kind)
     if table is None or table not in reg.UID_TABLES:
-        raise _reject(op, f"вид сущности {kind.value!r} без uid — такие ревизии не уезжают")
+        raise _reject(uid, f"вид сущности {kind.value!r} без uid — такие ревизии не уезжают")
     return kind, table
 
 
-def _existing(session: Session, project: ProjectRef, op: Op) -> bool:
+def _existing(session: Session, project: ProjectRef, uid: str) -> bool:
     found = session.scalars(
-        select(RevisionModel.project_id).where(RevisionModel.revision_id == op.entity_uid)
+        select(RevisionModel.project_id).where(RevisionModel.revision_id == uid)
     ).first()
     if found is None:
         return False
     if found != project.row_id:
-        raise _reject(op, "ревизия с этим id принадлежит другому проекту этой БД")
+        raise _reject(uid, "ревизия с этим id принадлежит другому проекту этой БД")
     return True
 
 
 def apply_op(session: Session, project: ProjectRef, op: Op) -> None:
     """Применить journal-операцию ``op`` в транзакции changeset'а."""
+    if op.kind != "upsert" or op.base:
+        raise _reject(op.entity_uid, "журнал только дописывается — правка или удаление строки")
+    apply_row(session, project, op.entity_uid, op.fields)
+
+
+def apply_row(
+    session: Session, project: ProjectRef, revision_id: str, fields: Mapping[str, object]
+) -> bool:
+    """Дописать ревизию ``revision_id`` с полями в форме changeset'а (операция, снапшот).
+
+    ``False`` — не записана: уже есть или её сущности на реплике нет (п. 1, 3).
+    """
     info = cap.table_info(inspect(RevisionModel))
     assert info is not None  # revision в CAPTURED_TABLES
-    _check_shape(op, info)
-    if _existing(session, project, op):
-        return
-    if op.fields["project_id"] != project.uid:
-        raise _reject(op, "ревизия чужого проекта")
-    kind, table = _entity_table(op)
-    target = apply.entity_by_uid(session, project, table, str(op.fields["entity_id"]))
+    _check_fields(revision_id, fields, info)
+    if _existing(session, project, revision_id):
+        return False
+    if fields["project_id"] != project.uid:
+        raise _reject(revision_id, "ревизия чужого проекта")
+    kind, table = _entity_table(revision_id, fields)
+    target = apply.entity_by_uid(session, project, table, str(fields["entity_id"]))
     if target is None:
-        return  # ревизия удалённой сущности local на обеих репликах (п. 3)
+        return False  # ревизия удалённой сущности local на обеих репликах (п. 3)
     entity_id = int(getattr(target[0], "row_id"))  # noqa: B009
     row = {
-        "revision_id": op.entity_uid,
+        "revision_id": revision_id,
         "project_id": project.row_id,
         "entity_kind": kind.value,
         "entity_id": entity_id,
@@ -116,22 +128,23 @@ def apply_op(session: Session, project: ProjectRef, op: Op) -> None:
     if cap.shipped_fields(session, _TABLE, row) is None and not _before_withdrawal(
         session, project, table, *target
     ):
-        raise _reject(op, "ревизия local на этой реплике (restricted и т. п.)")
-    at = from_wire(_TABLE, "at", op.fields["at"])
+        raise _reject(revision_id, "ревизия local на этой реплике (restricted и т. п.)")
+    at = from_wire(_TABLE, "at", fields["at"])
     if not isinstance(at, datetime):
-        raise _reject(op, "at — не время")
+        raise _reject(revision_id, "at — не время")
     revision_service.append_foreign(
         session,
-        revision_id=op.entity_uid,
+        revision_id=revision_id,
         project_id=project.row_id,
         entity_kind=kind,
         entity_id=entity_id,
-        author=str(op.fields["author"]),
+        author=str(fields["author"]),
         at=at,
-        diff=str(cap.sanitize_diff(kind.value, str(op.fields["diff"]))),
-        reason=_text(op.fields.get("reason")),
-        commit_sha=_text(op.fields.get("commit_sha")),
+        diff=str(cap.sanitize_diff(kind.value, str(fields["diff"]))),
+        reason=_text(fields.get("reason")),
+        commit_sha=_text(fields.get("commit_sha")),
     )
+    return True
 
 
 def _before_withdrawal(

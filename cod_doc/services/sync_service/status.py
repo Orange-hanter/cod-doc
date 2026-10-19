@@ -64,6 +64,9 @@ class SyncStatus:
     drift_hint: str | None = None
     #: ``status(verify=True)`` — сверка дайджеста (§3.7, ``sync verify``).
     verify: digest.VerifyResult | None = None
+    #: URL для ``cod-doc clone`` на другой машине: URL remote + ``/<project_uid>``
+    #: (CLO-029); ``None`` — remote не настроен в реестре.
+    clone_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +123,8 @@ def status(
     store: RemoteStore | None = None,
 ) -> SyncStatus:
     """Снимок синхронизации проекта (§3.9 ``sync status``)."""
-    configured = store is not None or remotes.get(project, remote) is not None
+    spec = remotes.get(project, remote)
+    configured = store is not None or spec is not None
     behind = 0
     if configured:
         store = store if store is not None else _local.open_store(project, remote)
@@ -159,6 +163,7 @@ def status(
         leases=lease_left,
         drift_hint=hint,
         verify=checked,
+        clone_url=None if spec is None else f"{spec.url.rstrip('/')}/{ref.uid}",
     )
 
 
