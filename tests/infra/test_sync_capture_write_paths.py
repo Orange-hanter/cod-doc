@@ -1719,6 +1719,36 @@ def _(w: World) -> Expect:
     return _reconcile_case(w, quietly=True)
 
 
+@case("sync_service.clone")
+def _(w: World) -> Expect:
+    """Clone (CLO-029) пишет в новую БД под ``suspended``: хвоста у клона нет."""
+    from sqlalchemy.orm import Session
+
+    from cod_doc.services.sync_service import clone
+
+    store = _sync_store(w)
+    _push_world(w, store)
+    uid = w.uid(ProjectModel, row_id=w.pid)
+    result = clone.clone(
+        f"{store.root.as_uri()}/{uid}", root=w.root / "clone", author=AUTHOR, store=store
+    )
+    engine = make_engine(f"sqlite:///{w.root / 'clone' / '.cod-doc' / 'state.db'}")
+    try:
+        with Session(engine) as s:
+            pending = s.scalars(select(SyncOpModel).where(SyncOpModel.changeset.is_(None))).all()
+    finally:
+        engine.dispose()
+    assert result.head is not None
+    assert pending == []
+    return []
+
+
+NO_OPS["sync_service.clone"] = (
+    cap.CAPTURED_TABLES,
+    "строки клона — снапшот и чужие changeset'ы под suspended, журнал — история с changeset",
+)
+
+
 for _name in ("sync_service.reconcile", "sync_service.reconcile_quietly"):
     NO_OPS[_name] = (
         cap.CAPTURED_TABLES,

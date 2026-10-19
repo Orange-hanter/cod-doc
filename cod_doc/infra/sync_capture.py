@@ -1272,9 +1272,18 @@ def shipped_fields(
 
 
 def _shipped_line(
-    lookup: _Lookup, info: TableInfo, row: Mapping[str, object], project_id: int
+    lookup: _Lookup,
+    info: TableInfo,
+    row: Mapping[str, object],
+    project_id: int,
+    *,
+    fill_withheld: bool = True,
 ) -> tuple[str, str] | None:
-    """``(uid сущности, поля JSON)`` строки проекта; ``None`` — строка не уезжает."""
+    """``(uid сущности, поля JSON)`` строки проекта; ``None`` — строка не уезжает.
+
+    ``fill_withheld=False`` — придержанные колонки выброшены, как в операции
+    (снапшот, CLO-029): приёмник заполнит их сам при создании строки.
+    """
     table = info.table
     if (
         _PROJECT_ID not in row
@@ -1290,6 +1299,8 @@ def _shipped_line(
         raise SyncCaptureError(f"{table}.uid: пуст")
     withheld = reg.withheld_columns(table, gate) & info.shipped
     payload = _columns_payload(info, info.shipped - withheld, row, lookup)
+    if not fill_withheld:
+        return entity_uid, _dumps(payload)
     # Придержанная колонка входит в дайджест тем, что окажется у приёмника:
     # ``NULL`` или заглушка ``WITHHELD_FILL`` (CLO-027, F8). Приёмник не знает,
     # что колонку придержали, — он хеширует то, что лежит в строке; отправитель
@@ -1344,6 +1355,36 @@ def shipped_state(session: Session, project_id: int) -> Iterator[tuple[str, str,
         present = (line for line in lines if line is not None)
         for uid, fields in present if key is not None else sorted(present):
             yield table, uid, fields
+
+
+def shipped_rows(
+    session: Session, project_id: int, tables: Iterable[str]
+) -> Iterator[tuple[str, str, str]]:
+    """Уезжающие строки проекта для снапшота (RFC 29 §3.5, CLO-029).
+
+    Те же строки и поля, что ``shipped_state``, но придержанные колонки
+    выброшены (как в операции, а не значением приёмника), таблицы — в порядке
+    ``tables`` (загрузчику нужен родитель раньше ребёнка), строки таблицы — по
+    первичному ключу (порядок вставки на этой реплике: так ревизии сущности
+    встают на клоне в ту же цепочку). Выдача потоковая, как у ``shipped_state``.
+    """
+    lookup = _Lookup(session)
+    for table in tables:
+        mapper = _mapper_for(table)
+        info = table_info(mapper) if mapper is not None else None
+        if mapper is None or info is None:
+            msg = f"sync_capture.shipped_rows: модель {table!r} не загружена или не захватывается"
+            raise LookupError(msg)
+        tbl = _table(mapper)
+        stmt = select(tbl).order_by(*tbl.primary_key.columns)
+        if table == "project":
+            stmt = stmt.where(tbl.c.row_id == project_id)
+        elif _PROJECT_ID in tbl.c:
+            stmt = stmt.where(tbl.c.project_id == project_id)
+        for raw in session.connection().execute(stmt).mappings():
+            line = _shipped_line(lookup, info, dict(raw), project_id, fill_withheld=False)
+            if line is not None:
+                yield table, line[0], line[1]
 
 
 @contextmanager

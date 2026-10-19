@@ -33,6 +33,10 @@
 отдать номер своей неуехавшей строки двойнику (``leases.yield_number``). После
 push с настроенным remote аренда добирается впрок (``leases.refill``); сбой
 добора push не отменяет — он уже на remote.
+
+**Снапшот** (CLO-029). После фиксации push пишет снапшот головы, если на
+remote его ещё нет или с последнего набралось ``snapshot.SNAPSHOT_EVERY``
+операций журнала (``snapshot.write_quietly``); сбой снапшота push не отменяет.
 """
 
 from __future__ import annotations
@@ -70,6 +74,8 @@ class PushResult:
     retries: int
     #: Закреплённые провизорные ID: ``{провизорный: постоянный}`` (CLO-030).
     pinned: dict[str, str] = field(default_factory=dict)
+    #: Снапшот, записанный этим push'ем (sha головы), или ``None`` (CLO-029).
+    snapshot: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +187,7 @@ def push(
     # pull зовёт только повтор; ленивый импорт держит push независимым от
     # применения чужих операций (pull → apply → link/search-сервисы).
     from cod_doc.services.sync_service import pull as pull_mod
+    from cod_doc.services.sync_service import snapshot
 
     store = store if store is not None else _local.open_store(project, remote)
     retries = 0
@@ -195,6 +202,9 @@ def push(
         new_ref = _exchange(store, packed)
         if new_ref is not None:
             _commit(sf, packed, new_ref, remote, author)
+            snap = snapshot.write_quietly(
+                sf, project, store, head=packed.sha, digest_hex=packed.changeset.digest
+            )
             leases.refill_quietly(sf, project, store)
             checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
             return PushResult(
@@ -203,6 +213,7 @@ def push(
                 head=packed.sha,
                 retries=retries,
                 pinned=pinned,
+                snapshot=snap,
             )
         if retries >= max_retries:
             suffix = f"; повторов: {max_retries}" if max_retries else ""

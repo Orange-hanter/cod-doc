@@ -108,7 +108,7 @@ from cod_doc.cli.cmd_reindex import reindex
 from cod_doc.cli.cmd_runtime import runtime
 from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
-from cod_doc.cli.cmd_sync import fetch, pull, push, remote, sync
+from cod_doc.cli.cmd_sync import clone, fetch, pull, push, remote, sync
 from cod_doc.cli.cmd_tui import tui, wizard
 from cod_doc.cli.cmd_update import update
 from cod_doc.cli.completion.cmd import completion
@@ -178,6 +178,7 @@ main.add_command(search_cmd)
 main.add_command(completion)
 main.add_command(runtime)
 main.add_command(remote)
+main.add_command(clone)
 main.add_command(fetch)
 main.add_command(pull)
 main.add_command(push)

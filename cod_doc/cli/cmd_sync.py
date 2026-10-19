@@ -6,9 +6,10 @@
 в телах команд (ADO-179). Ошибки — ``click.ClickException`` (exit 1) с
 сообщением, начинающимся с кода ``SYNC-NNN`` (§10.10).
 
-Команды поздних секций ещё не выставлены: ``remote login``, ``clone``,
-``sync export-pending``, ``member``, ``token`` — их сервисов пока нет
-(CLO-029, CLO-032, CLO-038).
+``clone URL [DIR]`` (CLO-029) заводит проект с remote: снапшот + хвост,
+регистрация в реестре. Команды поздних секций ещё не выставлены: ``remote
+login``, ``sync export-pending``, ``member``, ``token`` — их сервисов пока нет
+(CLO-032, CLO-038).
 """
 
 from __future__ import annotations
@@ -159,6 +160,41 @@ def remote_remove(name: str, project: str, as_json: bool) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# clone                                                                        #
+# --------------------------------------------------------------------------- #
+
+
+@click.command("clone")
+@click.argument("url")
+@click.argument("directory", required=False)
+@click.option("--project", "slug", default=None, help="Project slug (по умолчанию — с remote)")
+@_author_opt
+@_json_opt
+def clone(url: str, directory: str | None, slug: str | None, author: str, as_json: bool) -> None:
+    """Завести проект с remote: последний снапшот + хвост, регистрация в реестре.
+
+    URL — каталог проекта на remote: <URL remote>/<project_uid>
+    (его печатает `cod-doc sync status`). DIR — корень проекта,
+    по умолчанию ./<slug>.
+    """
+    from cod_doc.services.sync_service import clone as clone_mod
+
+    root = Path(directory) if directory is not None else None
+    with _sync_errors():
+        result = clone_mod.clone(url, root=root, slug=slug, author=author)
+    if as_json:
+        _echo_json(_as_dict(result))
+        return
+    origin = "со снапшота " + _short(result.snapshot) if result.snapshot else "без снапшота"
+    console.print(
+        f"проект {result.project} заведён в {result.root} {origin}; "
+        f"хвост: changeset'ов {len(result.applied)}, операций {result.ops}; "
+        f"голова {_short(result.head)}",
+        markup=False,
+    )
+
+
+# --------------------------------------------------------------------------- #
 # fetch / pull / push                                                          #
 # --------------------------------------------------------------------------- #
 
@@ -285,6 +321,8 @@ def sync_status(
         lines.append(f"дайджест:        {mark} ({_short(st.verify.local)})")
     if st.drift_hint:
         lines.append(f"подсказка:       {st.drift_hint}")
+    if st.clone_url:
+        lines.append(f"clone:           cod-doc clone {st.clone_url}")
     for line in lines:
         console.print(printable(line), markup=False)
 
