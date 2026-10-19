@@ -1180,3 +1180,82 @@ def test_conflict_opened_after_the_marker_stays_open(tmp_path: Path) -> None:
     assert sigs[0] == sigs[1] == sigs[2] != set()
     assert {_status(rep, TASKS[0]) for rep in u.reps} == {"todo"}
     _dispose(u)
+
+
+def _note(rep: r.Replica) -> str | None:
+    with transactional(rep.sf, commit=False) as s:
+        return s.scalars(select(DependencyModel.note)).one()
+
+
+def test_older_twin_insert_does_not_override_a_newer_one_from_history(tmp_path: Path) -> None:
+    """Сид 358: A, B и C завели одно ребро (uid детерминирован) с разными заметками.
+
+    C пушит первым, B сливает его и пушит свою вставку. A сливает обе: вставка C
+    (самая поздняя) выигрывает у своей, а своя операция создания остаётся в
+    хвосте с полем (``_trim``). Вставка B сравнивалась только с ней, а не с
+    историей, и переписывала заметку C на свою: на A b-1, на B и C c-1.
+    """
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    for rep in (a, b, c):
+        time.sleep(TICK)
+        with transactional(rep.sf) as s:
+            task_service.add_dependency(
+                s,
+                project_id=rep.project_id,
+                task_id=TASKS[0],
+                blocker_task_id=TASKS[1],
+                note=f"{rep.name}-1",
+                author=r.AUTHOR,
+            )
+
+    _synced(u, c, b, a)
+    _settle_fixed(u, c, b, a)
+
+    assert {rep.name: _note(rep) for rep in u.reps} == {"a": "c-1", "b": "c-1", "c": "c-1"}
+    _assert_converged(u, "три вставки одного ребра")
+    _dispose(u)
+
+
+def _classified_body(rep: r.Replica, anchor: str) -> str | None:
+    with transactional(rep.sf, commit=False) as s:
+        sections = doc_service.get_sections(
+            s, r.doc_id(rep, CLASSIFIED_DOC), project_id=rep.project_id
+        )
+        return next(x.body for x in sections if x.anchor == anchor)
+
+
+@pytest.mark.parametrize("order", ["ca", "ac"])
+def test_reship_after_lowering_against_an_edit_merges_the_same_in_any_order(
+    tmp_path: Path, order: str
+) -> None:
+    """Сиды 93, 193, 201, 489, 490: A повышает документ и понижает обратно, C правит тело.
+
+    Понижение шлёт тело операцией создания (``base`` пуст, ``reship_ops``). У
+    C чужая вставка поверх своей правки шла LWW, а у A правка C поверх своей
+    вставки — diff3 без общего предка: ``text`` открывался только там, где A
+    сливал правку C до своего push'а (порядок ``ca``). Итоговое тело от порядка
+    зависит по построению CLO-046: в ``ac`` правку C вычищает пришедший отзыв, в
+    ``ca`` она новее вставки и выигрывает LWW.
+    """
+    u = _three(tmp_path)
+    a, b, c = u.reps
+    time.sleep(TICK)
+    _toggle_classified(a, random.Random(0), 1)
+    time.sleep(TICK)
+    _toggle_classified(a, random.Random(0), 2)
+    time.sleep(TICK)
+    _edit_section(c, random.Random(0), 3, CLASSIFIED_DOC, "c1")
+    edited = _classified_body(c, "c1")
+
+    reps = {rep.name: rep for rep in u.reps}
+    _synced(u, *(reps[x] for x in order))
+    _settle_fixed(u, a, c, b)
+
+    assert {rep.name: _signatures(rep) for rep in u.reps} == {"a": set(), "b": set(), "c": set()}
+    expected = edited if order == "ca" else _text("c1")
+    assert {rep.name: _classified_body(rep, "c1") for rep in u.reps} == dict.fromkeys(
+        "abc", expected
+    )
+    _assert_converged(u, f"понижение против правки, порядок {order}")
+    _dispose(u)

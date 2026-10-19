@@ -47,7 +47,8 @@ merged``, событие ``sync.alias_created``): операции, собран
 (``assign_labels``): первый по ``(hlc, uid)`` заявитель буквы её получает,
 остальные — следующую букву плана (``A``…``Z``, ``AA``…), на которую никто не
 заявлялся; слаг ``<буква>-…`` — вместе с ней; задачи остаются при своих
-секциях. Заявка — последняя операция журнала, писавшая букву (CLO-027). Запись — под ``suspended`` на обеих репликах: каждая
+секциях. Заявка — последняя операция журнала или применяемого changeset'а,
+писавшая букву (CLO-027, CLO-047). Запись — под ``suspended`` на обеих репликах: каждая
 перебуквливает сама, когда видит чужую вставку, и пишет одинаковое событие
 ``plan_section.relettered`` ``{from, to, section_uid}``. Своя операция вставки в
 хвосте не переписывается — по ней перебуквит и другая сторона.
@@ -452,23 +453,31 @@ def next_label(current: str, used: set[str]) -> str:
 
 
 def _claim(
-    session: Session, project_id: int, table: str, uid: str, column: str, current: str
+    session: Session, ctx: Context, table: str, uid: str, column: str, current: str
 ) -> tuple[str, Stamp]:
     """Заявка строки на метку: (метка, штамп) последней операции, писавшей метку.
 
     Перебуквление операций не пишет (``suspended``), поэтому последняя запись
-    метки в журнале — то, на что строка претендовала. Строка без такой
+    метки — то, на что строка претендовала. Операции ищутся в журнале и в
+    применяемом changeset'е (``ctx.batch``): его операции ложатся в ``sync_op``
+    после всех вставок, и строка, вставленная раньше в том же changeset'е, иначе
+    выглядела бы заведённой до журнала (CLO-047, сид 35). Строка без такой
     операции (до журнала) претендует на текущую метку и проигрывает всем.
     """
-    claims = [
-        row
-        for row in _ops(session, project_id, table, uid)
-        if row.kind == "upsert" and column in json.loads(row.fields)
-    ]
+    claims: dict[str, tuple[Stamp, str]] = {}
+    for row in _ops(session, ctx.project_id, table, uid):
+        fields = json.loads(row.fields)
+        if row.kind == "upsert" and column in fields:
+            claims[row.op_id] = ((row.hlc, row.op_id), str(fields[column]))
+    for op in ctx.batch:
+        if (op.entity_kind, op.entity_uid, op.kind) == (table, uid, "upsert") and (
+            column in op.fields
+        ):
+            claims.setdefault(op.op_id, ((op.hlc, op.op_id), str(op.fields[column])))
     if not claims:
         return current, (_NEVER, uid)
-    last = max(claims, key=lambda row: (row.hlc, row.op_id))
-    return str(json.loads(last.fields)[column]), (last.hlc, uid)
+    (hlc, _op_id), label = max(claims.values())
+    return label, (hlc, uid)
 
 
 def assign_labels(claims: Mapping[str, tuple[str, Stamp]]) -> dict[str, str]:
@@ -534,7 +543,7 @@ def _reletter(
     for row in rows:
         uid = str(getattr(row, info.attr(_UID)))
         current[uid] = str(getattr(row, info.attr(column)))
-        claims[uid] = _claim(session, ctx.project_id, info.table, uid, column, current[uid])
+        claims[uid] = _claim(session, ctx, info.table, uid, column, current[uid])
     claimed = str(theirs.fields[column])
     claims[theirs.entity_uid] = (claimed, (theirs.hlc, theirs.entity_uid))
     target = assign_labels(claims)
