@@ -1185,6 +1185,11 @@ def note_written(touched: Touched, table: str, obj: object) -> None:
     _note(touched, table, obj, deleted=False, base={})
 
 
+def note_deleted(touched: Touched, table: str, obj: object) -> None:
+    """Строка удаляется не через операцию (снапшот эпохи, CLO-050): снять derived."""
+    _note(touched, table, obj, deleted=True, base={})
+
+
 def rebuild_derived(session: Session, project: ProjectRef, touched: Touched) -> None:
     """Позиции из ранга, ссылки секций и FTS — как после применения changeset'а."""
     _renumber(session, touched)

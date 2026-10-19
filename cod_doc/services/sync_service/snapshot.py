@@ -89,6 +89,7 @@ from cod_doc.infra.models import (
 from cod_doc.infra.remote.base import META_KEY, SnapshotRef, snapshot_key
 from cod_doc.infra.remote.file import MAX_SNAPSHOT_BYTES
 from cod_doc.services.sync_service import _local, apply, digest, epochs, gate, journal
+from cod_doc.services.sync_service._local import MAX_PARENTS
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import (
     _PARSE_ERRORS,
@@ -104,7 +105,6 @@ from cod_doc.services.sync_service.errors import (
     SchemaMismatchError,
     SyncError,
 )
-from cod_doc.services.sync_service.pull import MAX_PARENTS
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator, Mapping
@@ -507,14 +507,24 @@ class _Loader:
         elif table in reg.JOURNAL_IDS:
             journal.apply_row(self.session, self.project, uid, payload)
         else:
-            later = deferred_columns()[table]
-            first = {c: v for c, v in payload.items() if c not in later}
-            has_uid = _info(table).has_uid
-            obj = apply.create_row(
-                self.session, self.project, table, uid if has_uid else None, first
-            )
-            apply.note_written(self.touched, table, obj)
+            self.put(table, uid, payload)
         self.rows += 1
+
+    def prepare(self, data: bytes) -> None:
+        """Шаг до первого прохода; у clone проект пуст — делать нечего (CLO-050: ``epoch_rebase.Rebaser``)."""
+
+    def put(self, table: str, uid: str, payload: dict[str, object]) -> None:
+        """Строка таблицы данных — первым проходом, без отложенных FK."""
+        later = deferred_columns()[table]
+        first = {c: v for c, v in payload.items() if c not in later}
+        has_uid = _info(table).has_uid
+        obj = apply.create_row(self.session, self.project, table, uid if has_uid else None, first)
+        apply.note_written(self.touched, table, obj)
+
+    def deferred(self, table: str, uid: str, fields: dict[str, object]) -> dict[str, object]:
+        """Отложенные nullable FK строки для второго прохода; ``None`` уже стоит у новой строки."""
+        later = deferred_columns().get(table, frozenset())
+        return {c: v for c, v in fields.items() if c in later and v is not None}
 
     def _project(self, uid: str, fields: dict[str, object]) -> None:
         if self.seen_project or uid != self.project.uid:
@@ -612,11 +622,9 @@ def _second_pass(loader: _Loader, data: bytes) -> None:
             continue
         _, table, uid, fields = item
         table, uid = str(table), str(uid)
-        wanted = {
-            c: v
-            for c, v in cast("dict[str, object]", fields).items()
-            if c in later.get(table, ()) and v is not None
-        }
+        if not later.get(table):
+            continue
+        wanted = loader.deferred(table, uid, cast("dict[str, object]", fields))
         if not wanted:
             continue
         found = apply.entity_by_uid(loader.session, loader.project, table, uid)
@@ -725,13 +733,21 @@ def _flush_history(
 
 
 def load(
-    session: Session, project: _local.ProjectRef, data: bytes, *, head: str, head_cs: Changeset
+    session: Session,
+    project: _local.ProjectRef,
+    data: bytes,
+    *,
+    head: str,
+    head_cs: Changeset,
+    loader_cls: type[_Loader] = _Loader,
 ) -> LoadResult:
     """Загрузить снапшот ``head`` в проект клона (транзакция вызывающего).
 
     Журнал и индекс уже собраны ``load_history`` от той же головы; ``head_cs`` —
     changeset ``head``, прочитанный с remote по адресу: его дайджест — эталон.
-    Любое расхождение — ``SYNC-102`` до коммита.
+    Любое расхождение — ``SYNC-102`` до коммита. ``loader_cls`` — загрузчик
+    строк: отставшая реплика (CLO-050, ``epoch_rebase.Rebaser``) кладёт снапшот поверх своих
+    строк, а не в пустой проект; проверки те же.
     """
     header = _header(next(_lines(data), None))
     if header.project != project.uid or header.head != head:
@@ -743,9 +759,10 @@ def load(
     if _local.schema_is_newer(header.schema_head, _local.schema_head(session)):
         msg = f"снапшот на схеме {header.schema_head}, у вас {_local.schema_head(session)} — cod-doc update"
         raise SchemaMismatchError(msg)
-    loader = _Loader(session=session, project=project, touched=apply.Touched())
+    loader = loader_cls(session=session, project=project, touched=apply.Touched())
     try:
         with cap.suspended(session):
+            loader.prepare(data)
             _first_pass(loader, data)
             _second_pass(loader, data)
             apply.rebuild_derived(session, project, loader.touched)
