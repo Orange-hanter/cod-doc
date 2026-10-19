@@ -233,6 +233,10 @@ def test_registry_classifies_tables_per_rfc() -> None:
         "entity_alias",
         # конфликты слияния (0051, CLO-017): решение реплики, разрешение уезжает операцией
         "sync_conflict",
+        # доступ к умному remote (0053, CLO-034): только хранилище доступа сервера
+        "actor",
+        "api_token",
+        "project_member",
     }
     assert {"link", "link_suggestion", "doc_node_suggestion", "doc_code_claim"} <= by_cls[
         SyncClass.DERIVED

@@ -438,7 +438,7 @@ sequenceDiagram
   - клон не заводит дефолтные рутины и дерево разделов: они приезжают со
     снапшота (находка F2 аудита секции B).
 - **Схема и эпохи (Q-012).** Реплика не применяет changeset с `schema_head` новее
-  своей головы миграций: `pull` отвечает «remote на схеме 0052_sync_access, у вас 0050_sync_rank —
+  своей головы миграций: `pull` отвечает «remote на схеме 0053_sync_access, у вас 0050_sync_rank —
   `cod-doc update`». Миграция, меняющая `authored`-колонки, открывает **эпоху**:
   1. `cod-doc update` перед миграцией проверяет неупакованные операции и требует
      `cod-doc push`; push на старой схеме принимается, пока `meta.epoch` remote не
@@ -720,6 +720,39 @@ reader.
   без этого первый публичный порт на Hermes слеп к перебору. MinIO и MailPit
   остаются за SSH-туннелем; облачные агенты (VISION §6 п. 5) ходят тем же HTTPS.
 
+**Как сделано (2026-10-19, CLO-034/036/038).** Решения, которых спека выше не
+называла:
+
+- **Хранилище доступа** — отдельная БД сервера на общей схеме миграций
+  (`Config.access_db_url`, по умолчанию `$COD_DOC_HOME/access.db`), а не БД
+  проекта: actor — сущность сервера, а проекты лежат каждый в своей БД. Нет
+  файла — гейт выключен и всё работает как до CLO-036; `cod-doc access init`
+  создаёт его и включает гейт без рестарта (файл проверяется на каждом
+  запросе). Журнал хранилища держит FK через строку проекта `_access`, которой
+  нет в реестре.
+- **Ревизий у доступа нет**, только activity event (ADO-040): `revision_revert`
+  по ним отменил бы отзыв токена.
+- **Гейт на MCP проверяет не только токен.** Владелец токена привязывается к
+  контексту запроса (`services/request_identity`); MCP идёт в режиме
+  `stateless_http`, поэтому контекст доходит до тула. `session_factory` тула
+  пускает только в проект, где владелец участник; `activity_service.emit` —
+  единственная точка, через которую проходит каждая запись, — требует роль
+  не ниже writer и `author`, равный handle владельца или его агента
+  (`human:alice`, `agent:alice/claude-code`). Так правило «провенанс — не
+  свободная строка» действует на MCP уже сейчас, до `/api/sync/v1`.
+- **Loopback не освобождает от токена**, если хранилище есть: за reverse proxy
+  на том же хосте все запросы пришли бы с `127.0.0.1`.
+- **MCP на не-loopback адресе без хранилища не стартует** (`--host 0.0.0.0` →
+  ошибка с подсказкой `access init`). За прокси публичное имя добавляется к
+  защите SDK от DNS rebinding: `--allowed-host` / `COD_DOC_MCP_ALLOWED_HOSTS`.
+- **`X-Forwarded-For`** учитывается только от loopback и сетей
+  `COD_DOC_TRUSTED_PROXIES`: иначе подделанный заголовок уводил бы от лимита.
+- **Лимиты**: 10 неудачных попыток с адреса за минуту, 600 запросов на токен за
+  минуту, дальше 429 с `Retry-After`; блок пишет `auth.denied` один раз на окно.
+- **CLI доступа работает на сервере** против его хранилища (`docker compose exec
+  … cod-doc token create`). Удалённое администрирование через https-remote и
+  `remote login` — вместе с `/api/sync/v1` (CLO-035).
+
 ### 3.9 Поверхности
 
 Правило четырёх равных поверхностей соблюдается; гейты паритета
@@ -757,14 +790,15 @@ reader.
 
 ## 4. Миграция / обратная совместимость
 
-- **Четыре ревизии alembic** после `0047_project_scoped_uniques` (STO-018/024 — проектные UNIQUE для `plan.scope`, `story_id`, `module_id`):
+- **Пять ревизий alembic** после `0047_project_scoped_uniques` (STO-018/024 — проектные UNIQUE для `plan.scope`, `story_id`, `module_id`):
 
   | Ревизия | Что | Секция |
   |---|---|---|
   | `0049_sync_identity` | `ADD COLUMN uid` во все authored-таблицы, бэкфилл (uuid7, у рёбер — uuid5 по §3.3), `CREATE UNIQUE INDEX`; таблицы `replica`, `sync_op`, `sync_ref`, `sync_lease`, `changeset`, `entity_alias` | A |
   | `0050_sync_rank` | `ADD COLUMN rank` (и `document.node_rank`) в 11 мест порядка, бэкфилл в порядке текущего `position`; снятие четырёх `UNIQUE(…, position)` | A |
   | `0051_sync_conflict` | таблица `sync_conflict` | C |
-  | `0052_sync_access` | `actor`, `api_token`, `project_member` — нужны только серверу | E |
+  | `0052_sync_conflict_opened_hlc` | `sync_conflict.opened_hlc` (CLO-045) | D |
+  | `0053_sync_access` | `actor`, `api_token`, `project_member` — нужны только серверу; эпоху не открывает (номер 0052 занят, CLO-049) | E |
 
 - **Снятие `UNIQUE(position)`** на SQLite — пересоздание таблицы. Это допустимо для
   `scenario_step`, `story_acceptance`, `adr_diagram`, `open_question_option`: у них
@@ -998,7 +1032,7 @@ ALTER TABLE <t> ADD COLUMN rank TEXT;         -- document: node_rank
 -- 0051_sync_conflict — sync_conflict (§3.7, с колонкой kind):
 --   kind TEXT NOT NULL CHECK (kind IN ('field','text','status','delete_edit',
 --        'key_merge','double_checkout'))
--- 0052_sync_access — actor, api_token, project_member (§3.8).
+-- 0053_sync_access — actor, api_token, project_member (§3.8; 0052 занят CLO-045).
 ```
 
 Remote-раскладка — §3.5; `meta.json`:
@@ -1423,7 +1457,7 @@ critical» из `task-standard` соблюдено: 8 из 43), блокеры, 
 
 | ID | Задача | Тип · Пр. | Блокеры | Acceptance | Файлы |
 |---|---|---|---|---|---|
-| CLO-034 | Migration + Implement: `actor`, `api_token`, `project_member` | m · M | CLO-002 | `0052`; токен хранится как sha256, показывается один раз; отзыв действует сразу | `…0052_sync_access.py`, `cod_doc/services/access_service.py` |
+| CLO-034 | Migration + Implement: `actor`, `api_token`, `project_member` | m · M | CLO-002 | `0053` (CLO-049); токен хранится как sha256, показывается один раз; отзыв действует сразу | `…0053_sync_access.py`, `cod_doc/services/access_service.py` |
 | CLO-035 | Implement: `/api/sync/v1` и `HttpRemote` | f · M | CLO-034, CLO-029 | маршруты §10.9; формат ошибок `{"error": {...}}`; HttpRemote проходит те же тесты, что FileRemote | `cod_doc/api/sync/`, `cod_doc/infra/remote/http.py` |
 | CLO-036 | Implement: Bearer-гейт, rate limit, `auth.denied` | f · C | CLO-034 | закрывает `/api/sync/v1`, `/api/v1` и streamable-http MCP; constant-time; 401/403/429 пишут событие | `cod_doc/api/auth.py`, `cod_doc/api/server.py`, `cod_doc/mcp/server.py` |
 | CLO-037 | Implement: роли и проверка `actor`/`author` на push | f · M | CLO-035, CLO-036 | reader → 403 `SYNC-202`; чужой author → 422 `SYNC-203`; агент не выше владельца; SCN-084 | `cod_doc/api/sync/routes.py`, `access_service.py` |

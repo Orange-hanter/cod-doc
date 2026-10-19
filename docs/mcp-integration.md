@@ -222,6 +222,56 @@ claude mcp list        # ожидается ровно одна строка cod
 
 ---
 
+## Удалённый сервер: доступ по токену
+
+Развёрнутый cod-doc (сервер команды за reverse proxy) пускает в MCP по
+Bearer-токену (RFC 29 §3.8, CLO-034/036). Локальные демоны `:8801`/`:8802` это
+не трогает: пока на машине нет хранилища доступа (`$COD_DOC_HOME/access.db`),
+гейт выключен.
+
+**Участнику** администратор выдаёт токен (`cdt_…`, показывается один раз).
+Регистрация — тот же блок, что выше, плюс заголовок:
+
+```bash
+claude mcp add --transport http cod-doc https://cod-doc.example.dev/mcp -s user \
+  --header "Authorization: Bearer cdt_…"
+```
+
+```json
+{ "type": "http", "url": "https://cod-doc.example.dev/mcp",
+  "headers": { "Authorization": "Bearer cdt_…" } }
+```
+
+Что проверяет сервер:
+
+| Что | Без права |
+|---|---|
+| токен жив, владелец не отключён | 401 `SYNC-201` |
+| владелец — участник проекта из `project` | ошибка тула `SYNC-202 … не участник проекта` |
+| запись: роль `writer`/`admin` | ошибка тула `SYNC-202 … роль 'reader' не позволяет запись` |
+| `author` — свой handle или handle своего агента (`human:alice`, `agent:alice/claude-code`) | ошибка тула `SYNC-202 author … не принадлежит токену`; запись откатывается целиком |
+| частота: 10 неудачных попыток с адреса, 600 запросов на токен в минуту | 429 `SYNC-204` + `Retry-After` |
+
+Дефолтный `author="mcp"` у write-тулов под токеном не проходит — агенту нужно
+передавать свой handle явно. Legacy YAML-тулы (профиль `full`) удалённому
+вызывающему закрыты.
+
+**Администратору** — команды на сервере (в контейнере — через `docker compose
+exec`), в MCP их нет намеренно:
+
+```bash
+cod-doc access init                                   # включить гейт
+cod-doc member add alice -p cod-doc --role writer     # роль: reader | writer | admin
+cod-doc actor agent alice claude-code                 # агент alice/claude-code, не выше владельца
+cod-doc token create alice --label macbook            # печатает токен один раз
+cod-doc token list | cod-doc token revoke <uid>       # отзыв действует на следующем запросе
+cod-doc actor disable alice                           # гасит и токены её агентов
+```
+
+Развёртывание за Caddy — [`deploy/sync-remote/README.md`](../deploy/sync-remote/README.md).
+
+---
+
 ## stdio — когда он всё-таки нужен
 
 Демон покрывает обычную работу, но stdio остался и не изменился: процесс на

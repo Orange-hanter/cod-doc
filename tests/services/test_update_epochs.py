@@ -5,8 +5,8 @@ SCN-095: «Реплика с тремя неупакованными опера�
 завершается сообщением „3 незапушенные операции — сначала cod-doc push“;
 схема реплики остаётся прежней, операции на месте.»
 
-Миграция настоящая: БД стоит на ``0051``, а реестр ``sync_epochs`` подменён
-так, что голова цепочки (``0052``) открывает эпоху. Фаза B идёт через
+Миграция настоящая: БД стоит на ``0052``, а реестр ``sync_epochs`` подменён
+так, что голова цепочки (``0053``) открывает эпоху. Фаза B идёт через
 ``run_post_swap`` без свапа (``--skip-install``) — тот же код, что исполняет
 новый бинарь после relay.
 """
@@ -34,8 +34,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 SLUG = "demo"
-OLD = "0051_sync_conflict"
-NEW = "0052_sync_conflict_opened_hlc"
+OLD = "0052_sync_conflict_opened_hlc"
+NEW = "0053_sync_access"
 
 
 @pytest.fixture
@@ -43,7 +43,9 @@ def head_opens_an_epoch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sync_epochs,
         "MIGRATIONS",
-        MappingProxyType({"0050_sync_rank": True, OLD: False, NEW: True}),
+        MappingProxyType(
+            {"0050_sync_rank": True, "0051_sync_conflict": False, OLD: False, NEW: True}
+        ),
     )
 
 
@@ -139,7 +141,7 @@ def test_update_with_everything_pushed_migrates(tmp_path: Path) -> None:
 
 
 def test_migration_that_opens_no_epoch_is_not_held(tmp_path: Path) -> None:
-    """Реестр как есть: 0052 эпоху не открывает — незапушенное миграции не мешает."""
+    """Реестр как есть: 0053 эпоху не открывает — незапушенное миграции не мешает."""
     cfg, db = _replica(tmp_path, pending=3, remote=True)
     [result] = _update(cfg).migrate
     assert result.ok, result.error

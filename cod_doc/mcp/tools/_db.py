@@ -39,7 +39,27 @@ def session_factory(project: str | None) -> tuple[sessionmaker[Session], Project
     if not entry:
         raise ValueError(f"Project not found: {name!r} — run 'cod-doc project add' first.")
     factory, _engine = db_for_entry(entry)
+    _enter_project(factory, name)
     return factory, entry
+
+
+def _enter_project(factory: sessionmaker[Session], slug: str) -> None:
+    """CLO-036: удалённый вызывающий входит только в проект, где он участник.
+
+    Без привязанного владельца токена (stdio, локальный демон без хранилища
+    доступа) — ни запроса в БД, ни проверки.
+    """
+    from cod_doc.services import request_identity
+
+    if request_identity.current() is None:
+        return
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import ProjectModel
+
+    with factory() as session:
+        uid = session.scalar(select(ProjectModel.uid).where(ProjectModel.slug == slug))
+    request_identity.enter_project(uid, slug)
 
 
 def require_project_id(session: Any, project: str | None) -> int:

@@ -373,7 +373,9 @@ _cod-doc() {
     (cod_doc_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-$words[1]:"
       case $words[1] in
+        (access)     _cod_doc_access && ret=0 ;;
         (activity)   _cod_doc_activity && ret=0 ;;
+        (actor)      _cod_doc_actor && ret=0 ;;
         (adapter)    _cod_doc_adapter && ret=0 ;;
         (adr)        _cod_doc_adr && ret=0 ;;
         (agent)      _cod_doc_agent && ret=0 ;;
@@ -392,6 +394,7 @@ _cod-doc() {
         (ingest)     _cod_doc_ingest && ret=0 ;;
         (link)       _cod_doc_link && ret=0 ;;
         (mcp)        _cod_doc_mcp && ret=0 ;;
+        (member)     _cod_doc_member && ret=0 ;;
         (obligation) _cod_doc_obligation && ret=0 ;;
         (plan)       _cod_doc_plan && ret=0 ;;
         (project)    _cod_doc_project && ret=0 ;;
@@ -410,6 +413,7 @@ _cod-doc() {
         (structure)  _cod_doc_structure && ret=0 ;;
         (sync)       _cod_doc_sync && ret=0 ;;
         (task)       _cod_doc_task && ret=0 ;;
+        (token)      _cod_doc_token && ret=0 ;;
         (tui)        _cod_doc_tui && ret=0 ;;
         (update)     _cod_doc_update && ret=0 ;;
         (upgrade)    _cod_doc_upgrade && ret=0 ;;
@@ -424,7 +428,9 @@ _cod-doc() {
 (( $+functions[_cod_doc_commands] )) || _cod_doc_commands() {
   local -a cmds
   cmds=(
+    'access:Хранилище доступа сервера; без него Bearer-гейт выключен.'
     'activity:Журнал activity_event проекта.'
+    'actor:Агенты людей и отключение actor'\''ов.'
     'adapter:Manage LLM adapters (built-in + external plugins).'
     'adr:Manage Architecture Decision Records (new / list / show / supersede…'
     'agent:Управление агентом.'
@@ -443,6 +449,7 @@ _cod-doc() {
     'ingest:Ingest external findings (ai-review, ZAIrgRush, routines).'
     'link:Manage document links (list, sync, verify).'
     'mcp:Запустить MCP-сервер поверх COD-DOC.'
+    'member:Участники проектов и их роли (reader / writer / admin).'
     'obligation:Documented obligations for the structure protocol.'
     'plan:Inspect and query plans (progress, ready tasks, audit, export).'
     'project:Управление проектами.'
@@ -461,12 +468,73 @@ _cod-doc() {
     'structure:Code structure snapshots, drift, triage and waivers (not projection…'
     'sync:Состояние синхронизации с remote (RFC 29 §3.9).'
     'task:Manage tasks (create, status, complete, list).'
+    'token:Bearer-токены; открытый текст показывается один раз.'
     'tui:(DEPRECATED) Запустить TUI. Используйте `cod-doc web` вместо.'
     'update:Обновить установку cod-doc; рантайм, схему, сервисы и состояние про…'
     'upgrade:Обновить установку cod-doc; рантайм, схему, сервисы и состояние про…'
     'wizard:Запустить мастер настройки.'
   )
   _describe -t cod-doc-commands 'cod-doc command' cmds
+}
+
+(( $+functions[_cod_doc_access] )) || _cod_doc_access() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_access_commands' \
+    '*:: :->cod_doc_access_cmd' && ret=0
+
+  case $state in
+    (cod_doc_access_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-access-$words[1]:"
+      case $words[1] in
+        (init)    _cod_doc_access_init && ret=0 ;;
+        (migrate) _cod_doc_access_migrate && ret=0 ;;
+        (status)  _cod_doc_access_status && ret=0 ;;
+        (*)       _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_access_commands] )) || _cod_doc_access_commands() {
+  local -a cmds
+  cmds=(
+    'init:Создать хранилище (или догнать его схему). С этого момента нужен то…'
+    'migrate:Догнать схему хранилища, если оно есть; нет — ничего не создавать (…'
+    'status:Есть ли хранилище и сколько в нём участников и живых токенов.'
+  )
+  _describe -t cod-doc-access-commands 'cod-doc access command' cmds
+}
+
+(( $+functions[_cod_doc_access_init] )) || _cod_doc_access_init() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_access_migrate] )) || _cod_doc_access_migrate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_access_status] )) || _cod_doc_access_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[JSON на stdout]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
 }
 
 (( $+functions[_cod_doc_activity] )) || _cod_doc_activity() {
@@ -508,6 +576,59 @@ _cod-doc() {
     '*--group-by=[Ключи агрегации; повторяйте опцию для нескольких]:group-by:(day actor_kind kind scope_kind)' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_actor] )) || _cod_doc_actor() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_actor_commands' \
+    '*:: :->cod_doc_actor_cmd' && ret=0
+
+  case $state in
+    (cod_doc_actor_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-actor-$words[1]:"
+      case $words[1] in
+        (agent)   _cod_doc_actor_agent && ret=0 ;;
+        (disable) _cod_doc_actor_disable && ret=0 ;;
+        (*)       _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_actor_commands] )) || _cod_doc_actor_commands() {
+  local -a cmds
+  cmds=(
+    'agent:Завести агента OWNER/NAME; роль — не выше владельца, author — тольк…'
+    'disable:Отключить HANDLE; его токены и токены его агентов перестают работат…'
+  )
+  _describe -t cod-doc-actor-commands 'cod-doc actor command' cmds
+}
+
+(( $+functions[_cod_doc_actor_agent] )) || _cod_doc_actor_agent() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:owner' \
+    '2:name' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_actor_disable] )) || _cod_doc_actor_disable() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:handle' && ret=0
   return ret
 }
 
@@ -2264,7 +2385,77 @@ _cod-doc() {
     '(--host)--host=:host' \
     '(--port)--port=:port' \
     '(--profile)--profile=[Same catalog filter as `cod-doc-mcp --profile` (ADO-079).]:profile:(agent full minimal standard)' \
+    '*--allowed-host=[Публичный Host за reverse proxy (повторяемый), как у `cod-doc-mcp`…]:allowed-hosts' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_member] )) || _cod_doc_member() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_member_commands' \
+    '*:: :->cod_doc_member_cmd' && ret=0
+
+  case $state in
+    (cod_doc_member_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-member-$words[1]:"
+      case $words[1] in
+        (add)    _cod_doc_member_add && ret=0 ;;
+        (list)   _cod_doc_member_list && ret=0 ;;
+        (remove) _cod_doc_member_remove && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_member_commands] )) || _cod_doc_member_commands() {
+  local -a cmds
+  cmds=(
+    'add:Выдать HANDLE роль в проекте; человек заводится, если его ещё нет.'
+    'list:Участники; все или одного проекта.'
+    'remove:Снять членство HANDLE в проекте.'
+  )
+  _describe -t cod-doc-member-commands 'cod-doc member command' cmds
+}
+
+(( $+functions[_cod_doc_member_add] )) || _cod_doc_member_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--role)--role=:role:(reader writer admin)' \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(--json)--json[JSON на stdout]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:handle' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_member_list] )) || _cod_doc_member_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Только этот проект]:project:_cod_doc_projects' \
+    '(--json)--json[JSON на stdout]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_member_remove] )) || _cod_doc_member_remove() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:handle' && ret=0
   return ret
 }
 
@@ -4478,6 +4669,73 @@ _cod-doc() {
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_token] )) || _cod_doc_token() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_token_commands' \
+    '*:: :->cod_doc_token_cmd' && ret=0
+
+  case $state in
+    (cod_doc_token_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-token-$words[1]:"
+      case $words[1] in
+        (create) _cod_doc_token_create && ret=0 ;;
+        (list)   _cod_doc_token_list && ret=0 ;;
+        (revoke) _cod_doc_token_revoke && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_token_commands] )) || _cod_doc_token_commands() {
+  local -a cmds
+  cmds=(
+    'create:Выпустить токен HANDLE. Сохраните его сразу — второй раз его не пок…'
+    'list:Токены без открытого текста; uid, владелец, метка, последнее исполь…'
+    'revoke:Отозвать токен по uid (или уникальному префиксу uid). Действует сра…'
+  )
+  _describe -t cod-doc-token-commands 'cod-doc token command' cmds
+}
+
+(( $+functions[_cod_doc_token_create] )) || _cod_doc_token_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--label)--label=[Устройство или агент; macbook, ci, cursor-cloud]:label' \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(--json)--json[JSON на stdout]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:handle' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_token_list] )) || _cod_doc_token_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--handle)--handle=[Только токены этого actor'\''а]:handle' \
+    '(--json)--json[JSON на stdout]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_token_revoke] )) || _cod_doc_token_revoke() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:token-uid' && ret=0
   return ret
 }
 

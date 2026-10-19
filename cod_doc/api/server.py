@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cod_doc import __version__
+from cod_doc.api.auth import BearerGate, is_web_protected_path
 from cod_doc.api.deps import (
     dispose_all_engines,
     set_config,
@@ -68,8 +69,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CLO-036: Bearer-гейт на /api/v1 (и будущем /api/sync/v1); legacy /api/* его
+# не получает. Без хранилища доступа гейт пропускает всё (api/auth.py).
+app.add_middleware(BearerGate, protected=is_web_protected_path)
+
 app.include_router(core_router)
-app.include_router(v1_router)  # SYM-006C: /api/v1 — единственная поверхность будущего Bearer-гейта
+app.include_router(v1_router)  # SYM-006C: /api/v1 — под Bearer-гейтом (CLO-036)
 app.include_router(structure_router)
 app.include_router(webhook_router)
 app.include_router(websocket_router)

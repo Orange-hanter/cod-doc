@@ -84,6 +84,11 @@ def _alembic_config_for(db_url: str) -> AlembicConfig:
     return cfg
 
 
+def upgrade_url(db_url: str) -> None:
+    """``alembic upgrade head`` по URL — для БД вне реестра (хранилище доступа, CLO-034)."""
+    alembic_command.upgrade(_alembic_config_for(db_url), "head")
+
+
 def migrate_entry(entry: ProjectEntry) -> MigrateResult:
     """Накатить голову миграций на ту БД, которую откроет ``db_for_entry``.
 

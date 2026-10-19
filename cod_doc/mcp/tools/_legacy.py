@@ -17,6 +17,13 @@ def load_config() -> Config:
 
 
 def open_project(name: str) -> Project:
+    from cod_doc.services import request_identity
+
+    if request_identity.current() is not None:
+        # CLO-036: legacy YAML-тулы пишут мимо activity_service и проверку
+        # роли не проходят — удалённому владельцу токена они закрыты.
+        msg = "legacy-тулы доступны только локально"
+        raise request_identity.AccessDeniedError(msg)
     cfg = load_config()
     entry = cfg.get_project(name)
     if not entry:

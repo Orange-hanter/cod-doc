@@ -20,6 +20,7 @@ from __future__ import annotations
 from sqlalchemy import Index as _Index
 from sqlalchemy import Table as _Table
 
+from .access import ActorModel, ApiTokenModel, ProjectMemberModel
 from .activity import ActivityEventModel
 from .adrs import (
     ADRDiagramModel,
@@ -108,8 +109,10 @@ __all__ = [
     "ADRTaskModel",
     "ADRTopicModel",
     "ActivityEventModel",
+    "ActorModel",
     "AffectedFileModel",
     "AgentRunModel",
+    "ApiTokenModel",
     "ApprovalDocRevisionLinkModel",
     "ApprovalModel",
     "ApprovalTaskLinkModel",
@@ -139,6 +142,7 @@ __all__ = [
     "OpenQuestionModel",
     "PlanModel",
     "PlanSectionModel",
+    "ProjectMemberModel",
     "ProjectModel",
     "QuestionLinkModel",
     "QuestionOptionModel",

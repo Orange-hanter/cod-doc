@@ -238,6 +238,10 @@ class Config(BaseSettings):
     # cli/cmd_serve.py) или COD_DOC_API_HOST (pydantic env, env_prefix выше).
     api_host: str = Field(default="127.0.0.1")
     api_port: int = Field(default=8765)
+    # RFC 29 §3.8 (CLO-034): хранилище доступа сервера — actor, api_token,
+    # project_member. Пусто — ``$COD_DOC_HOME/access.db``. Пока его нет,
+    # Bearer-гейт выключен (CLO-036); создаёт его ``cod-doc access init``.
+    access_db_url: str = Field(default="")
 
     @field_validator("api_key", "embedding_api_key", mode="before")
     @classmethod

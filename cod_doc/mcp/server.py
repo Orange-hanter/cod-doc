@@ -13,6 +13,7 @@ controls which tools are exposed after registration. See
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 import click
 from mcp.server.fastmcp import FastMCP
@@ -48,6 +49,9 @@ from cod_doc.mcp.tools import (
     task_doc_tools,
     task_tools,
 )
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp
 
 mcp = FastMCP("COD-DOC", json_response=True)
 
@@ -137,13 +141,62 @@ def get_active_profile() -> str:
     return _ACTIVE_PROFILE
 
 
-def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> None:
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def allow_hosts(hosts: tuple[str, ...]) -> None:
+    """Добавить публичные имена к защите от DNS rebinding (CLO-036).
+
+    SDK включает её для loopback-хоста и пускает только ``Host: 127.0.0.1``/
+    ``localhost``; за reverse proxy приходит ``Host: cod-doc.example.dev``, и
+    без этого каждый запрос получал бы 421.
+    """
+    security = mcp.settings.transport_security
+    if not hosts or security is None:
+        return
+    security.allowed_hosts.extend(hosts)
+    security.allowed_origins.extend(f"https://{h}" for h in hosts)
+
+
+def gated_http_app() -> ASGIApp:
+    """streamable-http приложение MCP за Bearer-гейтом (RFC 29 §3.8, CLO-036)."""
+    from cod_doc.api.auth import BearerGate, is_mcp_path
+
+    return BearerGate(mcp.streamable_http_app(), protected=is_mcp_path)
+
+
+def _require_store_off_loopback(host: str) -> None:
+    """Не-loopback без хранилища доступа — отказ стартовать: это открытый write всем.
+
+    Внутри контейнера слушать ``0.0.0.0`` нужно всегда; закрывает его гейт,
+    а гейт выключен, пока нет хранилища (``cod-doc access init``).
+    """
+    from cod_doc.services import access_service
+
+    if host in _LOOPBACK_HOSTS or access_service.open_store() is not None:
+        return
+    msg = (
+        f"--host {host}: MCP без аутентификации наружу не выставляется. "
+        "Сначала `cod-doc access init` и выдайте токен (`cod-doc token create`)."
+    )
+    raise click.UsageError(msg)
+
+
+def run_mcp_server(
+    *,
+    transport: str,
+    host: str,
+    port: int,
+    profile: str,
+    allowed_hosts: tuple[str, ...] = (),
+) -> None:
     """Apply ``profile`` and serve. Shared by ``cod-doc-mcp`` and ``cod-doc mcp``.
 
     ``streamable-http`` means one process fronts every local harness, so the
     per-session default project is disabled for the lifetime of the process
     (see ``cod_doc/mcp/tools/_workspace.py``) and ``project`` becomes required
-    on every DB-backed tool.
+    on every DB-backed tool. It is always served behind the Bearer gate, which
+    is a no-op until the access store exists (CLO-036).
     """
     _workspace.set_shared(transport == "streamable-http")
     stats = apply_profile(profile)
@@ -152,10 +205,16 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
         extra={"event_type": "mcp_profile_applied", **stats},
     )
     if transport == "streamable-http":
+        import uvicorn
+
+        _require_store_off_loopback(host)
+        allow_hosts(allowed_hosts)
         mcp.settings.host = host
         mcp.settings.port = port
+        # stateless: каждый запрос исполняется в своём ASGI-вызове, поэтому
+        # владелец токена, привязанный гейтом, виден из тула (request_identity).
         mcp.settings.stateless_http = True
-        mcp.run(transport="streamable-http")
+        uvicorn.run(gated_http_app(), host=host, port=port, log_level="info")
         return
     mcp.run(transport="stdio")
 
@@ -175,6 +234,14 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
     "standard=DB-backed tools without legacy; full=everything including legacy "
     "agent tools. Counts: python -m cod_doc.mcp.profile_counts.",
 )
+@click.option(
+    "--allowed-host",
+    "allowed_hosts",
+    multiple=True,
+    envvar="COD_DOC_MCP_ALLOWED_HOSTS",
+    help="Public Host header accepted behind a reverse proxy (repeatable; "
+    "env COD_DOC_MCP_ALLOWED_HOSTS, space-separated).",
+)
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")
 def main(
@@ -182,12 +249,19 @@ def main(
     host: str,
     port: int,
     profile: str,
+    allowed_hosts: tuple[str, ...],
     log_level: str | None,
     log_format: str | None,
 ) -> None:
     """Run the COD-DOC MCP server."""
     setup_logging(level=log_level, fmt=log_format)
-    run_mcp_server(transport=transport, host=host, port=port, profile=profile)
+    run_mcp_server(
+        transport=transport,
+        host=host,
+        port=port,
+        profile=profile,
+        allowed_hosts=allowed_hosts,
+    )
 
 
 if __name__ == "__main__":

@@ -64,3 +64,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
     CMD curl -f http://localhost:${COD_DOC_API_PORT}/api/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
+# Команду можно заменить: MCP-контейнер того же образа запускает
+# `cod-doc-mcp --transport streamable-http …` (deploy/sync-remote, CLO-039).
+CMD ["cod-doc", "serve"]

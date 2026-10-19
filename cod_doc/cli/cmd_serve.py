@@ -73,8 +73,23 @@ def serve(ctx: click.Context, host: str | None, port: int | None, reload: bool) 
     show_default=True,
     help="Same catalog filter as `cod-doc-mcp --profile` (ADO-079).",
 )
-def mcp_server(transport: str, host: str, port: int, profile: str) -> None:
+@click.option(
+    "--allowed-host",
+    "allowed_hosts",
+    multiple=True,
+    envvar="COD_DOC_MCP_ALLOWED_HOSTS",
+    help="Публичный Host за reverse proxy (повторяемый), как у `cod-doc-mcp` (CLO-036).",
+)
+def mcp_server(
+    transport: str, host: str, port: int, profile: str, allowed_hosts: tuple[str, ...]
+) -> None:
     """Запустить MCP-сервер поверх COD-DOC."""
     from cod_doc.mcp.server import run_mcp_server
 
-    run_mcp_server(transport=transport, host=host, port=port, profile=profile)
+    run_mcp_server(
+        transport=transport,
+        host=host,
+        port=port,
+        profile=profile,
+        allowed_hosts=allowed_hosts,
+    )

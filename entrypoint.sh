@@ -1,5 +1,6 @@
 #!/bin/sh
-# Run alembic migrations for every registered project, then start the server.
+# Run alembic migrations for every registered project, then exec CMD
+# (default `cod-doc serve`; the MCP container passes `cod-doc-mcp …`).
 # Runs from /app where alembic.ini and cod_doc/infra/migrations/ live.
 set -e
 
@@ -17,4 +18,8 @@ else
     echo "[migrate] FAILED — см. строки выше; сервер стартует со схемой как есть" >&2
 fi
 
-exec cod-doc serve
+# CLO-034: схема хранилища доступа догоняется вместе с проектами; его самого
+# entrypoint не создаёт — гейт включает только явный `cod-doc access init`.
+cod-doc access migrate || echo "[migrate] access store FAILED" >&2
+
+exec "$@"

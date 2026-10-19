@@ -1,0 +1,21 @@
+# TLS от Let's Encrypt и прокси на MCP (RFC 29 §3.8, CLO-039).
+# Наружу — только /mcp и /api/v1: оба за Bearer-гейтом cod-doc. Всё остальное
+# (веб-UI, legacy /api/*, POST /settings) гейта не имеет и получает 404.
+{$COD_DOC_PUBLIC_HOST} {
+	encode zstd gzip
+
+	handle /mcp* {
+		reverse_proxy cod-doc-mcp:8801 {
+			# streamable-http держит ответ открытым — без буферизации.
+			flush_interval -1
+		}
+	}
+
+	handle /api/v1/* {
+		reverse_proxy cod-doc:8765
+	}
+
+	handle {
+		respond 404
+	}
+}

@@ -8,9 +8,9 @@
 
 ``clone URL [DIR]`` (CLO-029) заводит проект с remote: снапшот + хвост,
 регистрация в реестре. ``sync export-pending`` (CLO-032) выгружает
-незапушенные операции в файл или stdout. Команды поздних секций ещё не
-выставлены: ``remote login``, ``member``, ``token`` — их сервисов пока нет
-(CLO-038).
+незапушенные операции в файл или stdout. Доступ (``member``, ``token``, ``actor``,
+``access``) — в ``cmd_access`` (CLO-038); ``remote login`` ждёт https-remote
+(CLO-035).
 """
 
 from __future__ import annotations

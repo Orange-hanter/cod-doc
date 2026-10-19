@@ -8,9 +8,9 @@ Router + pydantic-схемы поверх тех же сервисов, что �
 - ``GET /api/v1/projects/{slug}/context`` — ``context_service.context_get``.
 - ``GET /api/v1/projects/{slug}/search`` — ``search_service.search`` (FTS5).
 
-**Bearer-гейт (контракт RFC 22 §3.3).** ``/api/v1`` — единственная
-поверхность будущего Bearer-гейта: ``COD_DOC_API_TOKEN``, ASGI-middleware
-только на ``/api/v1``, constant-time compare, 401 JSON. Гейт включается при
-появлении первого удалённого вызывающего; legacy ``/api/*`` заморожен и
-никогда его не получит.
+**Bearer-гейт (RFC 29 §3.8, CLO-036).** ``/api/v1`` закрыт ASGI-гейтом
+``api/auth.py`` — токены и роли из хранилища доступа (``access_service``), а не
+единый ``COD_DOC_API_TOKEN`` из RFC 22 §3.3. Пока хранилища нет, гейт пропускает
+всё; ``/api/v1/projects/{slug}`` открыт только участнику проекта. Legacy
+``/api/*`` заморожен и гейта не получит — наружу его не выставляют.
 """
