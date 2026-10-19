@@ -90,7 +90,9 @@ def register(mcp: FastMCP) -> None:
         """RFC 29 §3.6: fetch + fast-forward — применить чужие changeset'ы.
 
         Эпоха remote новее эпохи реплики — ``SYNC-105`` до скачивания:
-        сначала ``cod-doc update`` (CLO-032).
+        сначала ``cod-doc update`` (CLO-032). Схема уже обновлена, а голова
+        в прошлой эпохе — реплика встаёт на снапшот эпохи, ``rebased`` — его
+        голова (CLO-050); changeset прошлой эпохи — ``SYNC-105``.
 
         Args:
             project: cod-doc project slug.
@@ -100,7 +102,7 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             ``PullResult``: ``{applied, ops, fast_forward, conflicts, aliases,
-            head}``.
+            head, rebased}``.
         """
         with _as_value_error():
             sf, _entry = session_factory(project)

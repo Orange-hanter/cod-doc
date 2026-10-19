@@ -26,7 +26,8 @@
    несёт только строки, их покрывает дайджест. Затем снапшот грузится под
    ``sync_capture.suspended`` одной транзакцией (``snapshot.load``: тот же
    гейт, что у pull, и сверка дайджеста до коммита), голова реплики — его
-   changeset.
+   changeset. Алиасы склейки выводятся из собранного журнала
+   (``clone_aliases``, CLO-052), не из снапшота.
 6. Хвост после снапшота — обычный ``pull``.
 7. Дайджест реплики сверяется с дайджестом changeset'а её головы — ``sync
    verify`` после clone равен, пока remote не ушёл вперёд.
@@ -53,7 +54,7 @@ from cod_doc.infra import sync_capture as cap
 from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ChangesetModel, ProjectModel
-from cod_doc.infra.remote.base import check_name, open_remote
+from cod_doc.infra.remote.base import check_name
 from cod_doc.services import activity_service
 from cod_doc.services.sync_service import _local, digest, snapshot
 from cod_doc.services.sync_service import pull as pull_mod
@@ -275,7 +276,7 @@ def clone(
     from cod_doc.services import project_service
 
     remote_url, uid = split_url(url)
-    store = store if store is not None else open_remote(remote_url)
+    store = store if store is not None else _local.open_url(remote_url)
     if store.get_ref(uid, _local.MAIN) is None:
         msg = f"clone: на remote нет проекта {uid} (refs/main пуст)"
         raise RemoteConfigError(msg)

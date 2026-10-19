@@ -84,14 +84,14 @@ from cod_doc.services.sync_service.errors import ObjectMissingError
 from cod_doc.services.sync_service.merge import KEY_MERGE, ConflictSpec
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
     from sqlalchemy.orm import Session
 
     from cod_doc.services.sync_service.changeset import Op
     from cod_doc.services.sync_service.merge import Context, KeyClash
 
-__all__ = ["next_label", "resolve_key"]
+__all__ = ["created_stamp", "glue_survivor", "next_label", "resolve_key"]
 
 _UID: Final = "uid"
 _SLUG: Final = "slug"
@@ -136,12 +136,25 @@ def _ops(session: Session, project_id: int, table: str, uid: str) -> list[SyncOp
     )
 
 
+def created_stamp(creations: Iterable[str], uid: str) -> Stamp:
+    """``(hlc создания, uid)``: самая ранняя вставка строки в журнале; без неё — позже всех.
+
+    ``creations`` — штампы операций журнала строки с ``kind = upsert`` и пустым
+    ``base``. Одна точка правила для склейки при pull (``resolve_key``) и для
+    алиасов клона, выведенных из истории (``clone_aliases``, CLO-052).
+    """
+    return min(creations, default=_NEVER), uid
+
+
+def glue_survivor(theirs: Stamp, ours: Stamp) -> str:
+    """uid, который выживает при склейке: меньший ``(hlc создания, uid)``."""
+    return min(theirs, ours)[1]
+
+
 def _created(rows: list[SyncOpModel], uid: str) -> Stamp:
-    """``(hlc создания, uid)``; без операции создания — позже всех."""
-    for row in rows:
-        if row.kind == "upsert" and row.base == _EMPTY:
-            return row.hlc, uid
-    return _NEVER, uid
+    return created_stamp(
+        (row.hlc for row in rows if row.kind == "upsert" and row.base == _EMPTY), uid
+    )
 
 
 def _key(table: str, columns: tuple[str, ...]) -> reg.NaturalKey:
@@ -177,7 +190,8 @@ def resolve_key(session: Session, ctx: Context, clash: KeyClash) -> bool:
         raise ObjectMissingError(msg)
     history = _ops(session, ctx.project_id, clash.table, clash.ours_uid)
     theirs = clash.theirs
-    theirs_first = (theirs.hlc, theirs.entity_uid) < _created(history, clash.ours_uid)
+    ours = _created(history, clash.ours_uid)
+    theirs_first = glue_survivor((theirs.hlc, theirs.entity_uid), ours) == theirs.entity_uid
     if key.kind is reg.KeyKind.LABEL:
         return _reletter(session, ctx, project, obj, info, key, theirs)
     _glue(

@@ -28,10 +28,14 @@ from cod_doc.infra.models import ChangesetModel, ProjectModel, SyncOpModel, Sync
 from cod_doc.infra.sync_capture import SyncCaptureError
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import Changeset, Op
-from cod_doc.services.sync_service.errors import RemoteConfigError, SchemaMismatchError
+from cod_doc.services.sync_service.errors import (
+    ObjectMissingError,
+    RemoteConfigError,
+    SchemaMismatchError,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from sqlalchemy.dialects.postgresql import Insert as PgInsert
     from sqlalchemy.dialects.sqlite import Insert as SqliteInsert
@@ -50,6 +54,9 @@ DIGEST_PENDING: Final = "0" * 64
 _CHUNK: Final = 500
 #: Потолок обхода локальной истории (предок ли голова remote).
 MAX_HISTORY: Final = 100_000
+#: Потолок родителей одного changeset'а: у merge-changeset'а их два (§3.6).
+#: Здесь, а не в ``pull``: его читает и ``snapshot``, которого зовёт ``pull``.
+MAX_PARENTS: Final = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,18 +205,28 @@ def open_store(project: str, remote: str) -> RemoteStore:
     транспорт берёт их сам (S3 — цепочка AWS). ``file://`` файл кредов не
     читает: небезопасный файл ключей локальному remote не помеха.
     """
-    from urllib.parse import urlparse
-
-    from cod_doc.infra.credentials import credentials_for
-    from cod_doc.infra.remote.base import open_remote
     from cod_doc.services.sync_service import remotes
 
     spec = remotes.get(project, remote)
     if spec is None:
         msg = f"remote {remote!r} у проекта {project!r} не настроен — cod-doc remote add"
         raise RemoteConfigError(msg)
-    creds = None if urlparse(spec.url).scheme == "file" else credentials_for(spec.url)
-    return open_remote(spec.url, credentials=creds)
+    return open_url(spec.url)
+
+
+def open_url(url: str) -> RemoteStore:
+    """Транспорт по URL remote с кредами из ``~/.cod-doc/credentials`` (CLO-051).
+
+    Общий вход ``open_store`` и ``clone`` (у клона проекта в реестре ещё нет).
+    ``file://`` файл кредов не читает.
+    """
+    from urllib.parse import urlparse
+
+    from cod_doc.infra.credentials import credentials_for
+    from cod_doc.infra.remote.base import open_remote
+
+    creds = None if urlparse(url).scheme == "file" else credentials_for(url)
+    return open_remote(url, credentials=creds)
 
 
 def _payload(row: SyncOpModel, column: str) -> dict[str, object]:
@@ -339,3 +356,40 @@ def record_changeset(session: Session, project: ProjectRef, sha: str, cs: Change
     else:
         row.applied_at = now
     session.flush()
+
+
+def topological(found: Mapping[str, Sequence[str]]) -> list[str]:
+    """Порядок применения: каждый changeset после своих (скачанных) родителей.
+
+    ``found`` — sha → его ``parents``. Тот же порядок проходит вывод алиасов
+    клона (``clone_aliases``, CLO-052): склейка зависит от очерёдности вставок.
+
+    Адрес — sha содержимого, поэтому настоящий цикл невозможен; подделанный
+    объект, который его всё же изображает, — SYNC-102.
+    """
+    order: list[str] = []
+    done: set[str] = set()
+    for start in sorted(found):
+        visiting: set[str] = set()
+        stack: list[tuple[str, bool]] = [(start, False)]
+        while stack:
+            sha, expanded = stack.pop()
+            if sha in done:
+                continue
+            if expanded:
+                visiting.discard(sha)
+                done.add(sha)
+                order.append(sha)
+                continue
+            if sha in visiting:
+                msg = f"объект {sha}: цикл в parents"
+                raise ObjectMissingError(msg)
+            visiting.add(sha)
+            stack.append((sha, True))
+            for parent in found[sha]:
+                if parent in visiting:
+                    msg = f"объект {sha}: цикл в parents через {parent}"
+                    raise ObjectMissingError(msg)
+                if parent in found and parent not in done:
+                    stack.append((parent, False))
+    return order

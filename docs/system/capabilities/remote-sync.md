@@ -147,6 +147,15 @@ audience: [contributors, agents]
   пишет снапшот и поднимает `meta.epoch`/`schema_min`; отставшая реплика на
   push/pull — `SYNC-105`; `cod-doc sync export-pending` выгружает хвост в файл
   (только CLI, обратного импорта нет).
+- **Старт отставшей реплики со снапшота эпохи** (CLO-050,
+  `sync_service/epoch_rebase.py`): после `cod-doc update` голова реплики ещё в
+  прошлой эпохе — pull не проигрывает changeset'ы между ней и снапшотом
+  эпохи, а кладёт снапшот поверх своих строк одной транзакцией (проверка как у
+  clone: changeset'ы по адресам, дайджест загруженного = голове). Local-строки
+  и local-колонки остаются; незапушенные операции — отказ `SYNC-105` с
+  выходом `export-pending` + новый `clone`. Changeset эпохи старше
+  `meta.epoch` среди скачанных — `SYNC-105`, ничего не применено. Событие
+  `sync.epoch_rebased`, поле `PullResult.rebased`.
 
 Секция E, доступ (CLO-034, CLO-036, CLO-038 без https-администрирования,
 CLO-039) — Bearer-токены на MCP и `/api/v1`:
@@ -164,7 +173,7 @@ CLO-039) — Bearer-токены на MCP и `/api/v1`:
 - **Развёртывание** — `deploy/sync-remote/` (compose + Caddy).
 
 Чего нет: умный `https://` remote — `/api/sync/v1`, `HttpRemote`, проверка
-`actor`/`author` на push и удалённое администрирование (CLO-035/037/038); старт отставшей реплики со снапшота эпохи (RFC §3.6 п. 3); рутина
+`actor`/`author` на push и удалённое администрирование (CLO-035/037/038); рутина
 `sync` (секция F). Открытые пункты — [аудит секции D
 §7](../audit/2026-10-19-cloud-remote-section-d.md).
 
@@ -279,7 +288,12 @@ reverse proxy (Caddy) с TLS на 443. Сервер ограничивает ч�
   элементов.
 - При настроенном remote одну задачу держит не больше одного онлайн-замка.
 - Строка `restricted`-документа не попадает ни в один changeset.
-- Changeset прошлой эпохи не применяется к реплике новой эпохи.
+- Changeset прошлой эпохи не применяется к реплике новой эпохи. «Прошлая» —
+  старше `meta.epoch` remote: отставшая реплика встаёт на снапшот эпохи вместо
+  проигрывания, такой changeset среди скачанных — `SYNC-105`; changeset'ы
+  эпохи, которую remote ещё не сменил, реплика на новой схеме применяет, чтобы
+  догнать remote перед открытием эпохи (CLO-050, закреплено
+  `tests/services/sync/test_epoch_rebase.py::test_invariant_changeset_of_a_past_epoch_is_never_applied_to_a_new_epoch_replica`).
 
 ## 6. Non-goals
 

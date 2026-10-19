@@ -18,7 +18,9 @@
 3. **pull** (``check_pull``): эпоха реплики старше ``meta.epoch`` — ``SYNC-105``
    до первой записи. Changeset'ы новой эпохи на старой схеме не применяются,
    а операции хвоста старой эпохи уже не уедут: сначала ``export-pending``
-   (если хвост есть), потом ``cod-doc update``.
+   (если хвост есть), потом ``cod-doc update``. После ``update`` реплика,
+   чья голова в прошлой эпохе, встаёт на снапшот эпохи (``epoch_rebase``,
+   CLO-050).
 4. **export-pending** (``render_pending``/``export_pending``): неупакованные
    операции проекта — в файл, в форме changeset'а §10.4 (``to_dict``) внутри
    конверта ``{"v", "kind": "pending", "slug", "exported_at", "changeset"}``.

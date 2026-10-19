@@ -98,6 +98,7 @@ def test_push_then_status_and_pull(project: Path) -> None:
         "conflicts": [],
         "aliases": [],
         "head": pushed["head"],
+        "rebased": None,
     }
 
 
