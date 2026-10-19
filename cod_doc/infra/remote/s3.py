@@ -70,6 +70,7 @@ from cod_doc.infra.remote.base import (
     RefValue,
     SnapshotRef,
     check_json_key,
+    check_json_prefix,
     check_name,
     check_sha,
     check_snapshot,
@@ -91,10 +92,11 @@ from cod_doc.infra.remote.file import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterator, Mapping, Sequence
     from datetime import datetime
 
     from mypy_boto3_s3 import S3Client
+    from mypy_boto3_s3.type_defs import ObjectTypeDef
 
     from cod_doc.infra.remote.base import Credentials
 
@@ -467,44 +469,76 @@ class S3Remote:
             return False
         return self._conditional_put(s3_key, _TOMBSTONE, expected_etag) is not None
 
+    def list_prefix(self, project_uid: str, prefix: str) -> list[str]:
+        """``ListObjectsV2`` с ``Delimiter="/"`` — только прямые дети префикса.
+
+        Надгробие (пустое тело, ``Size == 0``) — удалённый документ, не ключ;
+        ключ не по раскладке (``check_name``) пропускается.
+        """
+        base = f"{self._key(project_uid, *check_json_prefix(prefix))}/"
+        keys: list[str] = []
+        for item in self._list(base, delimiter=True):
+            name = item.get("Key", "").removeprefix(base)
+            if item.get("Size", 0) == 0:
+                continue
+            try:
+                check_name(name, "ключ")
+            except ValueError:
+                continue
+            keys.append(f"{prefix}{name}")
+        return sorted(keys)
+
+    # --- листинг --------------------------------------------------------------
+
+    def _list(self, base: str, *, delimiter: bool) -> Iterator[ObjectTypeDef]:
+        """Объекты под ``base`` постранично, не больше ``_MAX_LIST_PAGES`` страниц."""
+        where = self._where("LIST", base)
+        token: str | None = None
+        for _ in range(_MAX_LIST_PAGES):
+            try:
+                if delimiter and token is not None:
+                    page = self.client.list_objects_v2(
+                        Bucket=self.bucket, Prefix=base, Delimiter="/", ContinuationToken=token
+                    )
+                elif delimiter:
+                    page = self.client.list_objects_v2(
+                        Bucket=self.bucket, Prefix=base, Delimiter="/"
+                    )
+                elif token is not None:
+                    page = self.client.list_objects_v2(
+                        Bucket=self.bucket, Prefix=base, ContinuationToken=token
+                    )
+                else:
+                    page = self.client.list_objects_v2(Bucket=self.bucket, Prefix=base)
+            except (ClientError, BotoCoreError) as exc:
+                raise _translate(exc, where) from None
+            yield from page.get("Contents", [])
+            token = page.get("NextContinuationToken")
+            if not page.get("IsTruncated") or token is None:
+                return
+        msg = f"{where}: больше {_MAX_LIST_PAGES} страниц листинга"
+        raise RemoteUnavailableError(msg)
+
     # --- snapshots ------------------------------------------------------------
 
     def latest_snapshot(self, project_uid: str) -> SnapshotRef | None:
         """Самая поздняя эпоха по имени, внутри — по ``LastModified`` (секунды
         у S3), ничья — по sha. Ключи не по раскладке пропускаются."""
         base = f"{self._key(project_uid, 'snapshots')}/"
-        where = self._where("LIST", base)
         best: tuple[str, datetime, str] | None = None
-        token: str | None = None
-        for _ in range(_MAX_LIST_PAGES):
+        for item in self._list(base, delimiter=False):
+            epoch, _, name = item.get("Key", "").removeprefix(base).partition("/")
+            sha = name.removesuffix(_SNAPSHOT_SUFFIX)
+            if sha == name or "LastModified" not in item:
+                continue
             try:
-                if token is None:
-                    page = self.client.list_objects_v2(Bucket=self.bucket, Prefix=base)
-                else:
-                    page = self.client.list_objects_v2(
-                        Bucket=self.bucket, Prefix=base, ContinuationToken=token
-                    )
-            except (ClientError, BotoCoreError) as exc:
-                raise _translate(exc, where) from None
-            for item in page.get("Contents", []):
-                epoch, _, name = item.get("Key", "").removeprefix(base).partition("/")
-                sha = name.removesuffix(_SNAPSHOT_SUFFIX)
-                if sha == name or "LastModified" not in item:
-                    continue
-                try:
-                    check_name(epoch, "epoch")
-                    check_sha(sha)
-                except ValueError:
-                    continue
-                candidate = (epoch, item["LastModified"], sha)
-                if best is None or candidate > best:
-                    best = candidate
-            token = page.get("NextContinuationToken")
-            if not page.get("IsTruncated") or token is None:
-                break
-        else:
-            msg = f"{where}: больше {_MAX_LIST_PAGES} страниц листинга"
-            raise RemoteUnavailableError(msg)
+                check_name(epoch, "epoch")
+                check_sha(sha)
+            except ValueError:
+                continue
+            candidate = (epoch, item["LastModified"], sha)
+            if best is None or candidate > best:
+                best = candidate
         if best is None:
             return None
         epoch, _, sha = best

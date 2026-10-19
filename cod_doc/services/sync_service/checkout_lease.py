@@ -23,7 +23,25 @@
    только ``release_stale`` и ``release --force``, и только истёкшую по её
    собственному ``ttl_minutes``. Сеть не идёт внутри транзакции записи; не
    снятая из-за сети аренда истечёт по TTL.
-4. **Офлайн** (``offline=True``, CLI ``--offline``) — провизорный замок: в
+4. **Сирота** (CLO-048) — аренда реплики, чья операция checkout так и не
+   уехала (упала, потеряла сеть): ни одна другая реплика не знает о замке, и
+   ``release_stale`` по своей БД её не находит. Снимают её двое:
+
+   - checkout, у которого в локальной БД задача свободна, перехватывает
+     истёкшую чужую аренду CAS'ом по её etag (``claim(take_expired=True)``):
+     из двух перехватчиков проходит один, второй перечитывает и получает
+     ``SYNC-108`` уже от победителя. Замок, известный локально (операция
+     уехала), до сети не пускает — его аренду checkout не трогает;
+   - ``release_stale`` после коммита листингом ``leases/checkout/``
+     (``RemoteStore.list_prefix``) снимает истёкшие аренды и тех задач, о
+     замке которых реплика не знает (``sweep``).
+
+   Истекла — ``acquired_at + ttl_minutes + CLOCK_SKEW_ALLOWANCE`` раньше
+   своих часов: допуск покрывает расхождение часов реплик. Тело аренды —
+   недоверенное: не по форме или с полями сверх потолков — аренда занята
+   (``CheckoutLeaseMalformedError``, ``SYNC-108``), пока её не снимет
+   ``release --force``.
+5. **Офлайн** (``offline=True``, CLI ``--offline``) — провизорный замок: в
    БД пишется как обычно, а в ``sync_ref`` встаёт отметка
    ``("@checkout", <task_uid>)`` с ``fetched_at = checked_out_at``. Ближайший
    push/pull (``reconcile_quietly``) берёт по ней аренду: свободна — отметка
@@ -45,7 +63,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, NamedTuple
 
 from sqlalchemy import delete, event, select
 
@@ -57,6 +75,7 @@ from cod_doc.services import activity_service
 from cod_doc.services.sync_service import _local
 from cod_doc.services.sync_service.errors import (
     CheckoutLeaseHeldError,
+    CheckoutLeaseMalformedError,
     CheckoutLeaseUnavailableError,
     ObjectMissingError,
     RemoteUnavailableError,
@@ -72,12 +91,15 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CHECKOUT_PREFIX",
+    "CLOCK_SKEW_ALLOWANCE",
     "DEFAULT_TTL_MINUTES",
     "LEASED",
     "MARKER_REMOTE",
     "OFFLINE",
+    "Claimed",
     "Holder",
     "claim",
+    "clock",
     "drop",
     "lease_key",
     "mark_offline",
@@ -86,7 +108,9 @@ __all__ = [
     "reconcile_quietly",
     "remote_for",
     "schedule_release",
+    "schedule_sweep",
     "schedule_take_over",
+    "sweep",
     "take_over",
     "unmark",
 ]
@@ -101,6 +125,13 @@ OFFLINE: Final = "offline"
 LEASED: Final = "leased"
 #: TTL аренды — тот же, что умолчание ``checkout_service.release_stale``.
 DEFAULT_TTL_MINUTES: Final = 30
+#: Допуск расхождения часов реплик (CLO-048): чужая аренда истекла, только если
+#: её срок прошёл и с этим запасом — иначе спешащие часы перехватили бы живую.
+CLOCK_SKEW_ALLOWANCE: Final = timedelta(minutes=2)
+#: Потолки полей недоверенного тела аренды; тело целиком ограничено транспортом
+#: (``MAX_JSON_BYTES``). TTL сверх недели — не аренда, а вечный замок.
+MAX_FIELD_CHARS: Final = 256
+MAX_TTL_MINUTES: Final = 7 * 24 * 60
 #: Попыток CAS, прежде чем считать remote недоступным.
 MAX_CAS_ATTEMPTS: Final = 8
 _DEFAULT_REMOTE: Final = "origin"
@@ -111,6 +142,14 @@ _MS: Final = 1000
 
 #: Транспорт remote; тесты подменяют его, чтобы изобразить сбой сети.
 open_store: Callable[[str, str], RemoteStore] = _local.open_store
+
+
+def _wall_clock() -> datetime:
+    return datetime.now(UTC)
+
+
+#: Часы, по которым аренда считается истёкшей; тесты подменяют их.
+clock: Callable[[], datetime] = _wall_clock
 
 
 # --- значение аренды ----------------------------------------------------------------
@@ -137,30 +176,49 @@ class Holder:
 
     @classmethod
     def parse(cls, key: str, body: Mapping[str, JsonValue]) -> Holder:
+        """Недоверенное тело → держатель; не по форме — ``ObjectMissingError``.
+
+        Текст ошибки тела не повторяет: его пишет чужая машина, а размер у
+        него — до потолка транспорта.
+        """
         task_id, agent, replica = body.get("task_id"), body.get("agent"), body.get("replica")
         acquired, ttl = body.get("acquired_at"), body.get("ttl_minutes", DEFAULT_TTL_MINUTES)
         if not (
-            isinstance(task_id, str)
-            and isinstance(agent, str)
-            and isinstance(replica, str)
-            and isinstance(acquired, str)
+            _short_str(task_id)
+            and _short_str(agent)
+            and _short_str(replica)
+            and _short_str(acquired)
             and isinstance(ttl, int)
             and not isinstance(ttl, bool)
+            and 0 < ttl <= MAX_TTL_MINUTES
         ):
-            msg = f"{key}: аренда checkout не по форме — {dict(body)!r}"
+            msg = (
+                f"{key}: аренда checkout не по форме — нужны task_id, agent, replica, "
+                f"acquired_at (строки 1…{MAX_FIELD_CHARS} символов) и ttl_minutes "
+                f"1…{MAX_TTL_MINUTES}"
+            )
             raise ObjectMissingError(msg)
+        assert isinstance(task_id, str) and isinstance(agent, str)
+        assert isinstance(replica, str) and isinstance(acquired, str)
         try:
+            # OverflowError: «0001-01-01T00:00+05:00» не переводится в UTC, а срок
+            # у «9999-12-31…» за пределом datetime — такую аренду не истечь.
             at = _utc(datetime.fromisoformat(acquired))
-        except ValueError:
-            msg = f"{key}: acquired_at {acquired!r} — не момент ISO-8601"
+            _deadline(at, ttl)
+        except ValueError, OverflowError:
+            msg = f"{key}: acquired_at — не момент ISO-8601 в пределах datetime"
             raise ObjectMissingError(msg) from None
         return cls(task_id=task_id, agent=agent, replica=replica, acquired_at=at, ttl_minutes=ttl)
 
     def same(self, other: Holder) -> bool:
         return (self.agent, self.replica) == (other.agent, other.replica)
 
-    def expired(self, now: datetime) -> bool:
-        return _utc(self.acquired_at) + timedelta(minutes=self.ttl_minutes) < _utc(now)
+    def expired(self, now: datetime | None = None) -> bool:
+        """Срок ``ttl_minutes`` и допуск ``CLOCK_SKEW_ALLOWANCE`` прошли по ``now``."""
+        try:
+            return _deadline(self.acquired_at, self.ttl_minutes) < _utc(now or clock())
+        except OverflowError:
+            return False  # из тела remote такой держатель не выходит — parse отвергает
 
     def held_error(self) -> CheckoutLeaseHeldError:
         return CheckoutLeaseHeldError(
@@ -169,6 +227,15 @@ class Holder:
             replica=self.replica,
             acquired_at=self.acquired_at,
         )
+
+
+def _deadline(acquired_at: datetime, ttl_minutes: int) -> datetime:
+    """Момент, после которого аренда истекла: срок плюс допуск на часы."""
+    return _utc(acquired_at) + timedelta(minutes=ttl_minutes) + CLOCK_SKEW_ALLOWANCE
+
+
+def _short_str(value: object) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= MAX_FIELD_CHARS
 
 
 def _utc(value: datetime) -> datetime:
@@ -188,36 +255,113 @@ def lease_key(task_uid: str) -> str:
 # --- транспорт (без БД) ---------------------------------------------------------------
 
 
-def read(store: RemoteStore, project_uid: str, task_uid: str) -> tuple[Holder, str] | None:
-    """Нынешняя аренда задачи и её etag; ``None`` — свободна."""
+@dataclass(frozen=True, slots=True)
+class _Lease:
+    """Аренда как лежит на remote: держатель или причина, почему его нет."""
+
+    etag: str
+    holder: Holder | None
+    problem: str | None = None
+
+
+def _fetch(
+    store: RemoteStore, project_uid: str, task_uid: str, now: datetime | None = None
+) -> _Lease | None:
+    """Аренда и её etag; тело не по форме — ``holder=None`` с причиной.
+
+    Тело, которое транспорт не отдал вовсе (не JSON, больше потолка), —
+    ``ObjectMissingError`` от ``get_json``: etag у такого нет.
+    """
     key = lease_key(task_uid)
     got = store.get_json(project_uid, key)
     if got is None:
         return None
     body, etag = got
-    return Holder.parse(key, body), etag
+    try:
+        holder = Holder.parse(key, body)
+    except ObjectMissingError as exc:
+        return _Lease(etag, None, str(exc))
+    if holder.acquired_at > _utc(now or clock()) + CLOCK_SKEW_ALLOWANCE:
+        # Момент из будущего отодвигает истечение сколь угодно далеко — вечный
+        # замок. Не по форме: держит (fail closed), но снимается release --force.
+        problem = f"{key}: acquired_at впереди часов больше чем на {CLOCK_SKEW_ALLOWANCE}"
+        return _Lease(etag, None, problem)
+    return _Lease(etag, holder)
+
+
+def read(store: RemoteStore, project_uid: str, task_uid: str) -> tuple[Holder, str] | None:
+    """Нынешняя аренда задачи и её etag; ``None`` — свободна, не по форме — SYNC-102."""
+    lease = _fetch(store, project_uid, task_uid)
+    if lease is None:
+        return None
+    if lease.holder is None:
+        raise ObjectMissingError(lease.problem or lease_key(task_uid))
+    return lease.holder, lease.etag
+
+
+#: Чем снять непригодную аренду — подсказка ``CheckoutLeaseMalformedError``.
+_FIX_FORCE: Final = "cod-doc task release {task_id} --force"
+_FIX_MANUAL: Final = "тело не JSON — удалите ключ на remote вручную"
+
+
+def _malformed(task_id: str, task_uid: str, reason: str, *, fix: str) -> SyncError:
+    return CheckoutLeaseMalformedError(
+        task_id=task_id, key=lease_key(task_uid), reason=reason, fix=fix
+    )
+
+
+class Claimed(NamedTuple):
+    """Исход ``claim``: держатель, etag, взята ли этим вызовом, чью истёкшую перехватили."""
+
+    holder: Holder
+    etag: str
+    created: bool
+    previous: Holder | None = None
 
 
 def claim(
-    store: RemoteStore, project_uid: str, task_uid: str, holder: Holder
-) -> tuple[Holder, str, bool]:
-    """Взять аренду CAS'ом → ``(держатель, etag, взята_этим_вызовом)``.
+    store: RemoteStore,
+    project_uid: str,
+    task_uid: str,
+    holder: Holder,
+    *,
+    take_expired: bool = False,
+    now: datetime | None = None,
+) -> Claimed:
+    """Взять аренду CAS'ом.
 
-    Аренда того же держателя (агент и реплика) — идемпотентно, ``False``.
-    Чужая — ``SYNC-108`` сразу, даже истёкшая: её снимает ``release_stale``,
-    а не следующий желающий (работа над задачей длиннее TTL — норма).
+    Аренда того же держателя (агент и реплика) — идемпотентно, ``created=False``.
+    Чужая — ``SYNC-108``; истёкшая (с допуском на часы) при ``take_expired``
+    перехватывается CAS'ом по её etag (CLO-048), ``previous`` — прежний
+    держатель. Проигравший гонку перехвата перечитывает и получает ``SYNC-108``
+    от победителя. Тело не по форме — занято (``CheckoutLeaseMalformedError``).
     """
     key = lease_key(task_uid)
     for _ in range(MAX_CAS_ATTEMPTS):
-        current = read(store, project_uid, task_uid)
-        if current is not None:
-            existing, etag = current
-            if existing.same(holder):
-                return existing, etag, False
+        try:
+            lease = _fetch(store, project_uid, task_uid, now)
+        except ObjectMissingError as exc:
+            raise _malformed(holder.task_id, task_uid, str(exc), fix=_FIX_MANUAL) from exc
+        if lease is None:
+            etag_new = store.cas_json(project_uid, key, None, holder.body())
+            if etag_new is not None:
+                return Claimed(holder, etag_new, True)
+            continue
+        existing = lease.holder
+        if existing is None:
+            raise _malformed(
+                holder.task_id,
+                task_uid,
+                lease.problem or key,
+                fix=_FIX_FORCE.format(task_id=holder.task_id),
+            )
+        if existing.same(holder):
+            return Claimed(existing, lease.etag, False)
+        if not (take_expired and existing.expired(now)):
             raise existing.held_error()
-        etag_new = store.cas_json(project_uid, key, None, holder.body())
+        etag_new = store.cas_json(project_uid, key, lease.etag, holder.body())
         if etag_new is not None:
-            return holder, etag_new, True
+            return Claimed(holder, etag_new, True, existing)
     msg = f"{key}: CAS не прошёл за {MAX_CAS_ATTEMPTS} попыток"
     raise RemoteUnavailableError(msg)
 
@@ -244,29 +388,73 @@ def drop(
     agent: str | None = None,
     etag: str | None = None,
     expired_ok: bool = False,
+    malformed_ok: bool = False,
     now: datetime | None = None,
 ) -> bool:
     """Снять аренду, если она своя; ``True`` — аренды больше нет.
 
     Своя — реплика ``replica`` и (если задан) агент ``agent``; ``etag`` сужает
     до той самой версии, что взял вызов. ``expired_ok`` снимает и чужую,
-    истёкшую по её ``ttl_minutes`` (``release_stale``, ``release --force``).
+    истёкшую по её ``ttl_minutes`` (``release_stale``, ``release --force``);
+    ``malformed_ok`` — и тело не по форме (только ``release --force``).
     """
     key = lease_key(task_uid)
     for _ in range(MAX_CAS_ATTEMPTS):
-        current = read(store, project_uid, task_uid)
-        if current is None:
+        lease = _fetch(store, project_uid, task_uid, now)
+        if lease is None:
             return True
-        holder, current_etag = current
-        mine = holder.replica == replica and agent in (None, holder.agent)
-        if etag is not None and current_etag != etag:
-            mine = False
-        if not mine and not (expired_ok and holder.expired(now or datetime.now(UTC))):
+        if not _droppable(lease, replica, agent, etag, expired_ok, malformed_ok, now):
             return False
-        if store.delete_json(project_uid, key, current_etag):
+        if store.delete_json(project_uid, key, lease.etag):
             return True
     msg = f"{key}: удаление по etag не прошло за {MAX_CAS_ATTEMPTS} попыток"
     raise RemoteUnavailableError(msg)
+
+
+def _droppable(
+    lease: _Lease,
+    replica: str,
+    agent: str | None,
+    etag: str | None,
+    expired_ok: bool,
+    malformed_ok: bool,
+    now: datetime | None,
+) -> bool:
+    holder = lease.holder
+    if holder is None:
+        return malformed_ok
+    mine = holder.replica == replica and agent in (None, holder.agent)
+    if etag is not None and lease.etag != etag:
+        mine = False
+    return mine or (expired_ok and holder.expired(now))
+
+
+def sweep(store: RemoteStore, project_uid: str, *, now: datetime | None = None) -> list[str]:
+    """Снять истёкшие аренды ``leases/checkout/`` → uid задач снятых (CLO-048).
+
+    Аренды, о замке которых реплика не знает (операция держателя не уехала),
+    ``release_stale`` по своей БД не видит; листинг их находит. Каждая
+    снимается ``delete_json`` по etag прочитанной версии: перехваченная между
+    чтением и удалением не тронется. Тело не по форме — пропуск (занято, пока
+    не снимут явно). Сбой на одном ключе — пропуск этого ключа, а не всей
+    чистки; в лог идут ключ и код ошибки, тело — никогда (его пишут чужие).
+    """
+    dropped: list[str] = []
+    for key in store.list_prefix(project_uid, CHECKOUT_PREFIX):
+        task_uid = key.removeprefix(CHECKOUT_PREFIX)
+        try:
+            lease = _fetch(store, project_uid, task_uid, now)
+            if lease is None:
+                continue
+            if lease.holder is None:
+                logger.warning("аренда checkout %s не по форме — не снимается", key)
+                continue
+            if lease.holder.expired(now) and store.delete_json(project_uid, key, lease.etag):
+                dropped.append(task_uid)
+        except SyncError as exc:
+            code = getattr(exc, "code", type(exc).__name__)
+            logger.warning("аренда checkout %s пропущена: %s", key, code)
+    return dropped
 
 
 # --- remote проекта -------------------------------------------------------------------
@@ -303,11 +491,17 @@ def unavailable(exc: RemoteUnavailableError) -> CheckoutLeaseUnavailableError:
 
 
 def claim_for_checkout(
-    slug: str, remote: str, project_uid: str, task_uid: str, holder: Holder
-) -> tuple[Holder, str, bool]:
+    slug: str,
+    remote: str,
+    project_uid: str,
+    task_uid: str,
+    holder: Holder,
+    *,
+    take_expired: bool = False,
+) -> Claimed:
     """``claim`` с переводом сбоя сети в ``SYNC-109``; ``SYNC-108`` — как есть."""
     try:
-        return claim(_store(slug, remote), project_uid, task_uid, holder)
+        return claim(_store(slug, remote), project_uid, task_uid, holder, take_expired=take_expired)
     except CheckoutLeaseHeldError:
         raise
     except RemoteUnavailableError as exc:
@@ -383,6 +577,7 @@ def schedule_release(
     *,
     agent: str | None,
     expired_ok: bool = False,
+    malformed_ok: bool = False,
 ) -> str | None:
     """После коммита снять аренду своей реплики (``agent=None`` — любого агента).
 
@@ -404,9 +599,26 @@ def schedule_release(
             replica=replica,
             agent=agent,
             expired_ok=expired_ok,
+            malformed_ok=malformed_ok,
         )
 
     defer(session, task_uid, on_commit=release)
+    return remote
+
+
+def schedule_sweep(session: Session, project_id: int) -> str | None:
+    """После коммита снять истёкшие аренды проекта листингом (``release_stale``)."""
+    target = remote_for(session, project_id)
+    if target is None:
+        return None
+    slug, remote, project_uid = target
+
+    def clean() -> None:
+        dropped = sweep(_store(slug, remote), project_uid)
+        if dropped:
+            logger.info("сняты истёкшие аренды checkout на %s: %s", remote, dropped)
+
+    defer(session, f"{MARKER_REMOTE}:sweep:{project_uid}", on_commit=clean)
     return remote
 
 

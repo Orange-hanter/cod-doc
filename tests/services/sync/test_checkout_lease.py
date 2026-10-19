@@ -31,6 +31,7 @@ from cod_doc.services import checkout_service, task_service
 from cod_doc.services.sync_service import checkout_lease, conflicts, pull, push
 from cod_doc.services.sync_service.errors import (
     CheckoutLeaseHeldError,
+    CheckoutLeaseMalformedError,
     CheckoutLeaseUnavailableError,
     RemoteUnavailableError,
 )
@@ -511,3 +512,212 @@ def test_offline_is_on_both_surfaces() -> None:
     assert signature.parameters["offline"].default is False
     assert "SYNC-108" in (tool.fn.__doc__ or "")
     assert "SYNC-109" in (tool.fn.__doc__ or "")
+
+
+# --- CLO-048: осиротевшая аренда снимается по TTL --------------------------------------
+
+_PAST_TTL = timedelta(minutes=checkout_lease.DEFAULT_TTL_MINUTES + 10)
+
+
+def _clock_after(monkeypatch: pytest.MonkeyPatch, delta: timedelta) -> None:
+    """Сдвинуть часы, по которым аренда считается истёкшей (§3.6, CLO-048)."""
+    shifted = datetime.now(UTC) + delta
+    monkeypatch.setattr(checkout_lease, "clock", lambda: shifted, raising=False)
+
+
+def test_orphan_lease_is_taken_over_at_checkout_only_after_ttl(
+    lab: tuple[r.Replica, r.Replica, FileRemote], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A взяла аренду и «умерла»: операция не уехала, в БД B задача свободна.
+
+    До истечения TTL (с допуском на расхождение часов) B получает SYNC-108;
+    после — checkout B перехватывает аренду CAS'ом и пишет событие с прежним
+    держателем.
+    """
+    a, b, store = lab
+    _checkout(a, AGENT_A)  # аренда A на remote; push так и не случился
+    orphan = _lease(a, store)
+    assert orphan is not None
+
+    _clock_after(monkeypatch, timedelta(minutes=checkout_lease.DEFAULT_TTL_MINUTES - 1))
+    with pytest.raises(CheckoutLeaseHeldError):
+        _checkout(b, AGENT_B)
+    # Срок прошёл, но не вышел за допуск на расхождение часов — ещё держит A.
+    skew = getattr(checkout_lease, "CLOCK_SKEW_ALLOWANCE", timedelta(0))
+    _clock_after(monkeypatch, timedelta(minutes=checkout_lease.DEFAULT_TTL_MINUTES) + skew / 2)
+    with pytest.raises(CheckoutLeaseHeldError):
+        _checkout(b, AGENT_B)
+    assert _lease(a, store) == orphan
+    assert _task(b).checked_out_by is None
+
+    _clock_after(monkeypatch, _PAST_TTL)
+    taken = _checkout(b, AGENT_B)
+    assert (taken.new_status, taken.lease) == ("in_progress", "leased")
+    holder = _lease(b, store)
+    assert holder is not None
+    assert (holder.agent, holder.replica) == (AGENT_B, _replica(b))
+    assert _events(b, "task.checkout_lease_taken_over") == [
+        {
+            "remote": "origin",
+            "previous_agent": AGENT_A,
+            "previous_replica": _replica(a),
+            "previous_acquired_at": orphan.acquired_at.isoformat(),
+            "previous_ttl_minutes": orphan.ttl_minutes,
+        }
+    ]
+
+
+def test_expired_lease_of_a_lock_known_locally_is_not_taken_over(
+    lab: tuple[r.Replica, r.Replica, FileRemote], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Замок A приехал на B pull'ом: операция уехала, аренда не сирота — перехвата нет."""
+    a, b, store = lab
+    _checkout(a, AGENT_A)
+    _sync(a, store)
+    _sync(b, store)
+    _clock_after(monkeypatch, _PAST_TTL)
+    with pytest.raises(CheckoutConflictError):
+        _checkout(b, AGENT_B)  # локальный замок — отказ до сети
+    with pytest.raises(CheckoutLeaseHeldError):
+        _checkout(b, AGENT_A)  # то же имя агента, другая реплика
+    holder = _lease(a, store)
+    assert holder is not None
+    assert holder.replica == _replica(a)
+
+
+def _put_raw_lease(rep: r.Replica, store: FileRemote, body: dict[str, Any]) -> None:
+    project_uid, task_uid = _uids(rep)
+    assert store.cas_json(project_uid, checkout_lease.lease_key(task_uid), None, body)
+
+
+def test_malformed_lease_is_held_and_release_force_drops_it(
+    lab: tuple[r.Replica, r.Replica, FileRemote], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Тело аренды пишут чужие машины: не по форме — занято (fail closed), чинит ``release --force``."""
+    a, _b, store = lab
+    _put_raw_lease(a, store, {"agent": "x" * 10_000, "ttl_minutes": -5})
+    _clock_after(monkeypatch, _PAST_TTL)
+    with pytest.raises(CheckoutLeaseHeldError) as refused:
+        _checkout(a, AGENT_A)
+    assert refused.value.code == "SYNC-108"
+    assert f"task release {TASK} --force" in str(refused.value)
+    assert _task(a).checked_out_by is None
+
+    _release(a, AGENT_A, force=True)  # локального замка нет — снимается аренда на remote
+    project_uid, task_uid = _uids(a)
+    assert store.get_json(project_uid, checkout_lease.lease_key(task_uid)) is None
+    assert _checkout(a, AGENT_A).lease == "leased"
+
+
+def test_release_stale_sweeps_orphan_leases_unknown_locally(
+    lab: tuple[r.Replica, r.Replica, FileRemote],
+) -> None:
+    """Аренда задачи, о замке которой реплика не знает, снимается ``release_stale`` по своему TTL."""
+    a, _b, store = lab
+    project_uid, task_uid = _uids(a)
+    orphan_uid = "0199f2b0-7c3a-7000-8000-00000000beef"  # задачи нет в БД вовсе
+    live_uid = "0199f2b0-7c3a-7000-8000-00000000cafe"
+    for uid, minutes in ((task_uid, 60), (orphan_uid, 60), (live_uid, 5)):
+        checkout_lease.take_over(
+            store,
+            project_uid,
+            uid,
+            checkout_lease.Holder(
+                task_id="DEM-404",
+                agent="agent:ghost",
+                replica="0199f2b0-7c3a-7000-8000-00000000dead",
+                acquired_at=datetime.now(UTC) - timedelta(minutes=minutes),
+            ),
+        )
+    bad_uid = "0199f2b0-7c3a-7000-8000-00000000f00d"
+    assert store.cas_json(project_uid, checkout_lease.lease_key(bad_uid), None, {"oops": 1})
+
+    with transactional(a.sf) as s:
+        assert checkout_service.release_stale(s, ttl_minutes=30, project_id=a.project_id) == []
+    assert checkout_lease.read(store, project_uid, task_uid) is None
+    assert checkout_lease.read(store, project_uid, orphan_uid) is None
+    assert checkout_lease.read(store, project_uid, live_uid) is not None  # не истекла
+    assert store.get_json(project_uid, checkout_lease.lease_key(bad_uid)) is not None
+
+
+# --- CLO-048: тело аренды, которое не истекает никогда ---------------------------------
+
+_P = "0199f2b0-7c3a-7000-8000-0000000000ff"
+_T = "0199f2b0-7c3a-7000-8000-0000000000aa"
+
+
+def _body(acquired_at: str, ttl: int = checkout_lease.DEFAULT_TTL_MINUTES) -> dict[str, Any]:
+    return {
+        "task_id": TASK,
+        "agent": "agent:ghost",
+        "replica": "rep-x",
+        "acquired_at": acquired_at,
+        "ttl_minutes": ttl,
+    }
+
+
+_FOREVER = [
+    pytest.param((datetime.now(UTC) + timedelta(days=365)).isoformat(), id="future"),
+    pytest.param("9999-12-31T23:59:59+00:00", id="deadline-overflow"),
+    pytest.param("0001-01-01T00:00:00+05:00", id="utc-overflow"),
+]
+
+
+@pytest.mark.parametrize("acquired_at", _FOREVER)
+def test_lease_that_never_expires_is_malformed_and_cleared_by_force(
+    tmp_path: Path, acquired_at: str
+) -> None:
+    """Момент из будущего или за пределом datetime — не вечный замок, а «не по форме».
+
+    Держит (fail closed: перехвата нет), но ``drop(malformed_ok=True)``
+    (``release --force``) снимает.
+    """
+    store = r.remote(tmp_path)
+    key = checkout_lease.lease_key(_T)
+    assert store.cas_json(_P, key, None, _body(acquired_at))
+    me = checkout_lease.Holder(TASK, AGENT_A, "rep-a", datetime.now(UTC))
+    with pytest.raises(CheckoutLeaseMalformedError) as refused:
+        checkout_lease.claim(store, _P, _T, me, take_expired=True)
+    assert refused.value.code == "SYNC-108"
+    assert checkout_lease.sweep(store, _P) == []
+    assert checkout_lease.drop(store, _P, _T, replica="rep-a", malformed_ok=True)
+    assert store.get_json(_P, key) is None
+
+
+def test_lease_with_absurd_ttl_is_malformed(tmp_path: Path) -> None:
+    store = r.remote(tmp_path)
+    body = _body(datetime.now(UTC).isoformat(), ttl=10**9)
+    assert store.cas_json(_P, checkout_lease.lease_key(_T), None, body)
+    me = checkout_lease.Holder(TASK, AGENT_A, "rep-a", datetime.now(UTC))
+    with pytest.raises(CheckoutLeaseMalformedError):
+        checkout_lease.claim(store, _P, _T, me, take_expired=True)
+
+
+class _FlakyKey:
+    """Транспорт, у которого чтение одного ключа падает сетью."""
+
+    def __init__(self, inner: FileRemote, bad_key: str) -> None:
+        self.inner = inner
+        self.bad_key = bad_key
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+    def get_json(self, project_uid: str, key: str) -> Any:
+        if key == self.bad_key:
+            raise RemoteUnavailableError("сеть моргнула")
+        return self.inner.get_json(project_uid, key)
+
+
+def test_sweep_survives_one_failing_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Сбой на одном ключе не обрывает чистку остальных; в лог — ключ и код, не тело."""
+    store = r.remote(tmp_path)
+    old = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    first, second = (f"0199f2b0-7c3a-7000-8000-00000000000{n}" for n in (1, 2))
+    for uid in (first, second):
+        assert store.cas_json(_P, checkout_lease.lease_key(uid), None, _body(old))
+    flaky = _FlakyKey(store, checkout_lease.lease_key(first))
+    assert checkout_lease.sweep(flaky, _P) == [second]  # type: ignore[arg-type]
+    assert checkout_lease.lease_key(first) in caplog.text
+    assert "SYNC-101" in caplog.text
+    assert "agent:ghost" not in caplog.text

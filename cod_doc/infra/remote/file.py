@@ -60,10 +60,12 @@ from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
 from cod_doc.infra.remote.base import (
+    MAX_LIST_KEYS,
     JsonValue,
     RefValue,
     SnapshotRef,
     check_json_key,
+    check_json_prefix,
     check_name,
     check_sha,
     check_snapshot,
@@ -427,6 +429,31 @@ class FileRemote:
             except OSError as exc:
                 raise _unavailable(key, exc) from exc
             return True
+
+    def list_prefix(self, project_uid: str, prefix: str) -> list[str]:
+        """Обычные файлы каталога ``prefix`` с именем ключа (``check_name``).
+
+        Спуск — тем же ``_dir`` (``O_NOFOLLOW`` на каждом сегменте); ссылки,
+        подкаталоги и служебные ``.…lock``/``.…tmp`` пропускаются.
+        """
+        parts = check_json_prefix(prefix)
+        keys: list[str] = []
+        with self._dir((check_name(project_uid, "project_uid"), *parts), create=False) as dfd:
+            if dfd is None:
+                return []
+            with os.scandir(dfd) as entries:
+                for entry in entries:
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    try:
+                        check_name(entry.name, "ключ")
+                    except ValueError:
+                        continue
+                    keys.append(f"{prefix}{entry.name}")
+                    if len(keys) > MAX_LIST_KEYS:
+                        msg = f"{prefix} проекта {project_uid}: больше {MAX_LIST_KEYS} ключей"
+                        raise RemoteUnavailableError(msg)
+        return sorted(keys)
 
     # --- snapshots ------------------------------------------------------------
 

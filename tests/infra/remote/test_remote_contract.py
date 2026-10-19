@@ -252,6 +252,30 @@ def test_json_keys_limited_to_meta_and_leases(remote: RemoteStore, bad: str) -> 
         remote.get_json(PROJECT, bad)
 
 
+def test_list_prefix_lists_direct_json_keys(remote: RemoteStore) -> None:
+    """CLO-048: ключи JSON-документов прямо под префиксом; удалённый (надгробие) — не ключ."""
+    checkout = "leases/checkout/"
+    assert remote.list_prefix(PROJECT, checkout) == []
+    first = remote.cas_json(PROJECT, f"{checkout}t1", None, {"n": 1})
+    assert first is not None
+    remote.cas_json(PROJECT, f"{checkout}t2", None, {"n": 2})
+    remote.cas_json(PROJECT, "leases/ADO", None, {"next": 1})
+    remote.cas_json(OTHER, f"{checkout}t3", None, {"n": 3})
+    assert remote.list_prefix(PROJECT, checkout) == [f"{checkout}t1", f"{checkout}t2"]
+    assert remote.list_prefix(PROJECT, "leases/") == ["leases/ADO"]  # без подкаталогов
+    assert remote.list_prefix(OTHER, checkout) == [f"{checkout}t3"]
+    assert remote.delete_json(PROJECT, f"{checkout}t1", first)
+    assert remote.list_prefix(PROJECT, checkout) == [f"{checkout}t2"]
+
+
+@pytest.mark.parametrize(
+    "bad", ["refs/", "objects/", "leases/checkout", "leases/../", "leases//", "meta.json", ""]
+)
+def test_list_prefix_limited_to_leases_directories(remote: RemoteStore, bad: str) -> None:
+    with pytest.raises(ValueError):
+        remote.list_prefix(PROJECT, bad)
+
+
 # --- snapshots ------------------------------------------------------------------
 
 
@@ -460,10 +484,10 @@ def _holder(agent: str, replica: str, *, minutes_ago: int = 0) -> checkout_lease
 def test_checkout_lease_claim_is_exclusive_and_drop_is_owner_only(remote: RemoteStore) -> None:
     """``leases/checkout/<task_uid>`` (RFC 29 §3.6): CAS «ключа нет», снятие — по etag."""
     mine, rival = _holder("agent:a", "rep-a"), _holder("agent:b", "rep-b")
-    got, etag, created = checkout_lease.claim(remote, PROJECT, TASK_UID, mine)
+    got, etag, created, _previous = checkout_lease.claim(remote, PROJECT, TASK_UID, mine)
     assert (got, created) == (mine, True)
     assert checkout_lease.read(remote, PROJECT, TASK_UID) == (mine, etag)
-    assert checkout_lease.claim(remote, PROJECT, TASK_UID, mine) == (mine, etag, False)
+    assert checkout_lease.claim(remote, PROJECT, TASK_UID, mine)[:3] == (mine, etag, False)
     with pytest.raises(CheckoutLeaseHeldError) as held:
         checkout_lease.claim(remote, PROJECT, TASK_UID, rival)
     assert held.value.code == "SYNC-108"
@@ -493,9 +517,10 @@ def test_checkout_lease_take_over_and_expired_drop(remote: RemoteStore) -> None:
 class _RivalTakesLease:
     """Транспорт, перед ``cas_json`` которого соперник берёт аренду checkout."""
 
-    def __init__(self, inner: RemoteStore) -> None:
+    def __init__(self, inner: RemoteStore, *, take_expired: bool = False) -> None:
         self.inner = inner
         self.armed = True
+        self.take_expired = take_expired
 
     def get_json(self, project_uid: str, key: str) -> tuple[dict[str, JsonValue], str] | None:
         return self.inner.get_json(project_uid, key)
@@ -509,7 +534,11 @@ class _RivalTakesLease:
     ) -> str | None:
         if self.armed:
             self.armed = False
-            checkout_lease.claim(self.inner, project_uid, TASK_UID, _holder("agent:b", "rep-b"))
+            rival = _holder("agent:b", "rep-b")
+            if self.take_expired:
+                checkout_lease.claim(self.inner, project_uid, TASK_UID, rival, take_expired=True)
+            else:
+                checkout_lease.claim(self.inner, project_uid, TASK_UID, rival)
         return self.inner.cas_json(project_uid, key, expected_etag, body)
 
 
@@ -521,3 +550,51 @@ def test_checkout_lease_lost_race_is_sync_108_not_overwrite(remote: RemoteStore)
     current = checkout_lease.read(remote, PROJECT, TASK_UID)
     assert current is not None
     assert current[0].agent == "agent:b"
+
+
+# --- осиротевшая аренда checkout (CLO-048) ---------------------------------------------
+
+_PAST_TTL = checkout_lease.DEFAULT_TTL_MINUTES + 10
+
+
+def test_checkout_lease_expired_is_taken_over_only_on_request(remote: RemoteStore) -> None:
+    """Истёкшая чужая аренда перехватывается CAS'ом по её etag и только с ``take_expired``."""
+    ghost = _holder("agent:ghost", "rep-x", minutes_ago=_PAST_TTL)
+    checkout_lease.claim(remote, PROJECT, TASK_UID, ghost)
+    mine = _holder("agent:a", "rep-a")
+    with pytest.raises(CheckoutLeaseHeldError):
+        checkout_lease.claim(remote, PROJECT, TASK_UID, mine)
+    got = checkout_lease.claim(remote, PROJECT, TASK_UID, mine, take_expired=True)
+    assert (got.holder, got.created, got.previous) == (mine, True, ghost)
+    assert checkout_lease.read(remote, PROJECT, TASK_UID) == (mine, got.etag)
+    with pytest.raises(CheckoutLeaseHeldError):  # моя свежая — не перехватывается
+        checkout_lease.claim(remote, PROJECT, TASK_UID, ghost, take_expired=True)
+
+
+def test_checkout_lease_takeover_race_has_one_winner(remote: RemoteStore) -> None:
+    """Две реплики перехватывают одну истёкшую аренду: соперник успел — мой CAS отвергнут."""
+    checkout_lease.claim(
+        remote, PROJECT, TASK_UID, _holder("agent:ghost", "rep-x", minutes_ago=_PAST_TTL)
+    )
+    racing = _RivalTakesLease(remote, take_expired=True)
+    with pytest.raises(CheckoutLeaseHeldError, match="agent:b"):
+        checkout_lease.claim(  # type: ignore[arg-type]
+            racing, PROJECT, TASK_UID, _holder("agent:a", "rep-a"), take_expired=True
+        )
+    current = checkout_lease.read(remote, PROJECT, TASK_UID)
+    assert current is not None
+    assert (current[0].agent, current[0].replica) == ("agent:b", "rep-b")
+
+
+def test_checkout_lease_sweep_drops_only_expired(remote: RemoteStore) -> None:
+    """``release_stale`` чистит ``leases/checkout/`` листингом: истёкшие — да, живые и битые — нет."""
+    expired, live, bad = (f"0199f2b0-7c3a-7000-8000-00000000000{n}" for n in (1, 2, 3))
+    checkout_lease.claim(
+        remote, PROJECT, expired, _holder("agent:x", "rep-x", minutes_ago=_PAST_TTL)
+    )
+    checkout_lease.claim(remote, PROJECT, live, _holder("agent:y", "rep-y"))
+    remote.cas_json(PROJECT, checkout_lease.lease_key(bad), None, {"agent": 1})
+    assert checkout_lease.sweep(remote, PROJECT) == [expired]
+    assert checkout_lease.read(remote, PROJECT, expired) is None
+    assert checkout_lease.read(remote, PROJECT, live) is not None
+    assert remote.get_json(PROJECT, checkout_lease.lease_key(bad)) is not None
