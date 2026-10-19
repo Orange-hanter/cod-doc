@@ -22,6 +22,10 @@ RFC 29 §3.9, §10.6: гейты паритета расширяются на ``
 разрешения с другой реплики (CLO-045) идёт внутри pull. ``reconcile`` —
 шаг push/pull: провизорный замок checkout (``--offline``) получает аренду
 (CLO-031); сам checkout выставлен как ``task checkout``/``task_checkout``.
+``epochs.export_pending``/``render_pending`` (CLO-032) БД не меняют и
+выставлены только в CLI (``sync export-pending``): §10.7 MCP их не
+перечисляет, а запись файла по пути клиента на машине общего демона — не
+дело тула.
 """
 
 from __future__ import annotations

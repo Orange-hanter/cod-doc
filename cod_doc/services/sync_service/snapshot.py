@@ -57,6 +57,9 @@ changeset'ов (``clone``), вместо того чтобы проигрыва�
 Снапшот собирается только с состояния, равного голове (голова реплики =
 запушенный changeset, хвоста нет, дайджест совпал); указатель
 ``meta.json["snapshot"]`` двигается CAS'ом. Сбой записи push не отменяет.
+Эпоха реплики новее ``meta.epoch`` (CLO-032) — снапшот пишется вне каденции
+под ``snapshots/<новая эпоха>/``, и тот же CAS поднимает ``epoch`` и
+``schema_min`` (``Written.epoch_opened``).
 """
 
 from __future__ import annotations
@@ -85,7 +88,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.remote.base import META_KEY, SnapshotRef, snapshot_key
 from cod_doc.infra.remote.file import MAX_SNAPSHOT_BYTES
-from cod_doc.services.sync_service import _local, apply, digest, gate, journal
+from cod_doc.services.sync_service import _local, apply, digest, epochs, gate, journal
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import (
     _PARSE_ERRORS,
@@ -117,6 +120,7 @@ __all__ = [
     "Header",
     "LoadResult",
     "SnapshotTooLargeError",
+    "Written",
     "build",
     "load",
     "load_history",
@@ -417,7 +421,7 @@ def build(session: Session, project: _local.ProjectRef, *, head: str, digest_hex
             "kind": _HEADER,
             "project": project.uid,
             "head": head,
-            "epoch": _local.EPOCH,
+            "epoch": _local.epoch(session),
             "schema_head": _local.schema_head(session),
             "digest": digest_hex,
         }
@@ -806,46 +810,69 @@ def _build_at_head(
         return ref, build(session, ref, head=head, digest_hex=expected_digest), total
 
 
+@dataclass(frozen=True, slots=True)
+class Written:
+    """Записанный снапшот: sha головы и эпоха, которую он открыл (CLO-032)."""
+
+    sha: str
+    epoch_opened: str | None = None
+
+
 def write_if_due(
     sf: sessionmaker[Session], project: str, store: RemoteStore, *, head: str, digest_hex: str
-) -> str | None:
-    """Записать снапшот ``head``, если пора (§3.6); sha снапшота или ``None``."""
+) -> Written | None:
+    """Записать снапшот ``head``, если пора (§3.6); ``None`` — не пора или не с чего.
+
+    Пора — снапшота на remote нет, набралось ``SNAPSHOT_EVERY`` операций или
+    эпоха реплики новее ``meta.epoch`` (CLO-032): тогда снапшот пишется вне
+    каденции, и тот же CAS ``meta.json`` поднимает ``epoch`` и ``schema_min``.
+    """
     with transactional(sf, commit=False) as session:
         uid = _local.project_ref(session, project).uid
+        local_epoch = _local.epoch(session)
     meta = store.get_json(uid, META_KEY)
+    remote_meta = None if meta is None else epochs.parse_meta(meta[0], meta[1], uid)
+    opening = epochs.opens_epoch(remote_meta, local_epoch)
     current = _pointer_of(meta)
-    if current is not None and current[0].sha == head:
+    if current is not None and current[0].sha == head and not opening:
         return None
-    built = _build_at_head(sf, project, head, digest_hex, None if current is None else current[1])
+    last_ops = None if current is None or opening else current[1]
+    built = _build_at_head(sf, project, head, digest_hex, last_ops)
     if built is None:
         return None
     _ref, data, total = built
-    snap = SnapshotRef(epoch=_local.EPOCH, sha=head, key=snapshot_key(_local.EPOCH, head))
+    snap = SnapshotRef(epoch=local_epoch, sha=head, key=snapshot_key(local_epoch, head))
     store.put_snapshot(uid, snap, data)
-    # §10.1: первый писатель заводит meta.json целиком, дальше меняется только указатель.
+    # §10.1: первый писатель заводит meta.json целиком, дальше меняется указатель,
+    # а при открытии эпохи — ещё epoch и schema_min (§3.6 п. 2).
     body: dict[str, JsonValue] = (
         dict(meta[0])
         if meta is not None
         else {
             "v": 1,
             "project_uid": uid,
-            "epoch": _local.EPOCH,
-            "schema_min": _local.EPOCH,
+            "epoch": local_epoch,
+            "schema_min": local_epoch,
             "created": format_time(datetime.now(UTC)),
             "snapshot_every": SNAPSHOT_EVERY,
         }
     )
+    if opening:
+        body["epoch"] = local_epoch
+        body["schema_min"] = local_epoch
     body[_META_SNAPSHOT] = {"epoch": snap.epoch, "sha": head, "ops": total}
     if store.cas_json(uid, META_KEY, None if meta is None else meta[1], body) is None:
         # Указатель сдвинул другой push: его снапшот не старше нашего по смыслу,
         # а наш объект остаётся на remote без указателя (clone читает указатель).
+        # Эпоха при этом не открыта — следующий push попробует снова.
         logger.info("снапшот %s записан, но meta.json сдвинул другой push", head[:12])
-    return head
+        return Written(sha=head)
+    return Written(sha=head, epoch_opened=local_epoch if opening else None)
 
 
 def write_quietly(
     sf: sessionmaker[Session], project: str, store: RemoteStore, *, head: str, digest_hex: str
-) -> str | None:
+) -> Written | None:
     """``write_if_due`` после push: сбой снапшота push не отменяет — он уже на remote."""
     try:
         return write_if_due(sf, project, store, head=head, digest_hex=digest_hex)

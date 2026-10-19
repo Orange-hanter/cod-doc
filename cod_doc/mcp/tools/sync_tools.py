@@ -89,8 +89,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """RFC 29 §3.6: fetch + fast-forward — применить чужие changeset'ы.
 
-        Секция B умеет только fast-forward: свой неотправленный хвост на тех
-        же сущностях — ошибка «слияние: секция C», ничего не применяется.
+        Эпоха remote новее эпохи реплики — ``SYNC-105`` до скачивания:
+        сначала ``cod-doc update`` (CLO-032).
 
         Args:
             project: cod-doc project slug.
@@ -112,6 +112,9 @@ def register(mcp: FastMCP) -> None:
         """RFC 29 §3.6: упаковать неотправленные операции и сдвинуть refs/main.
 
         Remote ушёл вперёд — pull и повтор (до трёх раз), дальше ``SYNC-103``.
+        Эпоха remote новее эпохи реплики — ``SYNC-105`` (выгрузка —
+        ``cod-doc sync export-pending``, затем ``cod-doc update``); эпоха
+        реплики новее — push открывает её на remote (CLO-032).
 
         Args:
             project: cod-doc project slug.
@@ -119,7 +122,8 @@ def register(mcp: FastMCP) -> None:
             author: ``actor`` changeset'а и автор события ``sync.pushed``.
 
         Returns:
-            ``PushResult``: ``{changesets, ops, head, retries, pinned}``.
+            ``PushResult``: ``{changesets, ops, head, retries, pinned, snapshot,
+            epoch_opened}``.
         """
         with _as_value_error():
             sf, _entry = session_factory(project)

@@ -99,14 +99,29 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import create_engine, text
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError, SQLAlchemyError
+
 from cod_doc.config import config_dir
-from cod_doc.infra.db import SchemaMismatchError, db_for_entry, transactional
+from cod_doc.infra import sync_epochs
+from cod_doc.infra.db import (
+    SchemaMismatchError,
+    db_for_entry,
+    db_url_for_entry,
+    sqlite_file_path,
+    transactional,
+)
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import launchd_service, project_service, repair_service, runtime_service
+from cod_doc.services.sync_service import epochs as sync_epochs_svc
+from cod_doc.services.sync_service.errors import PendingOpsError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from sqlalchemy.engine import Connection
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.config import Config, ProjectEntry
@@ -717,12 +732,18 @@ def _migrate_phase(
 
 
 def _migrate(cfg: Config, projects: list[str] | None) -> list[MigrateResult]:
-    """Тонкая обёртка над ``project_service``: одна упавшая не роняет остальные."""
-    if projects is None:
+    """Тонкая обёртка над ``project_service``: одна упавшая не роняет остальные.
+
+    БД, которую остановила проверка эпохи (``_epoch_blocks``, ``SYNC-106``),
+    не мигрируется: строка отчёта с ошибкой, схема и операции на месте.
+    """
+    chosen = cfg.list_projects() if projects is None else _entries(cfg, projects)
+    blocked = _epoch_blocks(cfg, [entry for entry in chosen if entry is not None])
+    if projects is None and not blocked:
         return project_service.migrate_registered_projects(cfg)
+    names = [entry.name for entry in cfg.list_projects()] if projects is None else projects
     results: list[MigrateResult] = []
-    for slug in projects:
-        entry = cfg.get_project(slug)
+    for slug, entry in zip(names, chosen, strict=True):
         if entry is None:
             results.append(
                 project_service.MigrateResult(
@@ -730,8 +751,138 @@ def _migrate(cfg: Config, projects: list[str] | None) -> list[MigrateResult]:
                 )
             )
             continue
+        url = db_url_for_entry(entry)
+        if url in blocked:
+            results.append(
+                project_service.MigrateResult(name=slug, db_url=url, ok=False, error=blocked[url])
+            )
+            continue
         results.append(project_service.migrate_entry(entry))
     return results
+
+
+def _entries(cfg: Config, projects: list[str]) -> list[ProjectEntry | None]:
+    return [cfg.get_project(slug) for slug in projects]
+
+
+# --------------------------------------------------------------------- #
+# Эпохи синхронизации (RFC 29 §3.6, CLO-032)                             #
+# --------------------------------------------------------------------- #
+
+
+def _epoch_blocks(cfg: Config, entries: list[ProjectEntry]) -> dict[str, str]:
+    """БД, миграцию которых держат незапушенные операции новой эпохи: ``{url: ошибка}``.
+
+    Миграция, открывающая эпоху (``sync_epochs.MIGRATIONS``), делает
+    операции старой схемы неприменимыми: накатить её поверх неупакованного
+    журнала — потерять его для remote. Поэтому фаза B останавливается с
+    ``SYNC-106``, если на этой БД есть проект с настроенным remote и
+    незапушенными операциями. Проект без remote не проверяется: его журнал
+    никуда не уезжает. Hub-БД проверяется по всем её проектам из реестра —
+    миграция общая, держит её любой.
+    """
+    remote_slugs = {entry.name for entry in cfg.list_projects() if cfg.project_remotes(entry.name)}
+    if not remote_slugs:
+        return {}
+    by_url: dict[str, list[str]] = {}
+    for entry in cfg.list_projects():
+        if entry.name in remote_slugs:
+            by_url.setdefault(db_url_for_entry(entry), []).append(entry.name)
+    blocked: dict[str, str] = {}
+    for url in dict.fromkeys(db_url_for_entry(entry) for entry in entries):
+        slugs = by_url.get(url)
+        if not slugs:
+            continue
+        error = _epoch_block(url, slugs)
+        if error is not None:
+            blocked[url] = error
+    return blocked
+
+
+def _epoch_block(url: str, slugs: list[str]) -> str | None:
+    """Текст ``SYNC-106`` для БД ``url`` или ``None`` — миграции ничто не мешает.
+
+    Чтение — сырым SQL: схема БД старше кода, ORM-модели на ней не годятся.
+
+    Не читается — **держим** (fail closed): миграция, открывающая эпоху,
+    поверх непрочитанного журнала унесла бы незапушенные операции, а проверить
+    это нечем. Флага «катить без проверки» нет намеренно; ``--skip-migrate``
+    пропускает фазу B целиком. URL в лог и отчёт не попадает: у hub-БД в нём
+    пароль, а текст исключения SQLAlchemy повторяет URL и параметры — пишется
+    только имя класса исключения.
+    """
+    path = sqlite_file_path(url)
+    if path is not None and not path.exists():
+        return None
+    try:
+        engine = create_engine(url, future=True)
+    except (SQLAlchemyError, ImportError) as exc:
+        return _unreadable(url, slugs, exc)
+    try:
+        with engine.connect() as conn:
+            tables = set(sa_inspect(conn).get_table_names())
+            if "alembic_version" not in tables or "sync_op" not in tables:
+                return None
+            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            opened = sync_epochs.epochs_opened_between(
+                None if current is None else str(current), sync_epochs.code_head()
+            )
+            if not opened:
+                return None
+            pending = {slug: _pending_ops(conn, slug) for slug in slugs}
+    except (SQLAlchemyError, OSError) as exc:
+        return _unreadable(url, slugs, exc)
+    finally:
+        engine.dispose()
+    waiting = {slug: n for slug, n in pending.items() if n}
+    if not waiting:
+        return None
+    parts = "; ".join(
+        f"{slug}: {sync_epochs_svc.pending_phrase(n)} — сначала cod-doc push -p {slug}"
+        for slug, n in sorted(waiting.items())
+    )
+    first = sorted(waiting)[0]
+    return str(
+        PendingOpsError(
+            f"{parts}. Миграция {opened[0]} открывает эпоху синхронизации: операции "
+            "старой схемы после неё не уедут (RFC 29 §3.6). Push — сборкой, на которой "
+            "операции записаны (после свапа рантайма — cod-doc runtime rollback); "
+            f"или выгрузить их: cod-doc sync export-pending -p {first}. Затем cod-doc update"
+        )
+    )
+
+
+def _masked(url: str) -> str:
+    """URL без пароля — для лога."""
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except ArgumentError:
+        return "<неразборчивый URL>"
+
+
+def _unreadable(url: str, slugs: list[str], exc: BaseException) -> str:
+    """``SYNC-106`` для БД, которую проверка эпохи не прочитала (fail closed)."""
+    log.warning("проверка эпохи: БД %s не прочитана (%s)", _masked(url), type(exc).__name__)
+    names = ", ".join(sorted(slugs))
+    return str(
+        PendingOpsError(
+            f"проверка эпохи не прочитала БД проектов {names} ({type(exc).__name__}) — "
+            "миграция остановлена: незапушенные операции нельзя проверить, а миграция, "
+            "открывающая эпоху, унесла бы их (RFC 29 §3.6). Почини доступ к БД и "
+            "повтори cod-doc update; --skip-migrate пропускает миграции целиком"
+        )
+    )
+
+
+def _pending_ops(conn: Connection, slug: str) -> int:
+    count = conn.execute(
+        text(
+            "SELECT count(*) FROM sync_op JOIN project ON sync_op.project_id = project.row_id "
+            "WHERE project.slug = :slug AND sync_op.changeset IS NULL"
+        ),
+        {"slug": slug},
+    ).scalar()
+    return int(count or 0)
 
 
 def _services_phase(

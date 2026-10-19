@@ -393,3 +393,44 @@ def _doc_uid(rep: r.Replica) -> str:
 
 def r_project_ref(session: Session) -> _local.ProjectRef:
     return _local.project_ref(session, r.SLUG)
+
+
+# --- export-pending (CLO-032): тот же гейт, что у push ---------------------------------
+
+
+def test_export_pending_of_a_document_raised_before_push_carries_none_of_it(
+    pair: tuple, tmp_path: Path
+) -> None:
+    """Экспорт берёт хвост через ``gate.shippable_tail`` + ``check_ops``: в файле
+    нет ни uid restricted-документа и его секций, ни их текстов."""
+    from cod_doc.services.sync_service import epochs
+
+    a, _b, _store = pair
+    r.make_task(a, "DEM-001")  # законная операция — экспорт не пустой
+    _raised_before_push(a)
+    uids = _doc_uids(a)
+    out = tmp_path / "pending.json"
+
+    count = epochs.export_pending(a.sf, r.SLUG, path=out)
+
+    blob = out.read_text(encoding="utf-8")
+    assert count > 0
+    assert '"task"' in blob
+    leaked = [u for u in uids if u in blob]
+    leaked += [t for t in [*SECTIONS.values(), "секрет один, правка"] if t in blob]
+    assert leaked == []
+
+
+def test_export_pending_trips_when_the_gate_lets_a_restricted_op_through(
+    pair: tuple, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Растяжка стоит и в экспорте: пропущенная гейтом restricted-операция — SYNC-001, файла нет."""
+    from cod_doc.services.sync_service import epochs
+
+    a, _b, _store = pair
+    _raised_before_push(a)
+    monkeypatch.setattr(gate, "shippable_tail", _local.pending_ops)  # гейт «сломан»
+    out = tmp_path / "pending.json"
+    with pytest.raises(gate.RestrictedLeakError, match="SYNC-001"):
+        epochs.export_pending(a.sf, r.SLUG, path=out)
+    assert not out.exists()

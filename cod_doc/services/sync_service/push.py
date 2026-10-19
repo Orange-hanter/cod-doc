@@ -41,6 +41,14 @@ push с настроенным remote аренда добирается впро
 **Снапшот** (CLO-029). После фиксации push пишет снапшот головы, если на
 remote его ещё нет или с последнего набралось ``snapshot.SNAPSHOT_EVERY``
 операций журнала (``snapshot.write_quietly``); сбой снапшота push не отменяет.
+
+**Эпоха** (CLO-032). Перед обменом ``meta.json`` сверяется с эпохой и схемой
+changeset'а (``epochs.check_push``): эпоха remote новее — ``SYNC-105``, схема
+старше ``schema_min`` — ``SYNC-104``. Эпоха реплики новее — push проходит,
+а снапшот после него пишется вне каденции и поднимает ``meta.epoch`` и
+``schema_min`` (``snapshot.write_if_due``); событие ``sync.epoch_opened``.
+Не записался снапшот эпохи — эпоха не открыта, и следующий push попробует
+снова: условие (эпоха реплики новее ``meta.epoch``) никуда не делось.
 """
 
 from __future__ import annotations
@@ -54,7 +62,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, checkout_lease, digest, gate, leases
+from cod_doc.services.sync_service import _local, checkout_lease, digest, epochs, gate, leases
 from cod_doc.services.sync_service.changeset import Changeset, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, PushRejectedError
 
@@ -80,6 +88,8 @@ class PushResult:
     pinned: dict[str, str] = field(default_factory=dict)
     #: Снапшот, записанный этим push'ем (sha головы), или ``None`` (CLO-029).
     snapshot: str | None = None
+    #: Эпоха, которую открыл этот push (снапшот эпохи и ``meta.json``), CLO-032.
+    epoch_opened: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +117,7 @@ def _pack(
             parents=[head] if head else [],
             replica=self_replica(session, ref.row_id),
             actor=author,
-            epoch=_local.EPOCH,
+            epoch=_local.epoch(session),
             schema_head=_local.schema_head(session),
             hlc_max=max(op.hlc for op in ops),
             # Состояние реплики сейчас = родитель + хвост = состояние после
@@ -126,6 +136,37 @@ def _pack(
         op_ids=tuple(op.op_id for op in cs.ops),
     )
     return ref, head, packed
+
+
+def _check_epoch(store: RemoteStore, packed: _Packed) -> None:
+    """``meta.json`` remote против эпохи и схемы changeset'а (§3.6, CLO-032).
+
+    Читается на каждой попытке: между повторами эпоху мог открыть другой push.
+    """
+    cs = packed.changeset
+    epochs.check_push(
+        epochs.read_meta(store, packed.project.uid),
+        project=packed.project.slug,
+        epoch=cs.epoch,
+        schema_head=cs.schema_head,
+        pending=len(packed.op_ids),
+    )
+
+
+def _emit_epoch_opened(
+    sf: sessionmaker[Session], project: _local.ProjectRef, epoch: str, snap: str, author: str
+) -> None:
+    with transactional(sf) as session:
+        activity_service.emit_for_write(
+            session,
+            project.row_id,
+            "sync.epoch_opened",
+            author,
+            scope_kind="project",
+            scope_id=project.slug,
+            payload={"epoch": epoch, "snapshot": snap},
+            summary=f"эпоха {epoch} открыта на remote, снапшот {snap[:12]}",
+        )
 
 
 def _exchange(store: RemoteStore, packed: _Packed) -> RefValue | None:
@@ -206,12 +247,17 @@ def push(
             leases.refill_quietly(sf, project, store)
             checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
             return PushResult(changesets=[], ops=0, head=head, retries=retries, pinned=pinned)
+        _check_epoch(store, packed)
         new_ref = _exchange(store, packed)
         if new_ref is not None:
             _commit(sf, packed, new_ref, remote, author)
-            snap = snapshot.write_quietly(
+            written = snapshot.write_quietly(
                 sf, project, store, head=packed.sha, digest_hex=packed.changeset.digest
             )
+            snap = None if written is None else written.sha
+            opened = None if written is None else written.epoch_opened
+            if written is not None and opened is not None:
+                _emit_epoch_opened(sf, packed.project, opened, written.sha, author)
             leases.refill_quietly(sf, project, store)
             checkout_lease.reconcile_quietly(sf, project, store, remote)  # CLO-031
             return PushResult(
@@ -221,6 +267,7 @@ def push(
                 retries=retries,
                 pinned=pinned,
                 snapshot=snap,
+                epoch_opened=opened,
             )
         if retries >= max_retries:
             suffix = f"; повторов: {max_retries}" if max_retries else ""

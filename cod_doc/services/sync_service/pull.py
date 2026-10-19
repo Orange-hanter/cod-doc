@@ -6,6 +6,9 @@ SYNC-102), потом каждый применяется в своей тран
 (``apply.apply_changeset``). Что проверяется до первой записи, чтобы pull
 не оставил БД наполовину:
 
+0. **Эпоха** (CLO-032). ``meta.json["epoch"]`` новее эпохи схемы реплики —
+   ``SYNC-105`` до скачивания: changeset'ы новой эпохи на старой схеме не
+   применяются; хвост старой эпохи — ``export-pending``, затем ``update``.
 1. **Схема** (SCN-085, Q-012). Changeset с ``schema_head`` новее головы
    миграций этой БД — ``SYNC-104`` «remote на схеме X, у вас Y — cod-doc
    update»; не применяется ни один changeset этого pull, даже более старые.
@@ -57,6 +60,8 @@ from cod_doc.services.sync_service import (
     apply,
     checkout_lease,
     conflicts,
+    digest,
+    epochs,
     leases,
     markers,
     merge,
@@ -229,6 +234,17 @@ def fetch(
 # --- проверки до записи -----------------------------------------------------------
 
 
+def _check_epoch(sf: sessionmaker[Session], project: str, store: RemoteStore) -> None:
+    """Эпоха remote новее эпохи реплики — ``SYNC-105`` до скачивания (§3.6, CLO-032)."""
+    with transactional(sf, commit=False) as session:
+        ref = _local.project_ref(session, project)
+        epoch = _local.epoch(session)
+        pending = digest.pending_count(session, ref.row_id)
+    epochs.check_pull(
+        epochs.read_meta(store, ref.uid), project=project, epoch=epoch, pending=pending
+    )
+
+
 def _check_schema(sf: sessionmaker[Session], fetched: _Fetched) -> None:
     with transactional(sf, commit=False) as session:
         local = _local.schema_head(session)
@@ -381,6 +397,7 @@ def pull(
 ) -> PullResult:
     """Fetch + merge: чужие changeset'ы поверх своей головы, хвост слит по §3.7 (§10.6)."""
     store = store if store is not None else _local.open_store(project, remote)
+    _check_epoch(sf, project, store)
     fetched = _fetch(sf, project, store)
     ref = fetched.project
     if not fetched.changesets:
