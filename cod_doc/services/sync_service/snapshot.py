@@ -15,9 +15,7 @@ changeset'ов (``clone``), вместо того чтобы проигрыва�
    ним в снапшот не попадает — тот же гейт, что у захвата и дайджеста.
    Таблицы — в порядке загрузки (``load_order``: родитель раньше ребёнка),
    строки таблицы — по первичному ключу;
-3. ``["alias", {...}]`` — алиасы склейки (``reason = merged``, CLO-023)
-   живых строк;
-4. ``["end", {"lines", "sha256"}]`` — число и sha256 всех строк до неё:
+3. ``["end", {"lines", "sha256"}]`` — число и sha256 всех строк до неё:
    обрезанный поток не загрузится.
 
 Слова «SQLite» из §3.5 нет намеренно: файл SQLite с чужого remote —
@@ -34,9 +32,12 @@ changeset'ов (``clone``), вместо того чтобы проигрыва�
   адресу (``decode`` сверяет sha), штампы — ``apply.check_clock``. Журнал
   клона тот же, что у реплики, проигравшей всю историю, а «применённым»
   помечается только то, что достижимо от проверенной головы;
-- алиас принимается, только если выживший uid — загруженная строка той же
-  таблицы, проигравший — не живая строка и встречается в проверенном журнале
-  этой таблицы.
+- алиасы склейки (``entity_alias``, ``reason = merged``) клон выводит сам из
+  проверенного журнала (``clone_aliases``, CLO-052) — так же, как их завела бы
+  обычная реплика, получившая ту же историю pull'ом. Снапшот их не пишет;
+  строка ``["alias", …]`` (снапшот, собранный до CLO-052, или подлог)
+  разбирается как секция формата, но пропускается с предупреждением в лог:
+  авторитетна история, а не сборщик.
 
 **Потолки.** Сжатый снапшот — ``MAX_SNAPSHOT_BYTES`` (1 ГиБ, как у
 транспорта); сборка останавливается, как только его превысит. Распаковка
@@ -73,22 +74,25 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, cast
 
-from sqlalchemy import func, insert, inspect, select, update
+from sqlalchemy import func, insert, inspect, select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import Hlc, clock_for, self_replica
-from cod_doc.infra.models import (
-    Base,
-    EntityAliasModel,
-    ProjectModel,
-    SyncOpModel,
-)
+from cod_doc.infra.models import Base, ProjectModel, SyncOpModel
 from cod_doc.infra.remote.base import META_KEY, SnapshotRef, snapshot_key
 from cod_doc.infra.remote.file import MAX_SNAPSHOT_BYTES
-from cod_doc.services.sync_service import _local, apply, digest, epochs, gate, journal
+from cod_doc.services.sync_service import (
+    _local,
+    apply,
+    clone_aliases,
+    digest,
+    epochs,
+    gate,
+    journal,
+)
 from cod_doc.services.sync_service._local import MAX_PARENTS
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import (
@@ -150,16 +154,13 @@ _HEADER: Final = "header"
 _ROW: Final = "row"
 _ALIAS: Final = "alias"
 _END: Final = "end"
-#: Порядок секций потока: строки, алиасы.
+#: Порядок секций потока: строки, алиасы. Алиасы писал только сборщик до CLO-052;
+#: загрузка их пропускает — клон выводит алиасы из истории (``clone_aliases``).
 _SECTIONS: Final = (_ROW, _ALIAS)
 _HEADER_KEYS: Final = frozenset({"v", "kind", "project", "head", "epoch", "schema_head", "digest"})
-_ALIAS_KEYS: Final = frozenset({"entity_kind", "alias", "uid", "reason"})
-#: Только склейка: ``pinned`` (провизорный ID → постоянный) реплику не покидает.
-_MERGED: Final = "merged"
 _PROJECT: Final = "project"
 _REVISION: Final = "revision"
 _ROW_LEN: Final = 4
-_PAIR_LEN: Final = 2
 #: ``meta.json``: указатель на последний снапшот.
 _META_SNAPSHOT: Final = "snapshot"
 
@@ -426,39 +427,14 @@ def build(session: Session, project: _local.ProjectRef, *, head: str, digest_hex
             "digest": digest_hex,
         }
     )
-    # Строки снапшота: по ним отбираются алиасы. Память — пара (таблица, uid)
-    # на строку проекта, не сами строки.
-    shipped: set[tuple[str, str]] = set()
     # Растяжка (CLO-033): shipped_rows судит по текущим меткам, но строка
     # restricted-документа в снапшоте — SYNC-001, а не запись на remote.
     held = gate.restricted(session, project.row_id).uids
     for table, uid, fields_json in cap.shipped_rows(session, project.row_id, load_order()):
         fields = json.loads(fields_json)
         gate.check_row(held, table, uid, fields)
-        shipped.add((table, uid))
         writer.line([_ROW, table, uid, to_wire(table, fields)])
-    aliases = session.scalars(
-        select(EntityAliasModel)
-        .where(EntityAliasModel.project_id == project.row_id)
-        .order_by(EntityAliasModel.entity_kind, EntityAliasModel.alias)
-    )
-    for alias in aliases:
-        if (
-            alias.reason == _MERGED
-            and (alias.entity_kind, alias.uid) in shipped
-            and (alias.entity_kind, alias.alias) not in shipped
-        ):
-            writer.line(
-                [
-                    _ALIAS,
-                    {
-                        "entity_kind": alias.entity_kind,
-                        "alias": alias.alias,
-                        "uid": alias.uid,
-                        "reason": alias.reason,
-                    },
-                ]
-            )
+    # Алиасов склейки нет (CLO-052): дайджест их не покрывает, клон выводит их из истории.
     return writer.finish()
 
 
@@ -480,6 +456,7 @@ class _Loader:
     table_pos: int = 0
     rows: int = 0
     seen_project: bool = False
+    ignored_aliases: int = 0
 
     def enter(self, kind: str) -> None:
         pos = _SECTIONS.index(kind)
@@ -540,54 +517,9 @@ class _Loader:
             setattr(obj, info.attr(column), value)
         apply.finish_row(self.session, self.project, info, obj, uid, fields)
 
-    def alias(self, item: list[object]) -> None:
-        """Алиас склейки — только между загруженной строкой и uid из проверенного журнала."""
-        body = item[1] if len(item) == _PAIR_LEN else None
-        if not isinstance(body, dict) or set(body) != _ALIAS_KEYS:
-            raise _bad(f"строка alias: нужны поля {sorted(_ALIAS_KEYS)}")
-        kind, alias, uid = body["entity_kind"], body["alias"], body["uid"]
-        if (
-            body["reason"] != _MERGED
-            or not isinstance(kind, str)
-            or kind not in reg.UID_TABLES
-            or kind not in cap.CAPTURED_TABLES
-        ):
-            raise _bad(f"алиас {body!r}: не склейка или таблица без uid")
-        alias, uid = _text(alias, "alias.alias"), _text(uid, "alias.uid")
-        tbl = Base.metadata.tables[kind]
-        live = set(self.session.scalars(select(tbl.c.uid).where(tbl.c.uid.in_([alias, uid]))))
-        if uid not in live or alias in live:
-            raise _bad(f"алиас {kind} {alias} → {uid}: выживший не загружен или проигравший жив")
-        seen = self.session.scalar(
-            select(func.count())
-            .select_from(SyncOpModel)
-            .where(
-                SyncOpModel.project_id == self.project.row_id,
-                SyncOpModel.entity_kind == kind,
-                SyncOpModel.entity_uid == alias,
-            )
-        )
-        if not seen:
-            raise _bad(f"алиас {kind} {alias}: такого uid нет в проверенной истории")
-        self.session.add(
-            EntityAliasModel(
-                project_id=self.project.row_id,
-                entity_kind=kind,
-                alias=alias,
-                uid=uid,
-                reason=_MERGED,
-            )
-        )
-        # Журнал проигравшего — история выжившего, как у _record_ops и склейки (CLO-023).
-        self.session.execute(
-            update(SyncOpModel)
-            .where(
-                SyncOpModel.project_id == self.project.row_id,
-                SyncOpModel.entity_kind == kind,
-                SyncOpModel.entity_uid == alias,
-            )
-            .values(entity_uid=uid)
-        )
+    def alias(self) -> None:
+        """Строка ``alias`` — секция формата, но не данные: алиасы выводятся из истории."""
+        self.ignored_aliases += 1
 
 
 def _dumps(payload: Mapping[str, object]) -> str:
@@ -609,9 +541,14 @@ def _first_pass(loader: _Loader, data: bytes) -> None:
         elif not loader.seen_project:
             raise _bad("нет строки project")
         else:
-            loader.alias(item)
+            loader.alias()
     if not loader.seen_project:
         raise _bad("нет строки project")
+    if loader.ignored_aliases:
+        logger.warning(
+            "снапшот: %d строк alias пропущено — алиасы склейки клон выводит из истории",
+            loader.ignored_aliases,
+        )
 
 
 def _second_pass(loader: _Loader, data: bytes) -> None:
@@ -679,8 +616,9 @@ def load_history(
     принадлежит проекту, штампы — ``apply.check_clock``; «применённым» в индексе
     становится только достижимое от ``head``. Пишется пачками по ``_BATCH``
     объектов, сеть — между транзакциями; сбой оставляет недособранную БД, которую
-    убирает clone. Операции — как у pull (``apply._record_ops``), алиасы склейки
-    накладывает потом загрузка снапшота.
+    убирает clone. Операции пишутся с uid из changeset'ов; алиасы склейки и
+    перенос журнала проигравших на выживших делает потом загрузка снапшота
+    (``clone_aliases``).
     """
     with transactional(sf, commit=False) as session:
         me = self_replica(session, project.row_id)
@@ -747,7 +685,8 @@ def load(
     changeset ``head``, прочитанный с remote по адресу: его дайджест — эталон.
     Любое расхождение — ``SYNC-102`` до коммита. ``loader_cls`` — загрузчик
     строк: отставшая реплика (CLO-050, ``epoch_rebase.Rebaser``) кладёт снапшот поверх своих
-    строк, а не в пустой проект; проверки те же.
+    строк, а не в пустой проект; проверки те же. Алиасы склейки в обоих случаях выводятся
+    из проверенного журнала (``clone_aliases``, CLO-052), строки ``alias`` снапшота не читаются.
     """
     header = _header(next(_lines(data), None))
     if header.project != project.uid or header.head != head:
@@ -766,6 +705,7 @@ def load(
             _first_pass(loader, data)
             _second_pass(loader, data)
             apply.rebuild_derived(session, project, loader.touched)
+            clone_aliases.apply_derived(session, project, clone_aliases.derive(session, project))
     except IntegrityError as exc:
         raise _bad(f"строки нарушают ограничения схемы: {exc.orig}") from exc
     _local.set_local_head(session, project.row_id, head)

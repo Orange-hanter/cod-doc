@@ -136,40 +136,6 @@ def _applied_shas(session: Session, project_id: int) -> set[str]:
     )
 
 
-def _topological(found: dict[str, Changeset]) -> list[str]:
-    """Порядок применения: каждый changeset после своих (скачанных) родителей.
-
-    Адрес — sha содержимого, поэтому настоящий цикл невозможен; подделанный
-    объект, который его всё же изображает, — SYNC-102.
-    """
-    order: list[str] = []
-    done: set[str] = set()
-    for start in sorted(found):
-        visiting: set[str] = set()
-        stack: list[tuple[str, bool]] = [(start, False)]
-        while stack:
-            sha, expanded = stack.pop()
-            if sha in done:
-                continue
-            if expanded:
-                visiting.discard(sha)
-                done.add(sha)
-                order.append(sha)
-                continue
-            if sha in visiting:
-                msg = f"объект {sha}: цикл в parents"
-                raise ObjectMissingError(msg)
-            visiting.add(sha)
-            stack.append((sha, True))
-            for parent in found[sha].parents:
-                if parent in visiting:
-                    msg = f"объект {sha}: цикл в parents через {parent}"
-                    raise ObjectMissingError(msg)
-                if parent in found and parent not in done:
-                    stack.append((parent, False))
-    return order
-
-
 def _download(
     store: RemoteStore, project: _local.ProjectRef, top: str, applied: set[str]
 ) -> dict[str, Changeset]:
@@ -216,7 +182,14 @@ def _fetch(sf: sessionmaker[Session], project: str, store: RemoteStore) -> _Fetc
     if head is not None and not any(head in cs.parents for cs in found.values()):
         msg = f"голова реплики {head[:12]} не предок refs/main {remote_ref.sha[:12]}"
         raise MergeRequiredError(msg, task=_REWRITTEN)
-    return _Fetched(ref, head, remote_ref, tuple((s, found[s]) for s in _topological(found)))
+    return _Fetched(
+        ref,
+        head,
+        remote_ref,
+        tuple(
+            (s, found[s]) for s in _local.topological({s: cs.parents for s, cs in found.items()})
+        ),
+    )
 
 
 def fetch(
@@ -289,7 +262,9 @@ def _rebase(
         raise MergeRequiredError(msg, task=_REWRITTEN)
     for cs in found.values():
         apply.check_clock(cs, self_replica_uid=me)
-    history = [(sha, found[sha]) for sha in _topological(found)]
+    history = [
+        (sha, found[sha]) for sha in _local.topological({s: cs.parents for s, cs in found.items()})
+    ]
     with transactional(sf) as session:
         if not _local.cas_local_head(session, ref.row_id, head, tgt.sha):
             session.rollback()

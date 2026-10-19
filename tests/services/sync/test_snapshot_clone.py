@@ -530,21 +530,18 @@ def _forged_changeset(lines: list[object]) -> list[object]:
     return _after_last(lines, ("row", "op", "changeset"), ["changeset", entry])
 
 
-def _forged_alias(lines: list[object]) -> list[object]:
-    """Подложенный алиас: операции над выдуманным uid ушли бы в живую задачу."""
-    alias = {"entity_kind": "task", "alias": _FAKE_UID, "uid": _task_uid(lines), "reason": "merged"}
-    return [*lines, ["alias", alias]]
-
-
 @pytest.mark.parametrize(
     "forge",
-    [_forged_op, _forged_changeset, _forged_alias],
-    ids=["op", "changeset-index", "alias"],
+    [_forged_op, _forged_changeset],
+    ids=["op", "changeset-index"],
 )
 def test_forged_history_in_a_snapshot_is_refused_and_nothing_is_registered(
     world: tuple[r.Replica, FileRemote], tmp_path: Path, forge: object
 ) -> None:
-    """Ревью CLO-029: журнал, индекс changeset'ов и алиасы снапшоту не доверяются.
+    """Ревью CLO-029: журнал и индекс changeset'ов снапшоту не доверяются.
+
+    Подложенная строка алиаса не отвергается, а пропускается: алиасы клон выводит
+    из истории (CLO-052, ``test_clone_aliases.py``).
 
     Строки и дайджест у подлога верные — состояние совпадает с головой; врут только
     секции, которые дайджест не покрывает. Clone обязан отказать (SYNC-102), убрать
@@ -636,10 +633,10 @@ def test_snapshot_carries_no_restricted_rows_and_no_withheld_columns(
     assert len(scenarios) == 1
     withheld = {"doc_key", "document_id", "section_anchor", "doc_content_hash", "group_key"}
     assert not withheld & set(scenarios[0])
-    # Журнал и индекс changeset'ов снапшот не несёт: дайджест их не покрывает,
-    # клон собирает их из changeset'ов по адресам.
+    # Журнал, индекс changeset'ов и алиасы снапшот не несёт: дайджест их не покрывает,
+    # клон собирает их из changeset'ов по адресам (алиасы — CLO-052).
     kinds = {ln[0] for ln in lines[1:] if isinstance(ln, list)}
-    assert kinds <= {"row", "alias"}
+    assert kinds == {"row"}
     header = lines[0]
     assert isinstance(header, dict)
     assert header["kind"] == "header"
@@ -672,3 +669,33 @@ def test_snapshot_bytes_round_trip_through_the_transport(
     header, project_fields = snapshot.peek(data)
     assert header.head == ref.sha
     assert project_fields["slug"] == r.SLUG
+
+
+def test_clone_opens_the_remote_with_credentials_from_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLO-051: ``clone s3://…`` берёт креды из ``~/.cod-doc/credentials``, как ``open_store``.
+
+    Без них S3-транспорт клона шёл по цепочке AWS мимо файла кредов.
+    """
+    from cod_doc.infra import credentials
+    from cod_doc.infra.remote import base
+
+    path = credentials.credentials_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('s3://bucket:\n  access_key: "AK"\n  secret_key: "SK"\n')
+    path.chmod(0o600)
+    seen: list[tuple[str, object]] = []
+
+    class _StopError(Exception):
+        pass
+
+    def fake(url: str, *, credentials: object = None) -> object:
+        seen.append((url, credentials))
+        raise _StopError
+
+    monkeypatch.setattr(base, "open_remote", fake)
+    with pytest.raises(_StopError):
+        clone.clone("s3://bucket/pre/u1", root=tmp_path / "x", author=r.AUTHOR)
+    assert seen == [("s3://bucket/pre", {"access_key": "AK", "secret_key": "SK"})]
+    assert not (tmp_path / "x").exists()
