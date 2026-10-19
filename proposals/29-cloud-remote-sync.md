@@ -422,11 +422,42 @@ sequenceDiagram
   `{task_id, agent, replica, acquired_at, ttl_minutes}`, держатель — пара
   (агент, реплика); снятие — `delete_json` по etag после коммита (хук сессии),
   откат транзакции checkout снимает аренду, взятую этим вызовом. Чужую аренду
-  снимают только `release_stale` и `release --force`, и только истёкшую по её
-  `ttl_minutes`; checkout истёкшую чужую не перехватывает. Провизорный замок —
+  снимают `release_stale` и `release --force`, и только истёкшую по её
+  `ttl_minutes`. Провизорный замок —
   отметка `sync_ref("@checkout", task_uid)`; push/pull берёт по ней аренду,
   занятую — оставляет до разрешения `double_checkout`, которое переписывает
   аренду на выбранного держателя.
+  **Осиротевшая аренда (CLO-048).** Реплика взяла аренду и упала или потеряла
+  сеть, не отправив операцию checkout: другие реплики о замке не знают, их
+  `release_stale` ищет устаревшие замки в своей БД и такую аренду не находит.
+  Решение: **checkout перехватывает истёкшую чужую аренду**, если в его
+  локальной БД задача свободна. Перехват — `cas_json` с `expected_etag`
+  прочитанной истёкшей версии (на S3 — `If-Match`), поэтому из двух реплик,
+  перехватывающих одну аренду, проходит одна; вторая перечитывает и получает
+  `SYNC-108` уже от победителя. Листинг для этого не нужен, и перехват
+  закрывает случай, когда задача не известна ни одному `release_stale`.
+  Перехват пишет событие `task.checkout_lease_taken_over` с прежним держателем.
+  Замок, известный локально (операция держателя уехала и пришла pull'ом),
+  перехвату не подлежит: локальная проверка отказывает до сети, а
+  идемпотентный повтор под тем же именем агента получает `SYNC-108`.
+  Аренда истекла, если `acquired_at + ttl_minutes + CLOCK_SKEW_ALLOWANCE`
+  (2 мин) раньше локальных часов: допуск покрывает расхождение часов реплик,
+  живую аренду с недоистёкшим сроком не перехватывает никто. Дополнительно
+  `release_stale` после коммита проходит листингом по `leases/checkout/`
+  (`RemoteStore.list_prefix`, §10.5) и снимает истёкшие аренды по etag
+  прочитанной версии, в том числе аренды задач, которых в этой БД нет.
+  Продления аренды нет: если работа идёт дольше `ttl_minutes`, а операция
+  держателя ещё не уехала, другая реплика может перехватить аренду, и
+  двойной захват всплывёт при pull как `double_checkout` (§3.7). Это та же
+  цена, что у `release_stale`, который снимает локальные замки старше TTL.
+  Тело аренды пишут чужие машины, поэтому оно проверяется: строки
+  `task_id`/`agent`/`replica`/`acquired_at` длиной 1…256 символов,
+  `ttl_minutes` от 1 до 10080 (неделя), тело целиком ограничено потолком
+  транспорта `MAX_JSON_BYTES`. Аренда не по форме считается занятой
+  (`CheckoutLeaseMalformedError`, `SYNC-108`) с подсказкой
+  `cod-doc task release <id> --force`, которая снимает её и при отсутствии
+  локального замка. Если тело вообще не JSON, etag для условного удаления
+  получить нельзя, и подсказка предлагает удалить ключ на remote вручную.
 - **Пересборка derived** после pull: `link_sync` по затронутым секциям, FTS по
   затронутым документам, routine-находки — при следующем прогоне рутины.
 
@@ -1006,6 +1037,11 @@ class RemoteStore(Protocol):
     def cas_json(self, project_uid: str, key: str, expected_etag: str | None,
                  body: dict) -> str | None: ...   # leases/*, meta.json
     def delete_json(self, project_uid: str, key: str, expected_etag: str) -> bool: ...
+    def list_prefix(self, project_uid: str, prefix: str) -> list[str]: ...
+        # CLO-048: ключи JSON прямо под "leases/…/" (без подкаталогов, надгробие S3 — не ключ),
+        # по возрастанию; больше MAX_LIST_KEYS (100 000) — SYNC-101.
+        # FileRemote: scandir под тем же спуском O_NOFOLLOW; S3: ListObjectsV2 c Delimiter="/",
+        # не больше 100 страниц
     def latest_snapshot(self, project_uid: str) -> SnapshotRef | None: ...
     def put_snapshot(self, project_uid: str, ref: SnapshotRef, data: bytes) -> None: ...
 
@@ -1145,7 +1181,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `SYNC-105` | эпоха сменилась при незапушенных операциях | `EpochPassedError(RuntimeError)` | ValueError / 1 / — |
 | `SYNC-106` | `cod-doc update` при незапушенных операциях | `PendingOpsError(RuntimeError)` | — / 1 / — |
 | `SYNC-107` | аренда номеров исчерпана офлайн (не ошибка: выдаётся провизорный ID, код — в предупреждении) | — | warning |
-| `SYNC-108` | замок checkout занят | `CheckoutLeaseHeldError(CheckoutConflictError)` | ValueError / 1 / 409 |
+| `SYNC-108` | замок checkout занят; аренда не по форме — тоже занят (CLO-048) | `CheckoutLeaseHeldError(CheckoutConflictError)`; не по форме — `CheckoutLeaseMalformedError(CheckoutLeaseHeldError)` | ValueError / 1 / 409 |
 | `SYNC-109` | remote недоступен для checkout без `--offline` | `CheckoutLeaseUnavailableError(RemoteUnavailableError)` | ValueError / 1 / — |
 | `SYNC-110` | неизвестная схема URL / remote не настроен | `RemoteConfigError(ValueError)` | ValueError / 1 / — |
 | `SYNC-201` | нет или неверный токен | `RemoteAuthError(PermissionError)` | ValueError / 1 / 401 |
@@ -1170,6 +1206,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `plan_section.relettered` | перебуквление | `plan` / `{from, to, section_uid}` |
 | `sync.epoch_opened` | первый push новой эпохи | `project` / `{epoch, snapshot}` |
 | `task.checkout_leased` / `task.checkout_lease_released` | аренда замка | `task` / `{remote, offline}` |
+| `task.checkout_lease_taken_over` | checkout перехватил истёкшую чужую аренду (CLO-048) | `task` / `{remote, previous_agent, previous_replica, previous_acquired_at, previous_ttl_minutes}` |
 | `auth.denied` (сервер) | 401/403/429 | `project` / `{token_label?, ip, path, code}` |
 
 Применение чужих операций **не** порождает событий ни для каждой операции, ни

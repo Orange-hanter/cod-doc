@@ -42,6 +42,7 @@ __all__ = [
     "RemoteStore",
     "SnapshotRef",
     "check_json_key",
+    "check_json_prefix",
     "check_name",
     "check_sha",
     "check_snapshot",
@@ -57,6 +58,8 @@ _NAME_RE: Final = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 _SHA_RE: Final = re.compile(r"[0-9a-f]{64}")
 META_KEY: Final = "meta.json"
 LEASES_PREFIX: Final = "leases/"
+#: Потолок ``list_prefix``: больше ключей под одним префиксом — непригодный remote.
+MAX_LIST_KEYS: Final = 100_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +110,14 @@ class RemoteStore(Protocol):
 
     def delete_json(self, project_uid: str, key: str, expected_etag: str) -> bool: ...
 
+    def list_prefix(self, project_uid: str, prefix: str) -> list[str]:
+        """Ключи JSON-документов прямо под ``prefix`` (``leases/…/``), по возрастанию.
+
+        Без подкаталогов; удалённый документ (надгробие S3) — не ключ. Больше
+        ``MAX_LIST_KEYS`` ключей — ``RemoteUnavailableError`` (SYNC-101).
+        """
+        ...
+
     def latest_snapshot(self, project_uid: str) -> SnapshotRef | None:
         """Снапшот самой поздней эпохи, внутри эпохи — последний записанный."""
         ...
@@ -142,6 +153,21 @@ def check_json_key(key: str) -> tuple[str, ...]:
     parts = tuple(key.split("/"))
     for part in parts:
         check_name(part, f"JSON-ключ {key!r}")
+    return parts
+
+
+def check_json_prefix(prefix: str) -> tuple[str, ...]:
+    """Сегменты каталога JSON-документов для ``list_prefix``: ``leases/`` и глубже, с ``/`` в конце."""
+    if (
+        not isinstance(prefix, str)
+        or not prefix.startswith(LEASES_PREFIX)
+        or not prefix.endswith("/")
+    ):
+        msg = f"префикс {prefix!r}: нужен каталог {LEASES_PREFIX}… с / в конце"
+        raise ValueError(msg)
+    parts = tuple(prefix.removesuffix("/").split("/"))
+    for part in parts:
+        check_name(part, f"префикс {prefix!r}")
     return parts
 
 
