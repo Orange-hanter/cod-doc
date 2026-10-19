@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.infra.hlc import self_replica
-from cod_doc.infra.models import TaskModel
+from cod_doc.infra.models import ProjectModel, TaskModel
 from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services import activity_service
 from cod_doc.services.sync_service import checkout_lease
@@ -133,8 +133,9 @@ def checkout(
     # Строка без uid (до миграции 0049) на remote не адресуется — ADO-039.
     target = checkout_lease.remote_for(session, project_id) if m.uid else None
     lease: str | None = None
+    previous: checkout_lease.Holder | None = None
     if target is not None:
-        lease = _take_lease(
+        lease, previous = _take_lease(
             session, m, agent, target, offline=offline, idempotent=idempotent, now=now
         )
 
@@ -191,6 +192,8 @@ def checkout(
             payload={"remote": remote, "offline": lease == checkout_lease.OFFLINE},
             summary=f"Task {task_id}: замок на {remote} ({lease})",
         )
+        if previous is not None:
+            _emit_taken_over(session, m, agent, remote, previous)
 
     return CheckoutResult(
         task_id=task_id,
@@ -211,42 +214,76 @@ def _take_lease(
     offline: bool,
     idempotent: bool,
     now: datetime,
-) -> str:
-    """CLO-031: аренда до первой записи → ``"leased"`` или ``"offline"``.
+) -> tuple[str, checkout_lease.Holder | None]:
+    """CLO-031: аренда до первой записи → (``"leased"`` | ``"offline"``, перехваченная).
 
     Аренда, взятая этим вызовом, снимается, если транзакция откатится.
+    CLO-048: локально свободная задача перехватывает истёкшую чужую аренду —
+    это сирота реплики, чья операция checkout не уехала. Идемпотентный
+    повтор не перехватывает: замок в БД есть, его операция уже уехала.
     """
     slug, remote, project_uid = target
     task_uid = str(m.uid)
     marked = checkout_lease.is_marked(session, m.project_id, task_uid)
     if offline and (marked or not idempotent):
-        return checkout_lease.OFFLINE
+        return checkout_lease.OFFLINE, None
     holder = checkout_lease.Holder(
         task_id=m.task_id,
         agent=agent,
         replica=self_replica(session, m.project_id),
         acquired_at=m.checked_out_at if idempotent and m.checked_out_at else now,
     )
-    _, etag, created = checkout_lease.claim_for_checkout(
-        slug, remote, project_uid, task_uid, holder
+    got = checkout_lease.claim_for_checkout(
+        slug, remote, project_uid, task_uid, holder, take_expired=not idempotent
     )
-    if created:
+    if got.created:
         checkout_lease.schedule_rollback_drop(
-            session, slug, remote, project_uid, task_uid, holder, etag
+            session, slug, remote, project_uid, task_uid, holder, got.etag
         )
     if marked:
         checkout_lease.unmark(session, m.project_id, task_uid)
-    return checkout_lease.LEASED
+    return checkout_lease.LEASED, got.previous
+
+
+def _emit_taken_over(
+    session: Session, m: TaskModel, agent: str, remote: str, previous: checkout_lease.Holder
+) -> None:
+    """CLO-048: событие перехвата истёкшей аренды — с прежним держателем."""
+    activity_service.emit_for_write(
+        session,
+        m.project_id,
+        "task.checkout_lease_taken_over",
+        agent,
+        scope_kind="task",
+        scope_id=m.task_id,
+        payload={
+            "remote": remote,
+            "previous_agent": previous.agent,
+            "previous_replica": previous.replica,
+            "previous_acquired_at": previous.acquired_at.isoformat(),
+            "previous_ttl_minutes": previous.ttl_minutes,
+        },
+        summary=(
+            f"Task {m.task_id}: истёкшая аренда {previous.agent} "
+            f"(реплика {previous.replica}) на {remote} перехвачена"
+        ),
+    )
 
 
 def schedule_lease_release(
-    session: Session, m: TaskModel, actor: str, *, agent: str | None, expired_ok: bool = False
+    session: Session,
+    m: TaskModel,
+    actor: str,
+    *,
+    agent: str | None,
+    expired_ok: bool = False,
+    malformed_ok: bool = False,
 ) -> None:
     """CLO-031: аренда снимается после коммита; событие — в транзакции снятия замка."""
     if not m.uid:
         return
     remote = checkout_lease.schedule_release(
-        session, m.project_id, m.uid, agent=agent, expired_ok=expired_ok
+        session, m.project_id, m.uid, agent=agent, expired_ok=expired_ok, malformed_ok=malformed_ok
     )
     if remote is None:
         return
@@ -276,10 +313,16 @@ def release(
     to revert to TODO, call ``task_update_status`` after release.
 
     With a remote (CLO-031) the lease of this replica is dropped after commit;
-    ``force`` also drops a foreign lease past its own TTL.
+    ``force`` also drops a foreign lease past its own TTL and a malformed one
+    (CLO-048) — even when there is no local lock: an orphan lease of a replica
+    whose checkout never shipped has none.
     """
     m = _load_task(session, task_id, project_id=project_id)
     if m.checked_out_by is None:
+        if force:
+            schedule_lease_release(
+                session, m, agent, agent=None, expired_ok=True, malformed_ok=True
+            )
         return CheckoutResult(
             task_id=task_id,
             checked_out_by=None,
@@ -291,7 +334,9 @@ def release(
     if not force and m.checked_out_by != agent:
         raise CheckoutConflictError(task_id=task_id, locked_by=m.checked_out_by)
 
-    schedule_lease_release(session, m, agent, agent=m.checked_out_by, expired_ok=force)
+    schedule_lease_release(
+        session, m, agent, agent=m.checked_out_by, expired_ok=force, malformed_ok=force
+    )
     m.checked_out_by = None
     m.checked_out_at = None
     m.last_updated = datetime.now(UTC)
@@ -371,6 +416,9 @@ def release_stale(
 
     С remote (CLO-031) после коммита снимается и аренда снятого замка: своей
     реплики — всегда, чужой — если истекла по её собственному ``ttl_minutes``.
+    CLO-048: после коммита ещё и листинг ``leases/checkout/`` снимает истёкшие
+    аренды задач, о замке которых эта БД не знает (сироты реплик, чья
+    операция checkout не уехала).
     """
     cutoff = datetime.now(UTC) - timedelta(minutes=ttl_minutes)
     stmt = select(TaskModel).where(
@@ -381,6 +429,13 @@ def release_stale(
         stmt = stmt.where(TaskModel.project_id == project_id)
     rows = list(session.execute(stmt).scalars())
     released: list[str] = []
+    projects = (
+        [project_id]
+        if project_id is not None
+        else list(session.execute(select(ProjectModel.row_id)).scalars())
+    )
+    for pid in projects:
+        checkout_lease.schedule_sweep(session, pid)
     for m in rows:
         schedule_lease_release(session, m, "system", agent=None, expired_ok=True)
         m.checked_out_by = None

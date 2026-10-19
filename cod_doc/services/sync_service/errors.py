@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 __all__ = [
     "AuthorMismatchError",
     "CheckoutLeaseHeldError",
+    "CheckoutLeaseMalformedError",
     "CheckoutLeaseUnavailableError",
     "ConflictNotFoundError",
     "ConflictResolveError",
@@ -106,7 +107,29 @@ class CheckoutLeaseHeldError(SyncError, CheckoutConflictError):
         self.task_id = task_id
         self.locked_by = locked_by
         self.replica = replica
-        self.acquired_at = acquired_at
+        self.acquired_at: datetime | None = acquired_at
+
+
+class CheckoutLeaseMalformedError(CheckoutLeaseHeldError):
+    """SYNC-108: аренда на remote есть, но не читается (CLO-048) — считаем занятой.
+
+    Тело аренды пишут чужие машины; непригодное тело не даёт ни держателя, ни
+    срока, поэтому отказ закрытый: задача занята, пока аренду не снимут явно.
+    ``fix`` — чем снять: ``release --force`` (тело — JSON не по форме, его etag
+    известен) или удаление ключа на remote руками (тело — не JSON).
+    """
+
+    def __init__(self, *, task_id: str, key: str, reason: str, fix: str) -> None:
+        Exception.__init__(
+            self,
+            f"{self.code}: задача {task_id}: аренда {key} не читается ({reason}) — "
+            f"считается занятой; снять: {fix}",
+        )
+        self.task_id = task_id
+        self.locked_by = ""
+        self.replica = ""
+        self.acquired_at = None
+        self.key = key
 
 
 class CheckoutLeaseUnavailableError(RemoteUnavailableError):
