@@ -421,6 +421,12 @@ def _earliest_base(tail: Sequence[Op], column: str) -> FieldValue:
     return min(found, key=_stamp).base.get(column) if found else None
 
 
+def _created_in_tail(tail: Sequence[Op], column: str) -> bool:
+    """Первая своя запись поля в хвосте — операция создания (``base`` пуст)."""
+    found = [op for op in tail if op.kind == _UPSERT and column in op.fields]
+    return bool(found) and not min(found, key=_stamp).base
+
+
 def check(foreign: Sequence[Op], tail: Sequence[Op]) -> None:
     """До первой записи pull'а: все ли случаи расхождения сводятся.
 
@@ -546,6 +552,21 @@ def _history_stamp(rows: Sequence[SyncOpModel], column: str) -> Stamp | None:
     return max(stamps) if stamps else None
 
 
+def _history_value(rows: Sequence[SyncOpModel], column: str) -> FieldValue:
+    """Значение поля из последней записи истории (``_history_stamp`` не пуст)."""
+    last = max(
+        (
+            row
+            for row in rows
+            if row.changeset is not None
+            and row.kind == _UPSERT
+            and column in _payload(row, "fields")
+        ),
+        key=lambda row: (row.hlc, row.op_id),
+    )
+    return _local.op_of(last).fields[column]
+
+
 def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldValue]:
     """Поля чужого upsert'а над существующей строкой, которые надо записать (§3.7)."""
     rows = _entity_rows(session, ctx.project_id, op)
@@ -559,10 +580,23 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
         if (op.entity_kind, column) in _STATUS_FIELDS:
             continue  # цепочка статуса — после цикла
         mine = _latest(tail, column)
+        seen = _history_stamp(rows, column)
+        # Своя операция создания держит поле в хвосте и после того, как чужая
+        # запись из истории его переписала (``_trim``): тогда значение в БД —
+        # из истории, и судит её штамп, а не устаревшей вставки. Иначе третья
+        # вставка двойника, старше истории, но новее своей, переписывала бы
+        # выигравшую запись — только на этой реплике (CLO-047, сид 358).
+        if mine is not None and not mine.base and seen is not None and seen > _stamp(mine):
+            mine = None
         if mine is None:
-            seen = _history_stamp(rows, column)
             if seen is None or theirs_stamp > seen:
                 out[column] = theirs
+            elif not op.base:
+                # Вставка поверх строки, чьё поле история уже писала позже. В БД
+                # обычно и так значение этой записи, но приход отзыва (CLO-046)
+                # затирает тело, и вставка понижения, проиграв штампом, оставила
+                # бы пустое: правка, доехавшая до отзыва, — только у владельца.
+                out[column] = _history_value(rows, column)
             continue
         ctx.retract(op.entity_uid, column)
         if _equal(mine.fields[column], theirs):
@@ -586,7 +620,12 @@ def fields_to_apply(session: Session, ctx: Context, op: Op) -> dict[str, FieldVa
         # восстановление того же снимка: поля — LWW, как в склейке. Тела разошлись
         # — это уже конфликт ``key_merge`` той склейки; diff3 без общего предка
         # дал бы ``text`` только в части перестановок (CLO-027, сид 91).
-        strategy = lww if not op.base else field_strategy(classify(op.entity_kind, column))
+        # Симметрично — своя операция создания против чужой правки (вставка
+        # тела при понижении документа, ``reship_ops``): у приёмника та же пара
+        # идёт LWW, и diff3 здесь открывал ``text`` только там, где правку
+        # сливала создавшая реплика (CLO-047, сиды 93, 193, 201, 489, 490).
+        created = not op.base or _created_in_tail(tail, column)
+        strategy = lww if created else field_strategy(classify(op.entity_kind, column))
         result = strategy(clash)
         if result.outcome is Outcome.THEIRS:
             _trim(session, pending, column)
