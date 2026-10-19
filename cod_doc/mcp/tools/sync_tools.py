@@ -72,7 +72,10 @@ def register(mcp: FastMCP) -> None:
         Returns:
             ``SyncStatus``: ``{remote, head_local, head_remote, ahead, behind,
             pending_ops, open_conflicts, epoch_local, epoch_remote,
-            restricted_local, leases, drift_hint, verify}``. ``remote`` —
+            restricted_local, restricted_rows, leases, drift_hint, verify,
+            clone_url}``; ``restricted_local`` — restricted-документы,
+            ``restricted_rows`` — их строки на реплике (документы и тело), ни
+            одна не уезжает (CLO-033). ``remote`` —
             ``null``, если такого remote у проекта нет; ``verify`` —
             ``{local, remote, equal}`` или ``null``.
         """

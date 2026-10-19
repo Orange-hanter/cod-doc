@@ -22,13 +22,16 @@
 4. **export-pending** (``render_pending``/``export_pending``): неупакованные
    операции проекта — в файл, в форме changeset'а §10.4 (``to_dict``) внутри
    конверта ``{"v", "kind": "pending", "slug", "exported_at", "changeset"}``.
-   Операции берутся тем же ``_local.pending_ops``, что упаковывает push:
-   уезжающие поля, время §10.4, restricted не захвачен вовсе. Журнал не
-   меняется. Обратного импорта нет (RFC: «для ручного переноса»): операции
+   Операции берутся тем же ``gate.shippable_tail`` и проверяются той же
+   растяжкой ``gate.check_ops``, что у push (CLO-033): уезжающие поля, время
+   §10.4, restricted не попадает и в файл. Как и упаковка push'а, хвост
+   по текущим меткам вычищает из журнала операции ставших restricted
+   документов; других правок журнала нет. Обратного импорта нет (RFC: «для ручного переноса»): операции
    старой эпохи по определению не ложатся на новую схему, переносит их
-   человек правкой через CLI/MCP. Чтение — только колонками ``project`` и
-   журналом ``sync_op``: экспорт работает и когда код уже новее схемы БД
-   (``update`` остановился на ``SYNC-106``).
+   человек правкой через CLI/MCP. Проект читается колонками, а не строкой
+   модели, чтобы экспорт работал и когда код новее схемы БД (``update``
+   остановился на ``SYNC-106``); гейт restricted читает документы моделями —
+   на такой схеме он сработает, пока миграция эпохи не тронула их таблицы.
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ from cod_doc.infra import sync_epochs
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ProjectModel, ReplicaModel
 from cod_doc.infra.remote.base import META_KEY, check_name
-from cod_doc.services.sync_service import _local
+from cod_doc.services.sync_service import _local, gate
 from cod_doc.services.sync_service.changeset import (
     Changeset,
     canonical_json,
@@ -240,10 +243,18 @@ def _self_replica(session: Session, project_id: int) -> str | None:
 
 
 def render_pending(sf: sessionmaker[Session], project: str) -> tuple[bytes, int]:
-    """Неупакованные операции проекта в каноническом JSON и их число (БД не меняется)."""
-    with transactional(sf, commit=False) as session:
+    """Неупакованные операции проекта в каноническом JSON и их число.
+
+    Журнал меняется ровно как при упаковке push'а: ``gate.shippable_tail``
+    убирает операции документов, ставших restricted (CLO-033).
+    """
+    with transactional(sf) as session:
         row_id, uid = _project_row(session, project)
-        ops = _local.pending_ops(session, row_id)
+        # Тот же хвост и та же растяжка, что у push._pack (CLO-033): restricted
+        # не уезжает и через файл. shippable_tail пишет — убирает из журнала
+        # операции ставшего restricted документа, как сделал бы push.
+        ops = gate.shippable_tail(session, row_id)
+        gate.check_ops(session, row_id, ops)
         head = _local.local_head(session, row_id)
         schema = _local.schema_head(session)
         epoch = _local.epoch(session)

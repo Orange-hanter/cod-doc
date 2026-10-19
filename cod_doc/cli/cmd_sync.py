@@ -317,7 +317,8 @@ def sync_status(
         f"не отправлено:   {st.pending_ops} операций",
         f"конфликты:       {st.open_conflicts}",
         f"эпоха:           {st.epoch_local} (remote: {st.epoch_remote or '—'})",
-        f"restricted:      {st.restricted_local} документов не уезжают",
+        f"restricted:      {st.restricted_local} документов не уезжают"
+        f" (строк на реплике: {st.restricted_rows})",
     ]
     if st.verify is not None:
         mark = "совпал" if st.verify.equal else "НЕ совпал"

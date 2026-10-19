@@ -7,7 +7,11 @@
    ``(hlc, op_id)`` → один changeset, ``parents = [локальная голова]``. Время
    в полях приводится к форме §10.4 по типу колонки (``_values.to_wire``);
    ``digest`` — дайджест состояния реплики в той же транзакции (CLO-014).
-   Журнал не меняется: если дальше что-то сорвётся, хвост остаётся хвостом.
+   Перед упаковкой хвост пересматривается по текущим меткам документов
+   (``gate.shippable_tail``, CLO-033): операции, которые держит ставший
+   restricted документ, из журнала удаляются; перед кодированием — растяжка
+   ``gate.check_ops`` (``SYNC-001``). Других правок журнала упаковка не делает:
+   если дальше что-то сорвётся, хвост остаётся хвостом.
 2. **Обмен** (без транзакции): ``get_ref`` → ``has_objects`` /
    ``put_object`` → ``cas_ref(expected = голова, которую реплика видела)``.
    Remote не на локальной голове — CAS заведомо не пройдёт, и объект не
@@ -58,7 +62,7 @@ from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import SyncOpModel
 from cod_doc.services import activity_service
-from cod_doc.services.sync_service import _local, checkout_lease, digest, epochs, leases
+from cod_doc.services.sync_service import _local, checkout_lease, digest, epochs, gate, leases
 from cod_doc.services.sync_service.changeset import Changeset, encode, sha
 from cod_doc.services.sync_service.errors import MergeRequiredError, PushRejectedError
 
@@ -104,7 +108,8 @@ def _pack(
     with transactional(sf) as session:
         ref = _local.project_ref(session, project)
         head = _local.local_head(session, ref.row_id)
-        ops = _local.pending_ops(session, ref.row_id)
+        # Хвост по текущим меткам: документ мог стать restricted после захвата (CLO-033).
+        ops = gate.shippable_tail(session, ref.row_id)
         if not ops:
             return ref, head, None
         cs = Changeset(
@@ -120,6 +125,8 @@ def _pack(
             digest=digest.compute(session, ref.row_id),
             ops=ops,
         )
+        # Растяжка перед кодированием: restricted-строка в changeset'е — SYNC-001.
+        gate.check_ops(session, ref.row_id, cs.ops)
     packed = _Packed(
         project=ref,
         parent=head,
