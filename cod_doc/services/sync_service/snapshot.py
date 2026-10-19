@@ -1,9 +1,8 @@
 """Снапшот проекта: формат, сборка, загрузка и запись по push (RFC 29 §3.5, §3.6; CLO-029).
 
 Снапшот — уезжающее состояние проекта на changeset ``head``: ровно то, что
-покрывает дайджест (§3.7), плюс журнал, на котором стоит слияние. Clone
-стартует с него и дотягивает хвост changeset'ов (``clone``), вместо того
-чтобы проигрывать всю историю.
+покрывает дайджест (§3.7). Clone стартует с него и дотягивает хвост
+changeset'ов (``clone``), вместо того чтобы проигрывать всю историю.
 
 **Формат** ``snapshots/<epoch>/<head>.db.zst`` — ``b"CDS1"`` + один zstd-кадр
 потока строк; строка — канонический JSON §10.4 и перевод строки:
@@ -16,34 +15,42 @@
    ним в снапшот не попадает — тот же гейт, что у захвата и дайджеста.
    Таблицы — в порядке загрузки (``load_order``: родитель раньше ребёнка),
    строки таблицы — по первичному ключу;
-3. ``["op", changeset, операция]`` — журнал ``sync_op`` (история LWW, цепочки
-   статуса, заявки букв), только упакованные операции над строками этого
-   снапшота: операции удалённых и local-строк и маркеры разрешения не
-   уезжают — конфликтов у клона нет, а история restricted-документа
-   (CLO-046) не размножается по новым репликам;
-4. ``["changeset", {...}]`` — локальный индекс changeset'ов (адреса, родители,
-   дайджесты) — ``is_ancestor`` клона;
-5. ``["alias", {...}]`` — ``entity_alias`` выживших строк (CLO-023);
-6. ``["end", {"lines", "sha256"}]`` — число и sha256 всех строк до неё:
+3. ``["alias", {...}]`` — алиасы склейки (``reason = merged``, CLO-023)
+   живых строк;
+4. ``["end", {"lines", "sha256"}]`` — число и sha256 всех строк до неё:
    обрезанный поток не загрузится.
 
 Слова «SQLite» из §3.5 нет намеренно: файл SQLite с чужого remote —
 исполняемая схема (триггеры, представления), а поток строк проходит тот же
 разбор, что changeset.
 
+**Что снапшоту не доверяется.** Дайджест головы покрывает только строки,
+поэтому всё, что он не покрывает, в снапшоте не едет или проверяется по
+адресуемым данным:
+
+- журнал ``sync_op`` (история LWW, штампы создания для склейки ключей,
+  цепочки статуса) и индекс ``changeset`` клон собирает сам из changeset'ов
+  remote (``load_history``): обход ``parents`` от головы, каждый объект — по
+  адресу (``decode`` сверяет sha), штампы — ``apply.check_clock``. Журнал
+  клона тот же, что у реплики, проигравшей всю историю, а «применённым»
+  помечается только то, что достижимо от проверенной головы;
+- алиас принимается, только если выживший uid — загруженная строка той же
+  таблицы, проигравший — не живая строка и встречается в проверенном журнале
+  этой таблицы.
+
 **Потолки.** Сжатый снапшот — ``MAX_SNAPSHOT_BYTES`` (1 ГиБ, как у
 транспорта); сборка останавливается, как только его превысит. Распаковка
 потоковая: в памяти одна строка (≤ ``MAX_LINE_BYTES``) и кусок кадра, всего
-распаковывается не больше ``MAX_RAW_BYTES``.
+распаковывается не больше ``MAX_RAW_BYTES``. Обход истории — не больше
+``_local.MAX_HISTORY`` changeset'ов.
 
 **Недоверенный ввод.** Строка снапшота проходит тот же путь, что чужая
 вставка (``apply.create_row``): только уезжающие колонки, FK — в проекте
-клона, гейт реестра; ревизия — ``journal.apply_row``; операции журнала —
-форма ``Op``, свой штамп реплики и часы (``MAX_DRIFT_MS``). Итог сверяется
-целиком: дайджест загруженного состояния обязан совпасть с дайджестом
-changeset'а ``head``, который читается с remote по адресу (sha содержимого).
-Иначе — ``SYNC-102`` и откат: снапшот не может провести состояние, которого
-нет в цепочке changeset'ов.
+клона, гейт реестра; ревизия — ``journal.apply_row``. Итог сверяется
+целиком, до коммита: дайджест загруженного состояния обязан совпасть с
+дайджестом changeset'а ``head``, прочитанного с remote по адресу. Иначе —
+``SYNC-102`` и откат: снапшот не может провести состояние, которого нет в
+цепочке changeset'ов.
 
 **Запись** (``write_if_due``) — после успешного push: если на remote нет
 снапшота или с последнего набралось ``SNAPSHOT_EVERY`` операций журнала.
@@ -63,16 +70,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, cast
 
-from sqlalchemy import func, insert, inspect, select
+from sqlalchemy import func, insert, inspect, select, update
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import transactional
-from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
+from cod_doc.infra.hlc import Hlc, clock_for, self_replica
 from cod_doc.infra.models import (
     Base,
-    ChangesetModel,
     EntityAliasModel,
     ProjectModel,
     SyncOpModel,
@@ -85,10 +91,9 @@ from cod_doc.services.sync_service.changeset import (
     _PARSE_ERRORS,
     MAX_CANONICAL_BYTES,
     Changeset,
-    Op,
     _check_depth,
-    _op_from_dict,
     canonical_json,
+    decode,
     format_time,
 )
 from cod_doc.services.sync_service.errors import (
@@ -114,6 +119,7 @@ __all__ = [
     "SnapshotTooLargeError",
     "build",
     "load",
+    "load_history",
     "load_order",
     "peek",
     "pointer",
@@ -138,23 +144,18 @@ _BATCH: Final = 500
 
 _HEADER: Final = "header"
 _ROW: Final = "row"
-_OP: Final = "op"
-_CHANGESET: Final = "changeset"
 _ALIAS: Final = "alias"
 _END: Final = "end"
-#: Порядок секций потока: строки, журнал, индекс changeset'ов, алиасы.
-_SECTIONS: Final = (_ROW, _OP, _CHANGESET, _ALIAS)
+#: Порядок секций потока: строки, алиасы.
+_SECTIONS: Final = (_ROW, _ALIAS)
 _HEADER_KEYS: Final = frozenset({"v", "kind", "project", "head", "epoch", "schema_head", "digest"})
-_CHANGESET_KEYS: Final = frozenset(
-    {"sha", "parents", "replica", "actor", "epoch", "hlc_max", "digest"}
-)
 _ALIAS_KEYS: Final = frozenset({"entity_kind", "alias", "uid", "reason"})
-_ALIAS_REASONS: Final = frozenset({"pinned", "merged"})
+#: Только склейка: ``pinned`` (провизорный ID → постоянный) реплику не покидает.
+_MERGED: Final = "merged"
 _PROJECT: Final = "project"
 _REVISION: Final = "revision"
 _ROW_LEN: Final = 4
 _PAIR_LEN: Final = 2
-_OP_LEN: Final = 3
 #: ``meta.json``: указатель на последний снапшот.
 _META_SNAPSHOT: Final = "snapshot"
 
@@ -421,48 +422,23 @@ def build(session: Session, project: _local.ProjectRef, *, head: str, digest_hex
             "digest": digest_hex,
         }
     )
-    # Строки снапшота: по ним же отбираются операции журнала и алиасы. Память —
-    # пара (таблица, uid) на строку проекта, не сами строки.
+    # Строки снапшота: по ним отбираются алиасы. Память — пара (таблица, uid)
+    # на строку проекта, не сами строки.
     shipped: set[tuple[str, str]] = set()
     for table, uid, fields_json in cap.shipped_rows(session, project.row_id, load_order()):
         shipped.add((table, uid))
         writer.line([_ROW, table, uid, to_wire(table, json.loads(fields_json))])
-    ops = session.scalars(
-        select(SyncOpModel)
-        .where(SyncOpModel.project_id == project.row_id, SyncOpModel.changeset.is_not(None))
-        .order_by(SyncOpModel.hlc, SyncOpModel.op_id)
-        .execution_options(yield_per=_BATCH)
-    )
-    for row in ops:
-        if (row.entity_kind, row.entity_uid) in shipped:
-            writer.line([_OP, row.changeset, _local.op_of(row).to_dict()])
-    known = session.scalars(
-        select(ChangesetModel)
-        .where(ChangesetModel.project_id == project.row_id, ChangesetModel.applied_at.is_not(None))
-        .order_by(ChangesetModel.sha)
-    )
-    for cs in known:
-        writer.line(
-            [
-                _CHANGESET,
-                {
-                    "sha": cs.sha,
-                    "parents": json.loads(cs.parents),
-                    "replica": cs.replica_uid,
-                    "actor": cs.actor,
-                    "epoch": cs.epoch,
-                    "hlc_max": cs.hlc_max,
-                    "digest": cs.digest,
-                },
-            ]
-        )
     aliases = session.scalars(
         select(EntityAliasModel)
         .where(EntityAliasModel.project_id == project.row_id)
         .order_by(EntityAliasModel.entity_kind, EntityAliasModel.alias)
     )
     for alias in aliases:
-        if (alias.entity_kind, alias.uid) in shipped:
+        if (
+            alias.reason == _MERGED
+            and (alias.entity_kind, alias.uid) in shipped
+            and (alias.entity_kind, alias.alias) not in shipped
+        ):
             writer.line(
                 [
                     _ALIAS,
@@ -484,21 +460,16 @@ def build(session: Session, project: _local.ProjectRef, *, head: str, digest_hex
 class LoadResult:
     head: str
     rows: int
-    ops: int
 
 
 @dataclass
 class _Loader:
     session: Session
     project: _local.ProjectRef
-    me: str
-    now_ms: int
     touched: apply.Touched
     section: int = 0
     table_pos: int = 0
     rows: int = 0
-    ops: int = 0
-    hlc_max: Hlc | None = None
     seen_project: bool = False
 
     def enter(self, kind: str) -> None:
@@ -550,86 +521,53 @@ class _Loader:
             setattr(obj, info.attr(column), value)
         apply.finish_row(self.session, self.project, info, obj, uid, fields)
 
-    def op(self, item: list[object]) -> list[dict[str, object]]:
-        if len(item) != _OP_LEN:
-            raise _bad("строка op: нужно [op, changeset, операция]")
-        sha = _sha(item[1], "op.changeset")
-        try:
-            op: Op = _op_from_dict(item[2])
-            stamp = Hlc.parse(op.hlc)
-        except _PARSE_ERRORS as exc:
-            raise _bad(f"операция журнала: {exc}") from exc
-        if op.entity_kind not in cap.CAPTURED_TABLES:
-            raise _bad(f"операция {op.op_id}: таблица {op.entity_kind!r} не синхронизируется")
-        if stamp.replica_uid == self.me:
-            raise _bad(f"операция {op.op_id} от реплики клона")
-        if stamp.ms > self.now_ms + MAX_DRIFT_MS:
-            raise _bad(f"штамп {op.hlc} впереди стенных часов больше чем на {MAX_DRIFT_MS} мс")
-        if self.hlc_max is None or stamp > self.hlc_max:
-            self.hlc_max = stamp
-        self.ops += 1
-        return [
-            {
-                "op_id": op.op_id,
-                "project_id": self.project.row_id,
-                "replica_uid": stamp.replica_uid,
-                "hlc": op.hlc,
-                "entity_kind": op.entity_kind,
-                "entity_uid": op.entity_uid,
-                "kind": op.kind,
-                "fields": _dumps(op.fields),
-                "base": _dumps(op.base),
-                "author": op.author,
-                "changeset": sha,
-            }
-        ]
-
-    def changeset(self, item: list[object], head: str) -> None:
-        body = item[1] if len(item) == _PAIR_LEN else None
-        if not isinstance(body, dict) or set(body) != _CHANGESET_KEYS:
-            raise _bad(f"строка changeset: нужны поля {sorted(_CHANGESET_KEYS)}")
-        sha = _sha(body["sha"], "changeset.sha")
-        parents = body["parents"]
-        if not isinstance(parents, list) or len(parents) > MAX_PARENTS:
-            raise _bad(f"changeset {sha}: parents — список не длиннее {MAX_PARENTS}")
-        hlc_max = _text(body["hlc_max"], "changeset.hlc_max")
-        try:
-            Hlc.parse(hlc_max)
-        except ValueError as exc:
-            raise _bad(f"changeset {sha}: {exc}") from exc
-        if sha == head or self.session.get(ChangesetModel, sha) is not None:
-            return  # голову пишет clone из объекта remote, повтор — пропуск
-        self.session.add(
-            ChangesetModel(
-                sha=sha,
-                project_id=self.project.row_id,
-                parents=json.dumps(
-                    [_sha(p, "changeset.parents[]") for p in parents], ensure_ascii=False
-                ),
-                replica_uid=_text(body["replica"], "changeset.replica"),
-                actor=_text(body["actor"], "changeset.actor"),
-                epoch=_text(body["epoch"], "changeset.epoch"),
-                hlc_max=hlc_max,
-                digest=_sha(body["digest"], "changeset.digest"),
-                applied_at=datetime.now(UTC),
-            )
-        )
-
     def alias(self, item: list[object]) -> None:
+        """Алиас склейки — только между загруженной строкой и uid из проверенного журнала."""
         body = item[1] if len(item) == _PAIR_LEN else None
         if not isinstance(body, dict) or set(body) != _ALIAS_KEYS:
             raise _bad(f"строка alias: нужны поля {sorted(_ALIAS_KEYS)}")
-        kind = body["entity_kind"]
-        if kind not in cap.CAPTURED_TABLES or body["reason"] not in _ALIAS_REASONS:
-            raise _bad(f"алиас {body!r}: незнакомая таблица или причина")
+        kind, alias, uid = body["entity_kind"], body["alias"], body["uid"]
+        if (
+            body["reason"] != _MERGED
+            or not isinstance(kind, str)
+            or kind not in reg.UID_TABLES
+            or kind not in cap.CAPTURED_TABLES
+        ):
+            raise _bad(f"алиас {body!r}: не склейка или таблица без uid")
+        alias, uid = _text(alias, "alias.alias"), _text(uid, "alias.uid")
+        tbl = Base.metadata.tables[kind]
+        live = set(self.session.scalars(select(tbl.c.uid).where(tbl.c.uid.in_([alias, uid]))))
+        if uid not in live or alias in live:
+            raise _bad(f"алиас {kind} {alias} → {uid}: выживший не загружен или проигравший жив")
+        seen = self.session.scalar(
+            select(func.count())
+            .select_from(SyncOpModel)
+            .where(
+                SyncOpModel.project_id == self.project.row_id,
+                SyncOpModel.entity_kind == kind,
+                SyncOpModel.entity_uid == alias,
+            )
+        )
+        if not seen:
+            raise _bad(f"алиас {kind} {alias}: такого uid нет в проверенной истории")
         self.session.add(
             EntityAliasModel(
                 project_id=self.project.row_id,
-                entity_kind=str(kind),
-                alias=_text(body["alias"], "alias.alias"),
-                uid=_text(body["uid"], "alias.uid"),
-                reason=str(body["reason"]),
+                entity_kind=kind,
+                alias=alias,
+                uid=uid,
+                reason=_MERGED,
             )
+        )
+        # Журнал проигравшего — история выжившего, как у _record_ops и склейки (CLO-023).
+        self.session.execute(
+            update(SyncOpModel)
+            .where(
+                SyncOpModel.project_id == self.project.row_id,
+                SyncOpModel.entity_kind == kind,
+                SyncOpModel.entity_uid == alias,
+            )
+            .values(entity_uid=uid)
         )
 
 
@@ -637,14 +575,7 @@ def _dumps(payload: Mapping[str, object]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _flush_ops(session: Session, batch: list[dict[str, object]]) -> None:
-    if batch:
-        session.execute(insert(SyncOpModel), batch)
-        batch.clear()
-
-
-def _first_pass(loader: _Loader, data: bytes, header: Header) -> None:
-    batch: list[dict[str, object]] = []
+def _first_pass(loader: _Loader, data: bytes) -> None:
     lines = _lines(data)
     next(lines)  # заголовок разобран вызывающим
     for item in lines:
@@ -656,19 +587,10 @@ def _first_pass(loader: _Loader, data: bytes, header: Header) -> None:
         loader.enter(kind)
         if kind == _ROW:
             loader.row(item)
-            continue
-        if not loader.seen_project:
+        elif not loader.seen_project:
             raise _bad("нет строки project")
-        if kind == _OP:
-            batch.extend(loader.op(item))
-            if len(batch) >= _BATCH:
-                _flush_ops(loader.session, batch)
-        elif kind == _CHANGESET:
-            _flush_ops(loader.session, batch)
-            loader.changeset(item, header.head)
         else:
             loader.alias(item)
-    _flush_ops(loader.session, batch)
     if not loader.seen_project:
         raise _bad("нет строки project")
 
@@ -698,44 +620,133 @@ def _second_pass(loader: _Loader, data: bytes) -> None:
         apply.finish_row(loader.session, loader.project, info, obj, uid, wanted)
 
 
+@dataclass(frozen=True, slots=True)
+class History:
+    """Журнал клона, собранный из changeset'ов remote по адресам (``load_history``)."""
+
+    head: Changeset
+    changesets: int
+    ops: int
+
+
+def _record_history(session: Session, project: _local.ProjectRef, sha: str, cs: Changeset) -> int:
+    """Changeset — в индекс (применён), его операции — в журнал историей (``changeset = sha``)."""
+    rows = [
+        {
+            "op_id": op.op_id,
+            "project_id": project.row_id,
+            "replica_uid": Hlc.parse(op.hlc).replica_uid,
+            "hlc": op.hlc,
+            "entity_kind": op.entity_kind,
+            "entity_uid": op.entity_uid,
+            "kind": op.kind,
+            "fields": _dumps(op.fields),
+            "base": _dumps(op.base),
+            "author": op.author,
+            "changeset": sha,
+        }
+        for op in cs.ops
+    ]
+    if rows:
+        session.execute(insert(SyncOpModel), rows)
+    _local.record_changeset(session, project, sha, cs)
+    return len(rows)
+
+
+def load_history(
+    sf: sessionmaker[Session], store: RemoteStore, project: _local.ProjectRef, head: str
+) -> History:
+    """Журнал и индекс changeset'ов клона — из объектов remote, от ``head`` по ``parents``.
+
+    Каждый объект читается по адресу (``decode`` сверяет sha содержимого),
+    принадлежит проекту, штампы — ``apply.check_clock``; «применённым» в индексе
+    становится только достижимое от ``head``. Пишется пачками по ``_BATCH``
+    объектов, сеть — между транзакциями; сбой оставляет недособранную БД, которую
+    убирает clone. Операции — как у pull (``apply._record_ops``), алиасы склейки
+    накладывает потом загрузка снапшота.
+    """
+    with transactional(sf, commit=False) as session:
+        me = self_replica(session, project.row_id)
+    head_cs: Changeset | None = None
+    seen: set[str] = set()
+    queue = [head]
+    pending: list[tuple[str, Changeset]] = []
+    ops = 0
+    top: Hlc | None = None
+    while queue:
+        sha = queue.pop()
+        if sha in seen:
+            continue
+        if len(seen) >= _local.MAX_HISTORY:
+            raise _bad(f"история от головы длиннее {_local.MAX_HISTORY} changeset'ов")
+        seen.add(sha)
+        cs = decode(store.get_object(project.uid, sha), sha)
+        if cs.project != project.uid or len(cs.parents) > MAX_PARENTS:
+            raise _bad(f"объект {sha}: чужой проект или родителей больше {MAX_PARENTS}")
+        apply.check_clock(cs, self_replica_uid=me)
+        if head_cs is None:
+            head_cs = cs
+        if cs.ops:
+            stamp = Hlc.parse(cs.hlc_max)
+            top = stamp if top is None or stamp > top else top
+        queue.extend(cs.parents)
+        pending.append((sha, cs))
+        if len(pending) >= _BATCH:
+            ops += _flush_history(sf, project, pending, top)
+            pending.clear()
+    ops += _flush_history(sf, project, pending, top)
+    assert head_cs is not None
+    return History(head=head_cs, changesets=len(seen), ops=ops)
+
+
+def _flush_history(
+    sf: sessionmaker[Session],
+    project: _local.ProjectRef,
+    batch: list[tuple[str, Changeset]],
+    top: Hlc | None,
+) -> int:
+    try:
+        with transactional(sf) as session:
+            written = sum(_record_history(session, project, sha, cs) for sha, cs in batch)
+            if top is not None:
+                clock_for(session, self_replica(session, project.row_id)).observe(top)
+    except IntegrityError as exc:
+        raise _bad(f"история: повтор операции в разных changeset'ах: {exc.orig}") from exc
+    return written
+
+
 def load(
     session: Session, project: _local.ProjectRef, data: bytes, *, head: str, head_cs: Changeset
 ) -> LoadResult:
-    """Загрузить снапшот ``head`` в пустой проект клона (транзакция вызывающего).
+    """Загрузить снапшот ``head`` в проект клона (транзакция вызывающего).
 
-    ``head_cs`` — changeset ``head``, прочитанный с remote по адресу: его
-    дайджест — эталон. Любое расхождение — ``SYNC-102``.
+    Журнал и индекс уже собраны ``load_history`` от той же головы; ``head_cs`` —
+    changeset ``head``, прочитанный с remote по адресу: его дайджест — эталон.
+    Любое расхождение — ``SYNC-102`` до коммита.
     """
     header = _header(next(_lines(data), None))
     if header.project != project.uid or header.head != head:
         raise _bad(f"заголовок {header.project}/{header.head} ≠ {project.uid}/{head}")
     if header.digest != head_cs.digest:
         raise _bad("дайджест заголовка ≠ дайджесту changeset'а головы")
+    if not _local.is_applied(session, head):
+        raise _bad(f"голова {head[:12]} не проверена: история не собрана")
     if _local.schema_is_newer(header.schema_head, _local.schema_head(session)):
         msg = f"снапшот на схеме {header.schema_head}, у вас {_local.schema_head(session)} — cod-doc update"
         raise SchemaMismatchError(msg)
-    loader = _Loader(
-        session=session,
-        project=project,
-        me=self_replica(session, project.row_id),
-        now_ms=wall_ms(),
-        touched=apply.Touched(),
-    )
+    loader = _Loader(session=session, project=project, touched=apply.Touched())
     try:
         with cap.suspended(session):
-            _first_pass(loader, data, header)
+            _first_pass(loader, data)
             _second_pass(loader, data)
             apply.rebuild_derived(session, project, loader.touched)
     except IntegrityError as exc:
         raise _bad(f"строки нарушают ограничения схемы: {exc.orig}") from exc
-    _local.record_changeset(session, project, head, head_cs)
     _local.set_local_head(session, project.row_id, head)
-    stamps = [s for s in (loader.hlc_max, Hlc.parse(head_cs.hlc_max)) if s is not None]
-    clock_for(session, loader.me).observe(max(stamps))
     loaded = digest.compute(session, project.row_id)
     if loaded != head_cs.digest:
         raise _bad(f"дайджест загруженного {loaded[:12]} ≠ дайджесту головы {head_cs.digest[:12]}")
-    return LoadResult(head=head, rows=loader.rows, ops=loader.ops)
+    return LoadResult(head=head, rows=loader.rows)
 
 
 # --- запись по push -----------------------------------------------------------------

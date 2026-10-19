@@ -21,9 +21,12 @@
    дерева разделов ``project add``: они приедут с remote, а две независимо
    заведённые строки с одним натуральным ключом — склейка (CLO-023), не
    clone (находка F2 аудита секции B).
-5. Снапшот грузится под ``sync_capture.suspended`` одной транзакцией
-   (``snapshot.load``: тот же гейт, что у pull, и сверка дайджеста), голова
-   реплики — его changeset.
+5. Журнал и индекс changeset'ов собираются из объектов remote по адресам —
+   обход ``parents`` от головы снапшота (``snapshot.load_history``): снапшот
+   несёт только строки, их покрывает дайджест. Затем снапшот грузится под
+   ``sync_capture.suspended`` одной транзакцией (``snapshot.load``: тот же
+   гейт, что у pull, и сверка дайджеста до коммита), голова реплики — его
+   changeset.
 6. Хвост после снапшота — обычный ``pull``.
 7. Дайджест реплики сверяется с дайджестом changeset'а её головы — ``sync
    verify`` после clone равен, пока remote не ушёл вперёд.
@@ -54,7 +57,6 @@ from cod_doc.infra.remote.base import check_name, open_remote
 from cod_doc.services import activity_service
 from cod_doc.services.sync_service import _local, digest, snapshot
 from cod_doc.services.sync_service import pull as pull_mod
-from cod_doc.services.sync_service.changeset import decode
 from cod_doc.services.sync_service.errors import ObjectMissingError, RemoteConfigError
 
 if TYPE_CHECKING:
@@ -192,13 +194,12 @@ def _create_project(sf: sessionmaker[Session], uid: str, slug: str, root: Path) 
 def _load_snapshot(
     sf: sessionmaker[Session], store: RemoteStore, slug: str, data: bytes, header: snapshot.Header
 ) -> None:
-    head_cs = decode(store.get_object(header.project, header.head), header.head)
-    if head_cs.project != header.project:
-        msg = f"объект {header.head}: changeset проекта {head_cs.project}"
-        raise ObjectMissingError(msg)
-    with transactional(sf) as session:
+    with transactional(sf, commit=False) as session:
         ref = _local.project_ref(session, slug)
-        snapshot.load(session, ref, data, head=header.head, head_cs=head_cs)
+    # Журнал и индекс — из changeset'ов по адресам от головы: снапшот их не несёт.
+    history = snapshot.load_history(sf, store, ref, header.head)
+    with transactional(sf) as session:
+        snapshot.load(session, ref, data, head=header.head, head_cs=history.head)
 
 
 def _check_digest(sf: sessionmaker[Session], slug: str) -> tuple[str | None, str]:

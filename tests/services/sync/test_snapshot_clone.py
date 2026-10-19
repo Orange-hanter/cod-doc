@@ -11,6 +11,7 @@ is_self; дайджест после clone равен дайджесту гол�
 
 from __future__ import annotations
 
+import time
 from compression import zstd
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -24,12 +25,14 @@ from cod_doc.domain.entities import DocumentStatus, DocumentType, Priority, Sens
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.db import db_for_entry, transactional
+from cod_doc.infra.hlc import wall_ms
 from cod_doc.infra.models import (
     ChangesetModel,
     DocumentModel,
     ProjectModel,
     ReplicaModel,
     RevisionModel,
+    SyncOpModel,
     TaskModel,
 )
 from cod_doc.services import doc_service, scenario_service
@@ -212,6 +215,57 @@ def test_scn_082_clone_restores_remote_state_from_snapshot_and_tail(
     with transactional(a.sf) as s:
         theirs = s.scalars(select(ReplicaModel.uid).where(ReplicaModel.is_self)).one()
     assert mine.uid != theirs
+
+
+def _journal(rep: r.Replica) -> set[tuple[str, str, str | None]]:
+    with transactional(rep.sf) as s:
+        rows = s.execute(select(SyncOpModel.op_id, SyncOpModel.entity_uid, SyncOpModel.changeset))
+        return {(op_id, uid, cs) for op_id, uid, cs in rows}
+
+
+def _set_title(rep: r.Replica, title: str) -> None:
+    with transactional(rep.sf) as s:
+        cap.set_author(s, r.AUTHOR)
+        s.scalars(select(TaskModel).where(TaskModel.task_id == "DEM-001")).one().title = title
+
+
+def _title(rep: r.Replica) -> str:
+    with transactional(rep.sf) as s:
+        return s.scalars(select(TaskModel.title).where(TaskModel.task_id == "DEM-001")).one()
+
+
+@pytest.mark.parametrize("later", ["origin", "clone"])
+def test_lww_after_clone_matches_two_ordinary_replicas(
+    world: tuple[r.Replica, FileRemote], tmp_path: Path, later: str
+) -> None:
+    """Ревью CLO-029: журнал клона — тот же, что у реплики, проигравшей историю.
+
+    A и клон C правят одно LWW-поле (``title``) одной задачи; B — обычная реплика (вся история
+    pull'ом). После обмена у всех трёх побеждает более поздняя запись, дайджесты
+    равны голове, а журнал C совпадает с журналом B операция в операцию.
+    """
+    a, store = world
+    _seed(a)
+    _push(a, store)
+    _clone(store, a, tmp_path / "demo")
+    c = _as_replica("c")
+    b = r.replica_b(tmp_path, a)
+    pull.pull(b.sf, r.SLUG, author=r.AUTHOR, store=store)
+    assert _journal(c) == _journal(b)
+
+    first, second = (c, a) if later == "origin" else (a, c)
+    _set_title(first, f"раньше: {first.name}")
+    time.sleep(0.01)  # HLC второй записи заведомо позже
+    _set_title(second, f"позже: {second.name}")
+    for rep in (a, c, b, a, c):
+        push.push(rep.sf, r.SLUG, author=r.AUTHOR, store=store)
+        pull.pull(rep.sf, r.SLUG, author=r.AUTHOR, store=store)
+
+    expected = f"позже: {second.name}"
+    assert [_title(x) for x in (a, b, c)] == [expected] * 3
+    for rep in (a, b, c):
+        assert digest.verify(rep.sf, r.SLUG, store=store).equal, rep.name
+    assert _journal(c) == _journal(b)
 
 
 def test_cloned_replica_pushes_and_the_origin_pulls_it(
@@ -405,20 +459,6 @@ def _after_last_row(lines: list[object], extra: object) -> list[object]:
             "вне порядка загрузки",
         ),
         (
-            "штамп из будущего",
-            lambda ls: [
-                [
-                    "op",
-                    ln[1],
-                    {**ln[2], "hlc": "9" * 13 + ln[2]["hlc"][13:]},
-                ]
-                if isinstance(ln, list) and ln[0] == "op"
-                else ln
-                for ln in ls
-            ],
-            "впереди стенных часов",
-        ),
-        (
             "слаг — путь",
             lambda ls: [ls[0], [*ls[1][:3], {**ls[1][3], "slug": "../evil"}], *ls[2:]],
             "недопустимый слаг",
@@ -443,6 +483,96 @@ def test_untrusted_snapshot_lines_are_refused(
     _, data = _latest(store, a)
     _replace_snapshot(store, a, _rewrite(data, edit))
     with pytest.raises(ObjectMissingError, match=f"SYNC-102.*{match}"):
+        _clone(store, a, tmp_path / "demo")
+    _assert_nothing_left(tmp_path / "demo")
+
+
+_FAKE_SHA = "f" * 64
+_FAKE_UID = "0199ffff-0000-7000-8000-00000000dead"
+
+
+def _after_last(lines: list[object], kinds: tuple[str, ...], extra: object) -> list[object]:
+    """Вставить строку после последней строки одного из видов — по формату любой версии."""
+    last = max(i for i, ln in enumerate(lines) if isinstance(ln, list) and ln[0] in kinds)
+    return [*lines[: last + 1], extra, *lines[last + 1 :]]
+
+
+def _task_uid(lines: list[object]) -> str:
+    return next(str(ln[2]) for ln in lines[1:] if ln[:2] == ["row", "task"])  # type: ignore[index]
+
+
+def _forged_op(lines: list[object]) -> list[object]:
+    """Подложенная операция журнала: свежий штамп чужой реплики над живой задачей."""
+    op = {
+        "op_id": "01JFORGEDOPFORGEDOPFORGED0",
+        "hlc": f"{wall_ms():013d}.0000.{_FAKE_UID}",
+        "entity_kind": "task",
+        "entity_uid": _task_uid(lines),
+        "kind": "upsert",
+        "fields": {"title": "подлог"},
+        "base": {"title": "Task DEM-001"},
+        "author": "human:mallory",
+    }
+    return _after_last(lines, ("row", "op"), ["op", _FAKE_SHA, op])
+
+
+def _forged_changeset(lines: list[object]) -> list[object]:
+    """Подложенная запись индекса: чужой sha стал бы «применённым» — pull его пропустит."""
+    entry = {
+        "sha": _FAKE_SHA,
+        "parents": [],
+        "replica": _FAKE_UID,
+        "actor": "mallory",
+        "epoch": "0050_sync_rank",
+        "hlc_max": f"{wall_ms():013d}.0000.{_FAKE_UID}",
+        "digest": "0" * 64,
+    }
+    return _after_last(lines, ("row", "op", "changeset"), ["changeset", entry])
+
+
+def _forged_alias(lines: list[object]) -> list[object]:
+    """Подложенный алиас: операции над выдуманным uid ушли бы в живую задачу."""
+    alias = {"entity_kind": "task", "alias": _FAKE_UID, "uid": _task_uid(lines), "reason": "merged"}
+    return [*lines, ["alias", alias]]
+
+
+@pytest.mark.parametrize(
+    "forge",
+    [_forged_op, _forged_changeset, _forged_alias],
+    ids=["op", "changeset-index", "alias"],
+)
+def test_forged_history_in_a_snapshot_is_refused_and_nothing_is_registered(
+    world: tuple[r.Replica, FileRemote], tmp_path: Path, forge: object
+) -> None:
+    """Ревью CLO-029: журнал, индекс changeset'ов и алиасы снапшоту не доверяются.
+
+    Строки и дайджест у подлога верные — состояние совпадает с головой; врут только
+    секции, которые дайджест не покрывает. Clone обязан отказать (SYNC-102), убрать
+    недособранную БД и не регистрировать проект.
+    """
+    a, store = world
+    _seed(a)
+    _push(a, store)
+    _, data = _latest(store, a)
+    _replace_snapshot(store, a, _rewrite(data, forge))
+    with pytest.raises(ObjectMissingError, match="SYNC-102"):
+        _clone(store, a, tmp_path / "demo")
+    _assert_nothing_left(tmp_path / "demo")
+
+
+def test_history_is_read_by_address_and_a_broken_object_fails_the_clone(
+    world: tuple[r.Replica, FileRemote], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Журнал клона — из changeset'ов по адресам: подменённый старый объект — SYNC-102."""
+    a, store = world
+    monkeypatch.setattr(snapshot, "SNAPSHOT_EVERY", 1)
+    root = _push(a, store).head
+    r.make_task(a, "DEM-001")
+    assert _push(a, store).snapshot is not None  # снапшот на второй голове
+    assert root is not None
+    obj = store.root / _uid(a) / "objects" / root[:2] / f"{root[2:]}.zst"
+    obj.write_bytes(obj.read_bytes()[:-1] + b"x")
+    with pytest.raises(ObjectMissingError, match="SYNC-102"):
         _clone(store, a, tmp_path / "demo")
     _assert_nothing_left(tmp_path / "demo")
 
@@ -506,10 +636,10 @@ def test_snapshot_carries_no_restricted_rows_and_no_withheld_columns(
     assert len(scenarios) == 1
     withheld = {"doc_key", "document_id", "section_anchor", "doc_content_hash", "group_key"}
     assert not withheld & set(scenarios[0])
-    shipped = {(ln[1], ln[2]) for ln in rows}
-    ops = [ln[2] for ln in lines if isinstance(ln, list) and ln[0] == "op"]
-    assert ops
-    assert all((op["entity_kind"], op["entity_uid"]) in shipped for op in ops)
+    # Журнал и индекс changeset'ов снапшот не несёт: дайджест их не покрывает,
+    # клон собирает их из changeset'ов по адресам.
+    kinds = {ln[0] for ln in lines[1:] if isinstance(ln, list)}
+    assert kinds <= {"row", "alias"}
     header = lines[0]
     assert isinstance(header, dict)
     assert header["kind"] == "header"
