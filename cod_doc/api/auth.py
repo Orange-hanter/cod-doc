@@ -7,6 +7,8 @@ MCP (``mcp/server.py``) оборачивают им своё приложени�
   пропускает всё: локальные демоны ``:8801``/``:8802`` и ``cod-doc serve`` на
   ноутбуке работают как раньше. Файл проверяется на каждом запросе, поэтому
   ``cod-doc access init`` включает гейт без рестарта.
+- **Хранилища нет, но ``COD_DOC_REQUIRE_AUTH=1``** — 503 на каждый защищённый
+  путь: развёрнутый узел без хранилища закрыт, а не открыт.
 - **Хранилище есть** — защищённому пути нужен ``Authorization: Bearer cdt_…``
   с любого адреса, включая loopback: за reverse proxy на том же хосте каждый
   запрос пришёл бы с ``127.0.0.1``, и исключение для loopback открыло бы всё.
@@ -70,6 +72,18 @@ _HTTP_FORBIDDEN: Final = 403
 _HTTP_TOO_MANY: Final = 429
 _PROJECT_PATH: Final = re.compile(r"^/api/v1/projects/(?P<slug>[^/]+)(?:/|$)")
 _TRUSTED_PROXIES_ENV: Final = "COD_DOC_TRUSTED_PROXIES"
+_REQUIRE_AUTH_ENV: Final = "COD_DOC_REQUIRE_AUTH"
+_HTTP_UNAVAILABLE: Final = 503
+
+
+def _auth_required() -> bool:
+    """``COD_DOC_REQUIRE_AUTH=1`` — хранилище обязано быть: без него отказ, а не проход.
+
+    Ставится на развёрнутом узле (``deploy/sync-remote``): без флага пропавший
+    или не созданный ``access.db`` молча открыл бы ``/api/v1`` всем, кто
+    дошёл через прокси.
+    """
+    return os.environ.get(_REQUIRE_AUTH_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
 def is_web_protected_path(path: str) -> bool:
@@ -182,6 +196,13 @@ async def _send_denial(send: Send, denial: _Denial) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
+_NO_STORE: Final = _Denial(
+    _HTTP_UNAVAILABLE,
+    "SYNC-201",
+    "хранилище доступа не инициализировано (COD_DOC_REQUIRE_AUTH): cod-doc access init",
+)
+
+
 class BearerGate:
     """ASGI-middleware гейта; ``protected(path)`` решает, какие пути закрыты."""
 
@@ -210,6 +231,9 @@ class BearerGate:
 
         factory = await anyio.to_thread.run_sync(access_service.open_store, self.store_url)
         if factory is None:
+            if _auth_required():
+                await _send_denial(send, _NO_STORE)
+                return
             await self.app(scope, receive, send)
             return
         ip = _client_ip(scope)
@@ -310,17 +334,12 @@ class BearerGate:
             )
 
 
-_PROJECT_UIDS: dict[str, str] = {}
-
-
 def _project_uid(slug: str) -> str | None:
     """``project.uid`` по слагу реестра; нет проекта или uid — ``None`` (→ 403).
 
-    Кэш на процесс: uid проекта не меняется, а без кэша каждый запрос к
-    ``/api/v1/projects/{slug}`` открывал бы БД проекта ради одной строки.
+    Без кэша: слаг в реестре можно перевесить на другую БД, и закэшированный
+    uid пустил бы участника старого проекта в новый под тем же именем.
     """
-    if (cached := _PROJECT_UIDS.get(slug)) is not None:
-        return cached
     from cod_doc.config import Config
     from cod_doc.services import access_service
 
@@ -328,8 +347,6 @@ def _project_uid(slug: str) -> str | None:
     if entry is None:
         return None
     try:
-        uid = access_service.project_uid_for(entry)
+        return access_service.project_uid_for(entry)
     except access_service.AccessError:
         return None
-    _PROJECT_UIDS[slug] = uid
-    return uid

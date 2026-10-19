@@ -21,6 +21,8 @@ services:
         LOG_LEVEL: INFO
         # X-Forwarded-For принимается только от сети, где живёт Caddy.
         COD_DOC_TRUSTED_PROXIES: ${COD_DOC_TRUSTED_PROXIES:-172.16.0.0/12}
+        # Нет access.db — 503, а не открытый /api/v1 (гейт fail-closed на узле).
+        COD_DOC_REQUIRE_AUTH: "1"
       # Внутри контейнера слушать все интерфейсы; на хост порт опубликован на loopback.
       COD_DOC_BIND: 0.0.0.0
     volumes: &volumes

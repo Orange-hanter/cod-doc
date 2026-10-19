@@ -248,8 +248,9 @@ claude mcp add --transport http cod-doc https://cod-doc.example.dev/mcp -s user 
 |---|---|
 | токен жив, владелец не отключён | 401 `SYNC-201` |
 | владелец — участник проекта из `project` | ошибка тула `SYNC-202 … не участник проекта` |
+| роль `reader`: только тулы чтения (`cod_doc/mcp/access_policy.py`, deny по умолчанию) | ошибка тула `SYNC-202 … не из списка чтения` |
 | запись: роль `writer`/`admin` | ошибка тула `SYNC-202 … роль 'reader' не позволяет запись` |
-| `author` — свой handle или handle своего агента (`human:alice`, `agent:alice/claude-code`) | ошибка тула `SYNC-202 author … не принадлежит токену`; запись откатывается целиком |
+| `author` — свой handle или handle своего агента, вид в префиксе совпадает (`human:alice`, `agent:alice/claude-code`) | ошибка тула `SYNC-202 author … не принадлежит токену`; запись откатывается целиком |
 | частота: 10 неудачных попыток с адреса, 600 запросов на токен в минуту | 429 `SYNC-204` + `Retry-After` |
 
 Дефолтный `author="mcp"` у write-тулов под токеном не проходит — агенту нужно

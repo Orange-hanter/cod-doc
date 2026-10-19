@@ -19,9 +19,11 @@ Cursor / CI: один узел, данные в нём, доступ — Bearer-
 - **Гейт** (`cod_doc/api/auth.py`) — 401 без живого токена, в том числе с
   loopback. Пока нет хранилища доступа, гейт выключен — поэтому MCP с
   `--host 0.0.0.0` **без хранилища не стартует**.
-- **Роли** — вход только в проекты, где владелец токена участник; запись —
-  `writer`/`admin` и только своим `author`. Детали — `docs/mcp-integration.md`
-  §«Удалённый сервер».
+- **Роли** — вход только в проекты, где владелец токена участник; `reader` —
+  только тулы чтения; запись — `writer`/`admin` и только своим `author`.
+  Детали — `docs/mcp-integration.md` §«Удалённый сервер».
+- **Fail-closed** — `COD_DOC_REQUIRE_AUTH=1` в compose: если `home/access.db`
+  пропал, гейт отвечает 503, а не пропускает всех.
 - **Частота** — 10 неудачных попыток с адреса и 600 запросов на токен в минуту,
   затем 429. Отказы — `auth.denied` в журнале хранилища:
   `sqlite3 home/access.db "select ts, payload from activity_event where kind='auth.denied' order by ts desc limit 20"`.

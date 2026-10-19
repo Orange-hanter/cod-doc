@@ -51,7 +51,7 @@ from cod_doc.mcp.tools import (
 )
 
 if TYPE_CHECKING:
-    from starlette.types import ASGIApp
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 mcp = FastMCP("COD-DOC", json_response=True)
 
@@ -158,11 +158,87 @@ def allow_hosts(hosts: tuple[str, ...]) -> None:
     security.allowed_origins.extend(f"https://{h}" for h in hosts)
 
 
+#: Потолок тела запроса, которое разбирает ``_ToolCapture``: как у SDK.
+_MAX_BODY: int = 4 * 1024 * 1024
+_HTTP_TOO_LARGE = 413
+
+
+def _tool_names(body: bytes) -> frozenset[str]:
+    """Имена тулов из JSON-RPC тела (``tools/call``; пакет — все). Не разобрать — пусто.
+
+    Пустое множество означает «тулов не зовут» (initialize, tools/list) — для
+    reader'а это чтение. Непарсящееся тело SDK отвергнет сам.
+    """
+    import json
+
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return frozenset()
+    messages = message if isinstance(message, list) else [message]
+    names: set[str] = set()
+    for item in messages:
+        if not isinstance(item, dict) or item.get("method") != "tools/call":
+            continue
+        params = item.get("params")
+        name = params.get("name") if isinstance(params, dict) else None
+        # Нестроковое имя — заведомо не тул чтения: reader его не получит.
+        names.add(name if isinstance(name, str) else "\x00")
+    return frozenset(names)
+
+
+class _ToolCapture:
+    """Под токеном — запомнить, какие тулы зовёт запрос (роль reader, CLO-036).
+
+    Тело читается целиком (не больше ``_MAX_BODY``) и отдаётся приложению
+    заново. Без привязанного владельца токена — сквозной проход.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        from cod_doc.services import request_identity
+
+        if scope["type"] != "http" or request_identity.current() is None:
+            await self.app(scope, receive, send)
+            return
+        chunks: list[bytes] = []
+        size = 0
+        more = True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":
+                return  # клиент ушёл
+            chunk: bytes = message.get("body", b"")
+            size += len(chunk)
+            if size > _MAX_BODY:
+                await send(
+                    {"type": "http.response.start", "status": _HTTP_TOO_LARGE, "headers": []}
+                )
+                await send({"type": "http.response.body", "body": b""})
+                return
+            chunks.append(chunk)
+            more = bool(message.get("more_body", False))
+        body = b"".join(chunks)
+        request_identity.set_tools(_tool_names(body))
+        replayed = False
+
+        async def replay() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+
 def gated_http_app() -> ASGIApp:
     """streamable-http приложение MCP за Bearer-гейтом (RFC 29 §3.8, CLO-036)."""
     from cod_doc.api.auth import BearerGate, is_mcp_path
 
-    return BearerGate(mcp.streamable_http_app(), protected=is_mcp_path)
+    return BearerGate(_ToolCapture(mcp.streamable_http_app()), protected=is_mcp_path)
 
 
 def _require_store_off_loopback(host: str) -> None:

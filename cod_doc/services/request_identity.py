@@ -36,12 +36,14 @@ __all__ = [
     "ROLE_WRITER",
     "AccessDeniedError",
     "Identity",
-    "author_handle",
     "bind",
     "check_write",
     "current",
+    "current_tools",
     "enter_project",
     "role_at_least",
+    "set_tools",
+    "split_author",
 ]
 
 ROLE_READER: Final = "reader"
@@ -75,8 +77,9 @@ class Identity:
     handle: str
     kind: str
     token_label: str
-    #: ``handle`` самого actor'а и, для человека, его агентов.
-    authors: frozenset[str]
+    #: Законный ``author``: handle → его вид (``human``/``agent``). Свой handle и,
+    #: для человека, handle его агентов.
+    authors: Mapping[str, str]
     roles: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
 
@@ -86,6 +89,8 @@ class _Binding:
     #: Роль в проекте, в который вошёл запрос (``enter_project``); ``None`` — не входил.
     role: str | None = None
     project_uid: str | None = None
+    #: Тулы MCP, которые зовёт запрос (``set_tools``); ``None`` — не MCP или не разобран.
+    tools: frozenset[str] | None = None
 
 
 _BINDING: contextvars.ContextVar[_Binding | None] = contextvars.ContextVar(
@@ -109,6 +114,18 @@ def current() -> Identity | None:
     return binding.identity if binding is not None else None
 
 
+def set_tools(tools: frozenset[str]) -> None:
+    """Запомнить, какие MCP-тулы зовёт запрос: роль reader пускается по списку."""
+    binding = _BINDING.get()
+    if binding is not None:
+        binding.tools = tools
+
+
+def current_tools() -> frozenset[str] | None:
+    binding = _BINDING.get()
+    return binding.tools if binding is not None else None
+
+
 def enter_project(project_uid: str | None, slug: str) -> str | None:
     """Войти в проект; вернуть роль (``None`` — привязки нет, проверять нечего).
 
@@ -127,16 +144,16 @@ def enter_project(project_uid: str | None, slug: str) -> str | None:
     return role
 
 
-def author_handle(author: str | None) -> str:
-    """``handle`` из строки-автора: ``human:dakh`` и ``dakh`` → ``dakh``.
+def split_author(author: str | None) -> tuple[str | None, str]:
+    """Строка-автор → (вид или ``None``, handle): ``human:dakh`` → ``("human", "dakh")``.
 
     Канонический формат автора — ``<kind>:<id>`` (``domain.entities``); у
     handle агента свой ``/`` (``dakh/claude-code``), двоеточия в нём нет.
     """
     if not author:
-        return ""
-    _kind, sep, rest = author.partition(":")
-    return rest if sep else author
+        return None, ""
+    kind, sep, rest = author.partition(":")
+    return (kind, rest) if sep else (None, author)
 
 
 def check_write(author: str | None) -> None:
@@ -152,7 +169,11 @@ def check_write(author: str | None) -> None:
     if binding.role is None or not role_at_least(binding.role, ROLE_WRITER):
         msg = f"{identity.handle!r}: роль {binding.role or 'нет'!r} не позволяет запись"
         raise AccessDeniedError(msg)
-    if author_handle(author) not in identity.authors:
-        allowed = ", ".join(sorted(identity.authors))
+    # Вид в префиксе обязан совпасть с видом handle: иначе ``system:alice`` или
+    # ``routine:alice`` легли бы в журнал чужой ролью (actor_kind_for_author).
+    kind, handle = split_author(author)
+    expected = identity.authors.get(handle)
+    if expected is None or (kind is not None and kind != expected):
+        allowed = ", ".join(f"{k}:{h}" for h, k in sorted(identity.authors.items()))
         msg = f"author {author!r} не принадлежит токену {identity.handle!r}; допустимо: {allowed}"
         raise AccessDeniedError(msg)

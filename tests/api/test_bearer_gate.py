@@ -340,3 +340,72 @@ def test_mcp_public_bind_with_store_and_allowed_host(
         server.mcp._session_manager = None
         _workspace.set_shared(False)
     assert started == ["0.0.0.0"]
+
+
+# --- роль reader: только тулы чтения ---------------------------------------------
+
+
+def test_reader_tools_exist() -> None:
+    from cod_doc.mcp.access_policy import READER_TOOLS
+    from cod_doc.mcp.profile_counts import catalog
+
+    assert READER_TOOLS - catalog() == set()
+    assert "tool_call_safe" not in READER_TOOLS
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        # пишет файлы проекции до emit — откат транзакции их бы не вернул
+        ("doc_export", {"project": "demo", "doc_key": "x"}),
+        # прокси к любому тулу по имени
+        ("tool_call_safe", {"tool_name": "doc_list", "args": {"project": "demo"}}),
+    ],
+)
+def test_reader_denied_tools_outside_read_list(
+    project: tuple[str, Path],
+    store: None,
+    mcp_client: TestClient,
+    tool: str,
+    arguments: dict[str, Any],
+) -> None:
+    uid, _db = project
+    token = _issue("alice", uid, "reader")
+    # tool_call_safe заворачивает отказ в свой конверт (ok=false), а не в isError
+    _is_error, text = _tool_result(_call(mcp_client, tool, token, **arguments))
+    assert "не из списка чтения" in text
+
+
+def test_kind_prefix_must_match_handle(
+    project: tuple[str, Path], store: None, mcp_client: TestClient
+) -> None:
+    uid, db_path = project
+    token = _issue("alice", uid, "writer")
+    for author in ("system:alice", "agent:alice", "routine:alice"):
+        is_error, text = _tool_result(
+            _call(mcp_client, "doc_create", token, **_doc_args(author, author))
+        )
+        assert is_error, author
+        assert "не принадлежит токену" in text
+    assert _doc_keys(db_path) == set()
+
+
+def test_require_auth_without_store_is_503(
+    project: tuple[str, Path], mcp_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COD_DOC_REQUIRE_AUTH", "1")
+    resp = _call(mcp_client, "doc_list", None, project="demo")
+    assert resp.status_code == 503
+    assert "access init" in resp.json()["error"]["message"]
+
+
+def test_tool_names_parsing() -> None:
+    from cod_doc.mcp.server import _tool_names
+
+    call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "doc_get"}}
+    assert _tool_names(json.dumps(call).encode()) == {"doc_get"}
+    batch = [call, {**call, "params": {"name": "doc_create"}}, {"method": "tools/list"}]
+    assert _tool_names(json.dumps(batch).encode()) == {"doc_get", "doc_create"}
+    weird = {**call, "params": {"name": ["doc_get"]}}
+    assert _tool_names(json.dumps(weird).encode()) == {"\x00"}
+    assert _tool_names(b"not json") == frozenset()

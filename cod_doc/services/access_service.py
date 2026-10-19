@@ -46,6 +46,8 @@ from cod_doc.services import activity_service
 from cod_doc.services.request_identity import ROLES, Identity, role_at_least
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session, sessionmaker
 
@@ -535,15 +537,17 @@ def _touch(row: ApiTokenModel) -> None:
         row.last_used = now
 
 
-def _authors(session: Session, actor: ActorModel) -> frozenset[str]:
-    if actor.kind == KIND_AGENT:
-        return frozenset({actor.handle})
-    agents = session.scalars(
-        select(ActorModel.handle).where(
-            ActorModel.owner_uid == actor.uid, ActorModel.disabled.is_(False)
-        )
-    ).all()
-    return frozenset({actor.handle, *agents})
+def _authors(session: Session, actor: ActorModel) -> Mapping[str, str]:
+    """Законные ``author``: свой handle и, у человека, handle его живых агентов."""
+    authors = {actor.handle: actor.kind}
+    if actor.kind == KIND_HUMAN:
+        agents = session.scalars(
+            select(ActorModel.handle).where(
+                ActorModel.owner_uid == actor.uid, ActorModel.disabled.is_(False)
+            )
+        ).all()
+        authors.update(dict.fromkeys(agents, KIND_AGENT))
+    return MappingProxyType(authors)
 
 
 def _member_roles(session: Session, actor_uid: str) -> dict[str, str]:

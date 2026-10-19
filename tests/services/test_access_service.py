@@ -72,7 +72,7 @@ def test_authenticate_resolves_roles_and_authors(store: sessionmaker[Session]) -
     assert ident is not None
     assert ident.handle == "alice"
     assert dict(ident.roles) == {P1: "writer", P2: "reader"}
-    assert ident.authors == {"alice", "alice/claude-code"}
+    assert dict(ident.authors) == {"alice": "human", "alice/claude-code": "agent"}
 
 
 def test_unknown_or_malformed_token_rejected(store: sessionmaker[Session]) -> None:
@@ -129,7 +129,7 @@ def test_agent_inherits_owner_role_narrowed_by_own(store: sessionmaker[Session])
     assert ident is not None
     # P1 сужен своим членством; P2 — роль владельца, понизившаяся после выдачи
     assert dict(ident.roles) == {P1: "reader", P2: "reader"}
-    assert ident.authors == {agent}
+    assert dict(ident.authors) == {agent: "agent"}
 
 
 def test_every_mutation_leaves_activity_event(store: sessionmaker[Session]) -> None:
