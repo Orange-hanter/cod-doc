@@ -85,7 +85,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.remote.base import META_KEY, SnapshotRef, snapshot_key
 from cod_doc.infra.remote.file import MAX_SNAPSHOT_BYTES
-from cod_doc.services.sync_service import _local, apply, digest, journal
+from cod_doc.services.sync_service import _local, apply, digest, gate, journal
 from cod_doc.services.sync_service._values import to_wire
 from cod_doc.services.sync_service.changeset import (
     _PARSE_ERRORS,
@@ -425,9 +425,14 @@ def build(session: Session, project: _local.ProjectRef, *, head: str, digest_hex
     # Строки снапшота: по ним отбираются алиасы. Память — пара (таблица, uid)
     # на строку проекта, не сами строки.
     shipped: set[tuple[str, str]] = set()
+    # Растяжка (CLO-033): shipped_rows судит по текущим меткам, но строка
+    # restricted-документа в снапшоте — SYNC-001, а не запись на remote.
+    held = gate.restricted(session, project.row_id).uids
     for table, uid, fields_json in cap.shipped_rows(session, project.row_id, load_order()):
+        fields = json.loads(fields_json)
+        gate.check_row(held, table, uid, fields)
         shipped.add((table, uid))
-        writer.line([_ROW, table, uid, to_wire(table, json.loads(fields_json))])
+        writer.line([_ROW, table, uid, to_wire(table, fields)])
     aliases = session.scalars(
         select(EntityAliasModel)
         .where(EntityAliasModel.project_id == project.row_id)
