@@ -242,6 +242,9 @@ class Config(BaseSettings):
     # project_member. Пусто — ``$COD_DOC_HOME/access.db``. Пока его нет,
     # Bearer-гейт выключен (CLO-036); создаёт его ``cod-doc access init``.
     access_db_url: str = Field(default="")
+    # RFC 29 §3.5 (CLO-035): каталог объектов умного remote этого сервера
+    # (``/api/sync/v1``). Пусто — ``$COD_DOC_HOME/remotes``.
+    sync_remote_root: str = Field(default="")
 
     @field_validator("api_key", "embedding_api_key", mode="before")
     @classmethod

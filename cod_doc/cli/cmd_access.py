@@ -2,10 +2,12 @@
 
 ``access init|status`` — хранилище доступа; ``member add/list/remove`` — роли в
 проектах; ``token create/list/revoke`` — Bearer-токены; ``actor agent|disable``
-— агенты и отключение. Команды работают **на сервере** против его хранилища
-(``Config.access_db_url`` или ``$COD_DOC_HOME/access.db``): в контейнере —
-``docker compose exec cod-doc cod-doc token create …``. Удалённое
-администрирование через https-remote — после ``/api/sync/v1`` (CLO-035).
+— агенты и отключение. Без ``--remote`` команды работают **на сервере** против
+его хранилища (``Config.access_db_url`` или ``$COD_DOC_HOME/access.db``): в
+контейнере — ``docker compose exec cod-doc cod-doc token create …``. С
+``--remote NAME`` ``member``/``token`` идут в https-remote проекта
+(``/api/sync/v1``, роль admin): участники проекта и токены — только себе или
+своему агенту (CLO-038).
 
 В MCP ничего из этого не выставлено намеренно (§3.9): выдача токена агентом,
 которому этот токен и нужен, — эскалация привилегий.
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from cod_doc.config import Config
+    from cod_doc.infra.remote.http import HttpRemote
 
 console = Console()
 
@@ -93,6 +96,42 @@ def _slug_by_uid(ctx: click.Context) -> dict[str, str]:
         except access_service.AccessError:
             continue  # проект без uid — в списке остаётся uid, как и записан
     return out
+
+
+_remote_opt = click.option(
+    "--remote",
+    "remote_name",
+    default=None,
+    help="Через https-remote проекта (роль admin), а не локальное хранилище",
+)
+
+
+@contextmanager
+def _remote_errors() -> Iterator[None]:
+    from cod_doc.infra.remote.errors import SyncError
+
+    try:
+        yield
+    except SyncError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _remote_admin(
+    ctx: click.Context, project: str | None, remote_name: str
+) -> tuple[HttpRemote, str]:
+    """``HttpRemote`` remote'а проекта и ``project.uid``; не https — ``ClickException``."""
+    from cod_doc.infra.remote.http import HttpRemote
+    from cod_doc.services.sync_service import _local
+
+    if project is None:
+        raise click.ClickException("--remote требует --project/-p")
+    uid = _project_uid(ctx, project)
+    with _remote_errors():
+        store = _local.open_store(project, remote_name)
+    if not isinstance(store, HttpRemote):
+        msg = f"remote {remote_name!r}: участники и токены есть только у https-remote"
+        raise click.ClickException(msg)
+    return store, uid
 
 
 # --- access -------------------------------------------------------------------
@@ -164,14 +203,30 @@ def member() -> None:
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--role", type=click.Choice(_ROLES), required=True)
 @_author_opt
+@_remote_opt
 @_json_opt
 @click.pass_context
 def member_add(
-    ctx: click.Context, handle: str, project: str, role: str, author: str, as_json: bool
+    ctx: click.Context,
+    handle: str,
+    project: str,
+    role: str,
+    author: str,
+    remote_name: str | None,
+    as_json: bool,
 ) -> None:
     """Выдать HANDLE роль в проекте; человек заводится, если его ещё нет."""
     from cod_doc.services import access_service
 
+    if remote_name is not None:
+        store, puid = _remote_admin(ctx, project, remote_name)
+        with _remote_errors():
+            body = store.admin("PUT", puid, "members", handle, body={"role": role})
+        if as_json:
+            _echo_json({**(body if isinstance(body, dict) else {}), "project": project})
+            return
+        console.print(f"[green]✓[/green] {handle} → {project}: {role} (remote {remote_name})")
+        return
     uid = _project_uid(ctx, project)
     with _store_session() as session:
         row = access_service.add_member(
@@ -187,11 +242,20 @@ def member_add(
 @click.argument("handle")
 @click.option("--project", "-p", required=True, help="Project slug")
 @_author_opt
+@_remote_opt
 @click.pass_context
-def member_remove(ctx: click.Context, handle: str, project: str, author: str) -> None:
+def member_remove(
+    ctx: click.Context, handle: str, project: str, author: str, remote_name: str | None
+) -> None:
     """Снять членство HANDLE в проекте."""
     from cod_doc.services import access_service
 
+    if remote_name is not None:
+        store, puid = _remote_admin(ctx, project, remote_name)
+        with _remote_errors():
+            store.admin("DELETE", puid, "members", handle)
+        console.print(f"[green]✓[/green] снято: {handle} ← {project} (remote {remote_name})")
+        return
     uid = _project_uid(ctx, project)
     with _store_session() as session:
         removed = access_service.remove_member(
@@ -204,11 +268,30 @@ def member_remove(ctx: click.Context, handle: str, project: str, author: str) ->
 
 @member.command("list")
 @click.option("--project", "-p", default=None, help="Только этот проект")
+@_remote_opt
 @_json_opt
 @click.pass_context
-def member_list(ctx: click.Context, project: str | None, as_json: bool) -> None:
+def member_list(
+    ctx: click.Context, project: str | None, remote_name: str | None, as_json: bool
+) -> None:
     """Участники: все или одного проекта."""
     from cod_doc.services import access_service
+
+    if remote_name is not None:
+        store, puid = _remote_admin(ctx, project, remote_name)
+        with _remote_errors():
+            rows = store.admin("GET", puid, "members")
+        items = [
+            m
+            for m in (rows if isinstance(rows, list) else [])
+            if isinstance(m, dict) and {"handle", "kind", "role"} <= m.keys()
+        ]
+        if as_json:
+            _echo_json(items)
+            return
+        for item in items:
+            console.print(f"{item['handle']:<32} {item['kind']:<6} {item['role']}")
+        return
 
     uid = _project_uid(ctx, project) if project else None
     slugs = _slug_by_uid(ctx)
@@ -234,14 +317,38 @@ def token() -> None:
 @token.command("create")
 @click.argument("handle")
 @click.option("--label", required=True, help="Устройство или агент: macbook, ci, cursor-cloud")
+@click.option("--project", "-p", default=None, help="Проект remote'а (нужен с --remote)")
 @_author_opt
+@_remote_opt
 @_json_opt
-def token_create(handle: str, label: str, author: str, as_json: bool) -> None:
-    """Выпустить токен HANDLE. Сохраните его сразу — второй раз его не показать."""
+@click.pass_context
+def token_create(
+    ctx: click.Context,
+    handle: str,
+    label: str,
+    project: str | None,
+    author: str,
+    remote_name: str | None,
+    as_json: bool,
+) -> None:
+    """Выпустить токен HANDLE. Сохраните его сразу — второй раз его не показать.
+
+    С ``--remote`` HANDLE — вы сами или ваш агент: чужой токен сервер не выпустит.
+    """
     from cod_doc.services import access_service
 
-    with _store_session() as session:
-        issued = access_service.create_token(session, handle=handle, label=label, author=author)
+    if remote_name is not None:
+        store, puid = _remote_admin(ctx, project, remote_name)
+        with _remote_errors():
+            body = store.admin("POST", puid, "tokens", body={"label": label, "handle": handle})
+        if not isinstance(body, dict) or not {"uid", "handle", "label", "token"} <= body.keys():
+            raise click.ClickException("SYNC-110: remote вернул ответ не по форме §10.9")
+        issued = access_service.IssuedToken(
+            uid=body["uid"], handle=body["handle"], label=body["label"], token=body["token"]
+        )
+    else:
+        with _store_session() as session:
+            issued = access_service.create_token(session, handle=handle, label=label, author=author)
     if as_json:
         _echo_json(dataclasses.asdict(issued))
         return
@@ -255,29 +362,61 @@ def token_create(handle: str, label: str, author: str, as_json: bool) -> None:
 
 @token.command("list")
 @click.option("--handle", default=None, help="Только токены этого actor'а")
+@click.option("--project", "-p", default=None, help="Проект remote'а (нужен с --remote)")
+@_remote_opt
 @_json_opt
-def token_list(handle: str | None, as_json: bool) -> None:
+@click.pass_context
+def token_list(
+    ctx: click.Context,
+    handle: str | None,
+    project: str | None,
+    remote_name: str | None,
+    as_json: bool,
+) -> None:
     """Токены без открытого текста: uid, владелец, метка, последнее использование."""
     from cod_doc.services import access_service
 
-    with _store_session() as session:
-        rows = access_service.list_tokens(session, handle)
+    if remote_name is not None:
+        store, puid = _remote_admin(ctx, project, remote_name)
+        with _remote_errors():
+            body = store.admin("GET", puid, "tokens")
+        items = [
+            t for t in (body if isinstance(body, list) else []) if handle in (None, t["handle"])
+        ]
+    else:
+        with _store_session() as session:
+            rows = access_service.list_tokens(session, handle)
+        items = [dataclasses.asdict(r) for r in rows]
     if as_json:
-        _echo_json([dataclasses.asdict(r) for r in rows])
+        _echo_json(items)
         return
-    for r in rows:
-        state = "отозван" if r.revoked_at else "активен"
-        used = r.last_used.isoformat(timespec="minutes") if r.last_used else "—"
-        console.print(f"{r.uid}  {r.handle:<28} {r.label:<16} {state:<8} {used}")
+    for t in items:
+        state = "отозван" if t["revoked_at"] else "активен"
+        used = str(t["last_used"])[:16] if t["last_used"] else "—"
+        console.print(f"{t['uid']}  {t['handle']:<28} {t['label']:<16} {state:<8} {used}")
 
 
 @token.command("revoke")
 @click.argument("token_uid")
+@click.option("--project", "-p", default=None, help="Проект remote'а (нужен с --remote)")
 @_author_opt
-def token_revoke(token_uid: str, author: str) -> None:
-    """Отозвать токен по uid (или уникальному префиксу uid). Действует сразу."""
+@_remote_opt
+@click.pass_context
+def token_revoke(
+    ctx: click.Context, token_uid: str, project: str | None, author: str, remote_name: str | None
+) -> None:
+    """Отозвать токен по uid (или уникальному префиксу uid). Действует сразу.
+
+    С ``--remote`` — только свой токен и по полному uid (``token list --remote``).
+    """
     from cod_doc.services import access_service
 
+    if remote_name is not None:
+        store, puid = _remote_admin(ctx, project, remote_name)
+        with _remote_errors():
+            store.admin("DELETE", puid, "tokens", token_uid)
+        console.print("[green]✓[/green] отозван (remote)")
+        return
     with _store_session() as session:
         revoked = access_service.revoke_token(session, token_uid=token_uid, author=author)
     console.print("[green]✓[/green] отозван" if revoked else "уже отозван")

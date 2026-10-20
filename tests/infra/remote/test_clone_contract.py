@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 def test_scn_082_clone_through_the_transport(remote_url: str, tmp_path: Path) -> None:  # noqa: F811
     store = open_remote(remote_url, credentials=None)
     a = r.replica_a(tmp_path)
+    if remote_url.startswith("http"):
+        # Умный remote: членство по uid проекта, а он есть только у созданной реплики.
+        from tests.infra.remote._https_server import grant
+
+        with transactional(a.sf) as s:
+            grant(s.get_one(ProjectModel, a.project_id).uid)
     r.make_task(a, "DEM-001")
     first = push.push(a.sf, r.SLUG, author=r.AUTHOR, store=store)
     assert first.snapshot == first.head

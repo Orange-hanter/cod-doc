@@ -263,8 +263,9 @@ class BearerGate:
         self.app = app
         self.protected = protected
         self.store_url = store_url
-        self.failures = failures or RateLimiter(FAILURES_PER_WINDOW)
-        self.requests = requests or RateLimiter(REQUESTS_PER_WINDOW)
+        # ``is None``, а не ``or``: у пустого лимитера ``len() == 0`` — он ложен.
+        self.failures = RateLimiter(FAILURES_PER_WINDOW) if failures is None else failures
+        self.requests = RateLimiter(REQUESTS_PER_WINDOW) if requests is None else requests
         self._logged: dict[str, float] = {}
         self._logged_lock = threading.Lock()
 

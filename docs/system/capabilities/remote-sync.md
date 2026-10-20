@@ -172,9 +172,13 @@ CLO-039) — Bearer-токены на MCP и `/api/v1`:
   add|list|remove`, `token create|list|revoke`, `actor agent|disable`.
 - **Развёртывание** — `deploy/sync-remote/` (compose + Caddy).
 
-Чего нет: умный `https://` remote — `/api/sync/v1`, `HttpRemote`, проверка
-`actor`/`author` на push и удалённое администрирование (CLO-035/037/038); рутина
-`sync` (секция F). Открытые пункты — [аудит секции D
+Умный `https://` remote (CLO-035/037/038): `/api/sync/v1` на `cod-doc serve`
+поверх `FileRemote` сервера, клиент `HttpRemote`, роли reader/writer/admin на
+каждом маршруте, проверка `actor`/`author` changeset'а на push (`SYNC-203`),
+`remote login` (Keychain или файл кредов), `member`/`token --remote` для admin
+проекта.
+
+Чего нет: рутина `sync` (секция F). Открытые пункты — [аудит секции D
 §7](../audit/2026-10-19-cloud-remote-section-d.md).
 
 ## 1. Зачем

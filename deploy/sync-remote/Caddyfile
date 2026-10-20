@@ -1,5 +1,5 @@
 # TLS от Let's Encrypt и прокси на MCP (RFC 29 §3.8, CLO-039).
-# Наружу — только /mcp и /api/v1: оба за Bearer-гейтом cod-doc. Всё остальное
+# Наружу — только /mcp, /api/v1 и /api/sync/v1: все за Bearer-гейтом cod-doc. Всё остальное
 # (веб-UI, legacy /api/*, POST /settings) гейта не имеет и получает 404.
 {$COD_DOC_PUBLIC_HOST} {
 	encode zstd gzip
@@ -12,6 +12,14 @@
 	}
 
 	handle /api/v1/* {
+		reverse_proxy cod-doc:8765
+	}
+
+	# Умный remote (RFC 29 §10.9): объекты и снапшоты бывают большими.
+	handle /api/sync/v1/* {
+		request_body {
+			max_size 1GB
+		}
 		reverse_proxy cod-doc:8765
 	}
 

@@ -5,9 +5,10 @@
 не выставляется намеренно (§10.7): настройка remote — дело человека.
 
 Схемы: ``file://`` и ``s3://`` (CLO-028; креды — ``~/.cod-doc/credentials``
-по URL remote, CLO-051, иначе стандартная цепочка AWS) работают; ``https://`` (CLO-035) записывается с предупреждением, но push/pull
-по нему до своей задачи отвечают ``SYNC-110``. ``s3://``-URL проверяется
-сразу (бакет, сегменты префикса, нет кредов в URL), в сеть ``add`` не ходит.
+по URL remote, CLO-051, иначе стандартная цепочка AWS) и ``https://``
+(умный remote ``/api/sync/v1``, CLO-035; токен — ``cod-doc remote login``)
+работают. ``http://`` — вид ``https`` только для loopback (туннель, тесты).
+``s3://``- и ``https://``-URL проверяются сразу, в сеть ``add`` не ходит.
 Неизвестная схема и ``--kind``, не совпавший со схемой, — ``SYNC-110`` сразу.
 """
 
@@ -28,9 +29,6 @@ AUTO: Final = "auto"
 
 #: §10.8: ``s3://`` — плоское хранилище, роли и токены там не проверяются.
 S3_WARNING: Final = "s3-remote без разграничения доступа: любой с ключами бакета читает и пишет всё"
-_PENDING: Final = {
-    "https": "https-remote пока не поддержан (CLO-035): fetch/pull/push ответят SYNC-110",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +58,8 @@ def _registered(project: str) -> dict[str, dict[str, str]]:
 
 def _kind_of(url: str, kind: str) -> str:
     scheme = urlparse(url).scheme
+    if scheme == "http":
+        scheme = "https"  # loopback-only; остальное отвергнет HttpRemote.from_url
     if scheme not in KINDS:
         msg = f"remote {url!r}: неизвестная схема {scheme or '<нет>'!r}, нужна одна из {KINDS}"
         raise RemoteConfigError(msg)
@@ -89,13 +89,15 @@ def add(project: str, name: str, url: str, *, kind: str = AUTO) -> AddedRemote:
         from cod_doc.infra.remote.s3 import parse_url
 
         parse_url(url)  # бакет и префикс допустимы, кредов в URL нет — иначе SYNC-110
+    elif resolved == "https":
+        from cod_doc.infra.remote.http import HttpRemote
+
+        HttpRemote.from_url(url, credentials={})  # хост есть, http — только loopback
     existing = _registered(project)
     Config.load().set_project_remote(project, name, {"url": url, "kind": resolved})
     warnings: list[str] = []
     if resolved == "s3":
         warnings.append(S3_WARNING)
-    if resolved in _PENDING:
-        warnings.append(_PENDING[resolved])
     return AddedRemote(
         remote=RemoteSpec(name=name, url=url, kind=resolved),
         replaced=name in existing,

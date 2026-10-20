@@ -39,15 +39,14 @@ import errno
 import os
 import re
 import stat
-from typing import TYPE_CHECKING, Final
+import tempfile
+from pathlib import Path
+from typing import Final
 from urllib.parse import urlparse
 
 import yaml
 
 from cod_doc.infra.remote.errors import RemoteConfigError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 __all__ = [
     "CREDENTIALS_FILENAME",
@@ -57,6 +56,7 @@ __all__ = [
     "credentials_for",
     "load_credentials",
     "normalize_key",
+    "store_token",
 ]
 
 CREDENTIALS_FILENAME: Final = "credentials"
@@ -65,7 +65,8 @@ MAX_CREDENTIALS_BYTES: Final = 64 * 1024
 #: Биты группы и прочих: хоть один — файл отвергается.
 _FOREIGN_BITS: Final = 0o077
 #: Схемы, у которых бывают креды; ``file://`` их не читает.
-_SCHEMES: Final = ("s3", "https")
+#: ``http`` — только loopback (туннель, тесты): ``HttpRemote`` иной http не откроет.
+_SCHEMES: Final = ("s3", "https", "http")
 _FIELD_RE: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
 type Entries = dict[str, dict[str, str]]
@@ -185,6 +186,34 @@ def load_credentials(path: Path | None = None) -> Entries:
     if data is None:
         return {}
     return _entries(path, _parse_yaml(path, data))
+
+
+def store_token(url: str, token: str, *, path: Path | None = None) -> Path:
+    """Записать токен https-remote в файл кредов (CLO-038, ``remote login``); вернуть путь.
+
+    Остальные записи сохраняются; существующий файл проходит те же проверки,
+    что при чтении (битый или чужой — ``CredentialsFileError``, а не тихая
+    перезапись). Запись атомарна: временный файл ``0600`` и ``os.replace``.
+    """
+    path = path if path is not None else credentials_file()
+    key = _valid_key(url)
+    if key is None or not key.startswith(("https://", "http://")):
+        msg = f"{url!r}: токен пишется только для https-remote"
+        raise RemoteConfigError(msg)
+    entries = load_credentials(path)
+    entries.setdefault(key, {})["token"] = token
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # mkstemp: уникальное имя и 0600 сразу; хвост прерванной записи не мешает следующей.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            yaml.safe_dump(entries, fh, allow_unicode=True, sort_keys=True)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return path
 
 
 def credentials_for(url: str, *, path: Path | None = None) -> dict[str, str] | None:

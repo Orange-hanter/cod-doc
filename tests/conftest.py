@@ -29,6 +29,15 @@ _GIT_REPO_LOCATORS = (
 
 
 @pytest.fixture(autouse=True)
+def no_keychain(isolated_cod_doc_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Тесты не ходят в настоящий Keychain macOS (``infra/keychain``, CLO-038).
+
+    После ``isolated_cod_doc_home``: та стирает все ``COD_DOC_*`` из окружения.
+    """
+    monkeypatch.setenv("COD_DOC_KEYCHAIN", "0")
+
+
+@pytest.fixture(autouse=True)
 def isolated_cod_doc_home(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

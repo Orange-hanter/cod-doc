@@ -187,9 +187,9 @@ def open_remote(url: str, *, credentials: Credentials | None = None) -> RemoteSt
     """Транспорт по схеме URL; неизвестная схема — ``RemoteConfigError`` (SYNC-110).
 
     ``file://`` — ``FileRemote`` (кредов не читает), ``s3://`` — ``S3Remote``
-    (CLO-028; креды — ``credentials`` или стандартная цепочка AWS). ``https://``
-    (CLO-035) пока SYNC-110: remote с такой схемой настроить нельзя, пока нет
-    реализации. Открытие в сеть не ходит.
+    (CLO-028; креды — ``credentials`` или стандартная цепочка AWS), ``https://``
+    — ``HttpRemote`` (CLO-035; токен — ``credentials`` или файл кредов).
+    Открытие в сеть не ходит.
     """
     scheme = urlparse(url).scheme
     if scheme == "file":
@@ -200,8 +200,10 @@ def open_remote(url: str, *, credentials: Credentials | None = None) -> RemoteSt
         from cod_doc.infra.remote.s3 import S3Remote
 
         return S3Remote.from_url(url, credentials=credentials)
-    if scheme == "https":
-        msg = "remote https://: транспорт ещё не реализован (CLO-035)"
-        raise RemoteConfigError(msg)
+    if scheme in ("https", "http"):
+        # http:// — только loopback (проверяет HttpRemote): тесты и туннель.
+        from cod_doc.infra.remote.http import HttpRemote
+
+        return HttpRemote.from_url(url, credentials=credentials)
     msg = "remote: неизвестная схема URL, ожидается file://, s3:// или https://"
     raise RemoteConfigError(msg)

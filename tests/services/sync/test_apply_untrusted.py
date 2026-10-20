@@ -482,7 +482,8 @@ def test_unknown_local_schema_fails_closed() -> None:
 
 @pytest.mark.parametrize(
     ("url", "ok"),
-    [("file:///tmp/remote", True), ("https://sync.example", False), ("s3://b/p", False)],
+    # https (CLO-035) открывается без сети, как file://; s3 без кредов — SYNC-110.
+    [("file:///tmp/remote", True), ("https://sync.example", True), ("s3://b/p", False)],
 )
 def test_open_store_allows_only_implemented_schemes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str, ok: bool

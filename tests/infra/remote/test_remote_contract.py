@@ -63,7 +63,55 @@ def _s3_url(tmp_path: Path) -> str:
     return f"s3://{bucket}/contract-{uuid.uuid4().hex}"
 
 
-FACTORIES: dict[str, Callable[[Path], str]] = {"file": _file_url, "s3": _s3_url}
+def _https_url(tmp_path: Path) -> str:
+    """Настоящий сервер ``/api/sync/v1`` за Bearer-гейтом (CLO-035); loopback — http."""
+    del tmp_path
+    from tests.infra.remote._https_server import provision
+
+    return provision((PROJECT, OTHER))
+
+
+FACTORIES: dict[str, Callable[[Path], str]] = {
+    "file": _file_url,
+    "s3": _s3_url,
+    "https": _https_url,
+}
+
+
+def _object(remote_url: str, seed: str) -> tuple[str, bytes]:
+    """Адрес и тело объекта. Умный remote хранит только changeset'ы владельца токена
+    (CLO-037), поэтому ему — настоящий changeset; байтовым транспортам — любые байты."""
+    if not remote_url.startswith("http"):
+        return _sha(seed), b"CDC1payload"
+    from cod_doc.services.sync_service import changeset
+    from cod_doc.services.sync_service.changeset import Changeset, Op
+    from tests.infra.remote._https_server import ACTOR
+
+    replica = "0199f2b0-7c3a-7000-8000-000000000001"
+    hlc = f"{1760000000001:013d}.0000.{replica}"
+    cs = Changeset(
+        project=PROJECT,
+        parents=(),
+        replica=replica,
+        actor=ACTOR,
+        epoch="0050_sync_rank",
+        schema_head="0050_sync_rank",
+        hlc_max=hlc,
+        digest="d" * 64,
+        ops=(
+            Op(
+                op_id=f"01K7Z{hashlib.sha256(seed.encode()).hexdigest()[:21].upper()}",
+                hlc=hlc,
+                entity_kind="task",
+                entity_uid="0199f2b0-7c3a-7000-8000-0000000000aa",
+                kind="upsert",
+                fields={"title": seed},
+                base={},
+                author=f"human:{ACTOR}",
+            ),
+        ),
+    )
+    return changeset.sha(cs), changeset.encode(cs)
 
 
 def _sha(seed: str) -> str:
@@ -160,20 +208,21 @@ def test_rejects_unsafe_project_and_ref_names(remote: RemoteStore, bad: str) -> 
 # --- objects --------------------------------------------------------------------
 
 
-def test_put_get_has_objects(remote: RemoteStore) -> None:
-    a, b = _sha("a"), _sha("b")
+def test_put_get_has_objects(remote: RemoteStore, remote_url: str) -> None:
+    a, data = _object(remote_url, "a")
+    b = _sha("b")
     assert remote.has_objects(PROJECT, [a, b]) == set()
-    remote.put_object(PROJECT, a, b"CDC1payload")
+    remote.put_object(PROJECT, a, data)
     assert remote.has_objects(PROJECT, [a, b]) == {a}
     assert remote.has_objects(PROJECT, []) == set()
-    assert remote.get_object(PROJECT, a) == b"CDC1payload"
+    assert remote.get_object(PROJECT, a) == data
 
 
-def test_put_object_is_idempotent(remote: RemoteStore) -> None:
-    a = _sha("a")
-    remote.put_object(PROJECT, a, b"CDC1payload")
-    remote.put_object(PROJECT, a, b"CDC1payload")
-    assert remote.get_object(PROJECT, a) == b"CDC1payload"
+def test_put_object_is_idempotent(remote: RemoteStore, remote_url: str) -> None:
+    a, data = _object(remote_url, "a")
+    remote.put_object(PROJECT, a, data)
+    remote.put_object(PROJECT, a, data)
+    assert remote.get_object(PROJECT, a) == data
 
 
 def test_missing_object_is_sync_102(remote: RemoteStore) -> None:
@@ -182,9 +231,9 @@ def test_missing_object_is_sync_102(remote: RemoteStore) -> None:
     assert exc.value.code == "SYNC-102"
 
 
-def test_objects_are_per_project(remote: RemoteStore) -> None:
-    a = _sha("a")
-    remote.put_object(PROJECT, a, b"x")
+def test_objects_are_per_project(remote: RemoteStore, remote_url: str) -> None:
+    a, data = _object(remote_url, "a")
+    remote.put_object(PROJECT, a, data)
     assert remote.has_objects(OTHER, [a]) == set()
 
 
@@ -284,16 +333,34 @@ def _snap(epoch: str, seed: str) -> SnapshotRef:
     return SnapshotRef(epoch=epoch, sha=s, key=f"snapshots/{epoch}/{s}.db.zst")
 
 
-def test_snapshots(remote: RemoteStore) -> None:
+def _head_snap(remote: RemoteStore, remote_url: str, epoch: str, seed: str) -> SnapshotRef:
+    """Снапшот на голову-объект: умный remote принимает снапшот только на свой changeset."""
+    sha, data = _object(remote_url, seed)
+    remote.put_object(PROJECT, sha, data)
+    return SnapshotRef(epoch=epoch, sha=sha, key=f"snapshots/{epoch}/{sha}.db.zst")
+
+
+def _snap_data(remote_url: str, ref: SnapshotRef, tag: str) -> bytes:
+    """Тело снапшота: умному remote — с заголовком по адресу, байтовым — любые байты."""
+    if not remote_url.startswith("http"):
+        return tag.encode()
+    from tests.infra.remote._https_server import snapshot_bytes
+
+    return snapshot_bytes(PROJECT, ref.epoch, ref.sha, tag)
+
+
+def test_snapshots(remote: RemoteStore, remote_url: str) -> None:
     assert remote.latest_snapshot(PROJECT) is None
-    old_epoch = _snap("0050_sync_rank", "s1")
-    remote.put_snapshot(PROJECT, old_epoch, b"db1")
+    old_epoch = _head_snap(remote, remote_url, "0050_sync_rank", "s1")
+    db1 = _snap_data(remote_url, old_epoch, "db1")
+    remote.put_snapshot(PROJECT, old_epoch, db1)
     assert remote.latest_snapshot(PROJECT) == old_epoch
-    new_epoch = _snap("0052_sync_access", "s0")
-    remote.put_snapshot(PROJECT, new_epoch, b"db2")
-    remote.put_snapshot(PROJECT, new_epoch, b"db2")  # идемпотентно
+    new_epoch = _head_snap(remote, remote_url, "0052_sync_access", "s0")
+    db2 = _snap_data(remote_url, new_epoch, "db2")
+    remote.put_snapshot(PROJECT, new_epoch, db2)
+    remote.put_snapshot(PROJECT, new_epoch, db2)  # идемпотентно
     assert remote.latest_snapshot(PROJECT) == new_epoch
-    assert remote.get_snapshot(PROJECT, old_epoch) == b"db1"
+    assert remote.get_snapshot(PROJECT, old_epoch) == db1
     assert remote.latest_snapshot(OTHER) is None
 
 
