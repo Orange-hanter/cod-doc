@@ -63,7 +63,55 @@ def _s3_url(tmp_path: Path) -> str:
     return f"s3://{bucket}/contract-{uuid.uuid4().hex}"
 
 
-FACTORIES: dict[str, Callable[[Path], str]] = {"file": _file_url, "s3": _s3_url}
+def _https_url(tmp_path: Path) -> str:
+    """Настоящий сервер ``/api/sync/v1`` за Bearer-гейтом (CLO-035); loopback — http."""
+    del tmp_path
+    from tests.infra.remote._https_server import provision
+
+    return provision((PROJECT, OTHER))
+
+
+FACTORIES: dict[str, Callable[[Path], str]] = {
+    "file": _file_url,
+    "s3": _s3_url,
+    "https": _https_url,
+}
+
+
+def _object(remote_url: str, seed: str) -> tuple[str, bytes]:
+    """Адрес и тело объекта. Умный remote хранит только changeset'ы владельца токена
+    (CLO-037), поэтому ему — настоящий changeset; байтовым транспортам — любые байты."""
+    if not remote_url.startswith("http"):
+        return _sha(seed), b"CDC1payload"
+    from cod_doc.services.sync_service import changeset
+    from cod_doc.services.sync_service.changeset import Changeset, Op
+    from tests.infra.remote._https_server import ACTOR
+
+    replica = "0199f2b0-7c3a-7000-8000-000000000001"
+    hlc = f"{1760000000001:013d}.0000.{replica}"
+    cs = Changeset(
+        project=PROJECT,
+        parents=(),
+        replica=replica,
+        actor=ACTOR,
+        epoch="0050_sync_rank",
+        schema_head="0050_sync_rank",
+        hlc_max=hlc,
+        digest="d" * 64,
+        ops=(
+            Op(
+                op_id=f"01K7Z{hashlib.sha256(seed.encode()).hexdigest()[:21].upper()}",
+                hlc=hlc,
+                entity_kind="task",
+                entity_uid="0199f2b0-7c3a-7000-8000-0000000000aa",
+                kind="upsert",
+                fields={"title": seed},
+                base={},
+                author=f"human:{ACTOR}",
+            ),
+        ),
+    )
+    return changeset.sha(cs), changeset.encode(cs)
 
 
 def _sha(seed: str) -> str:
@@ -160,20 +208,21 @@ def test_rejects_unsafe_project_and_ref_names(remote: RemoteStore, bad: str) -> 
 # --- objects --------------------------------------------------------------------
 
 
-def test_put_get_has_objects(remote: RemoteStore) -> None:
-    a, b = _sha("a"), _sha("b")
+def test_put_get_has_objects(remote: RemoteStore, remote_url: str) -> None:
+    a, data = _object(remote_url, "a")
+    b = _sha("b")
     assert remote.has_objects(PROJECT, [a, b]) == set()
-    remote.put_object(PROJECT, a, b"CDC1payload")
+    remote.put_object(PROJECT, a, data)
     assert remote.has_objects(PROJECT, [a, b]) == {a}
     assert remote.has_objects(PROJECT, []) == set()
-    assert remote.get_object(PROJECT, a) == b"CDC1payload"
+    assert remote.get_object(PROJECT, a) == data
 
 
-def test_put_object_is_idempotent(remote: RemoteStore) -> None:
-    a = _sha("a")
-    remote.put_object(PROJECT, a, b"CDC1payload")
-    remote.put_object(PROJECT, a, b"CDC1payload")
-    assert remote.get_object(PROJECT, a) == b"CDC1payload"
+def test_put_object_is_idempotent(remote: RemoteStore, remote_url: str) -> None:
+    a, data = _object(remote_url, "a")
+    remote.put_object(PROJECT, a, data)
+    remote.put_object(PROJECT, a, data)
+    assert remote.get_object(PROJECT, a) == data
 
 
 def test_missing_object_is_sync_102(remote: RemoteStore) -> None:
@@ -182,9 +231,9 @@ def test_missing_object_is_sync_102(remote: RemoteStore) -> None:
     assert exc.value.code == "SYNC-102"
 
 
-def test_objects_are_per_project(remote: RemoteStore) -> None:
-    a = _sha("a")
-    remote.put_object(PROJECT, a, b"x")
+def test_objects_are_per_project(remote: RemoteStore, remote_url: str) -> None:
+    a, data = _object(remote_url, "a")
+    remote.put_object(PROJECT, a, data)
     assert remote.has_objects(OTHER, [a]) == set()
 
 

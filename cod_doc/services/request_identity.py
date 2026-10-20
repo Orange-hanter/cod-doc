@@ -36,6 +36,8 @@ __all__ = [
     "ROLE_WRITER",
     "AccessDeniedError",
     "Identity",
+    "allowed_authors",
+    "author_allowed",
     "bind",
     "check_write",
     "current",
@@ -44,6 +46,7 @@ __all__ = [
     "role_at_least",
     "set_tools",
     "split_author",
+    "suspended",
 ]
 
 ROLE_READER: Final = "reader"
@@ -104,6 +107,21 @@ def bind(identity: Identity) -> Iterator[Identity]:
     token = _BINDING.set(_Binding(identity))
     try:
         yield identity
+    finally:
+        _BINDING.reset(token)
+
+
+@contextlib.contextmanager
+def suspended() -> Iterator[None]:
+    """Снять привязку на время блока: запись делает сервер, а не владелец токена.
+
+    Только для служебного журнала хранилища доступа (``access_service``): право
+    на само действие — роль admin — проверено до блока, а ``check_write``
+    спрашивал бы роль в проекте, которого у хранилища нет.
+    """
+    token = _BINDING.set(None)
+    try:
+        yield
     finally:
         _BINDING.reset(token)
 
@@ -169,11 +187,22 @@ def check_write(author: str | None) -> None:
     if binding.role is None or not role_at_least(binding.role, ROLE_WRITER):
         msg = f"{identity.handle!r}: роль {binding.role or 'нет'!r} не позволяет запись"
         raise AccessDeniedError(msg)
-    # Вид в префиксе обязан совпасть с видом handle: иначе ``system:alice`` или
-    # ``routine:alice`` легли бы в журнал чужой ролью (actor_kind_for_author).
+    if not author_allowed(identity, author):
+        msg = f"author {author!r} не принадлежит токену {identity.handle!r}; допустимо: {allowed_authors(identity)}"
+        raise AccessDeniedError(msg)
+
+
+def author_allowed(identity: Identity, author: str | None) -> bool:
+    """``author`` — handle владельца токена или его агента, с совпадающим видом.
+
+    Вид в префиксе обязан совпасть с видом handle: иначе ``system:alice`` или
+    ``routine:alice`` легли бы в журнал чужой ролью (``actor_kind_for_author``).
+    Общая проверка MCP-записи и push'а на умный remote (CLO-037).
+    """
     kind, handle = split_author(author)
     expected = identity.authors.get(handle)
-    if expected is None or (kind is not None and kind != expected):
-        allowed = ", ".join(f"{k}:{h}" for h, k in sorted(identity.authors.items()))
-        msg = f"author {author!r} не принадлежит токену {identity.handle!r}; допустимо: {allowed}"
-        raise AccessDeniedError(msg)
+    return expected is not None and (kind is None or kind == expected)
+
+
+def allowed_authors(identity: Identity) -> str:
+    return ", ".join(f"{k}:{h}" for h, k in sorted(identity.authors.items()))

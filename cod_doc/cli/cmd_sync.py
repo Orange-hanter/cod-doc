@@ -8,9 +8,9 @@
 
 ``clone URL [DIR]`` (CLO-029) заводит проект с remote: снапшот + хвост,
 регистрация в реестре. ``sync export-pending`` (CLO-032) выгружает
-незапушенные операции в файл или stdout. Доступ (``member``, ``token``, ``actor``,
-``access``) — в ``cmd_access`` (CLO-038); ``remote login`` ждёт https-remote
-(CLO-035).
+незапушенные операции в файл или stdout. ``remote login`` (CLO-038) кладёт
+токен https-remote в Keychain или файл кредов; доступ (``member``, ``token``,
+``actor``, ``access``) — в ``cmd_access``.
 """
 
 from __future__ import annotations
@@ -158,6 +158,58 @@ def remote_remove(name: str, project: str, as_json: bool) -> None:
         _echo_json({"removed": name})
         return
     console.print(f"remote {printable(name)} удалён", markup=False)
+
+
+@remote.command("login")
+@click.argument("name")
+@_project_opt
+@click.option("--token-stdin", is_flag=True, help="Прочитать токен из stdin (иначе — скрытый ввод)")
+@click.option(
+    "--store",
+    "where",
+    type=click.Choice(["auto", "keychain", "file"]),
+    default="auto",
+    show_default=True,
+    help="auto: Keychain на macOS, иначе ~/.cod-doc/credentials (0600)",
+)
+def remote_login(name: str, project: str, token_stdin: bool, where: str) -> None:
+    """Сохранить Bearer-токен https-remote NAME (RFC 29 §10.8, CLO-038).
+
+    Токен в config.yaml не пишется никогда; проверочный запрос к remote не
+    делается — первый fetch/pull покажет, принят ли он.
+    """
+    import sys
+
+    from cod_doc.infra import keychain
+    from cod_doc.infra.credentials import store_token
+    from cod_doc.services.sync_service import remotes
+
+    with _sync_errors():
+        spec = remotes.get(project, name)
+    if spec is None:
+        raise click.ClickException(f"SYNC-110: remote {name!r} у проекта {project!r} не настроен")
+    if spec.kind != "https":
+        raise click.ClickException(
+            f"SYNC-110: remote {name!r} — {spec.kind}, токен нужен только https"
+        )
+    token = (
+        sys.stdin.readline().strip()
+        if token_stdin
+        else click.prompt("Токен", hide_input=True).strip()
+    )
+    if not token:
+        raise click.ClickException("пустой токен")
+    use_keychain = where == "keychain" or (where == "auto" and keychain.available())
+    if use_keychain:
+        try:
+            keychain.store_token(spec.url, token)
+        except OSError as exc:
+            raise click.ClickException(f"Keychain: {exc}") from exc
+        console.print(f"токен {printable(name)} сохранён в Keychain", markup=False)
+        return
+    with _sync_errors():
+        path = store_token(spec.url, token)
+    console.print(f"токен {printable(name)} сохранён в {path} (0600)", markup=False)
 
 
 # --------------------------------------------------------------------------- #

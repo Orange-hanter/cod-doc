@@ -2430,6 +2430,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--role)--role=:role:(reader writer admin)' \
     '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(--remote)--remote=[Через https-remote проекта (роль admin), а не локальное хранилище]:remote-name' \
     '(--json)--json[JSON на stdout]' \
     '(- *)--help[Show this message and exit.]' \
     '1:handle' && ret=0
@@ -2442,6 +2443,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Только этот проект]:project:_cod_doc_projects' \
+    '(--remote)--remote=[Через https-remote проекта (роль admin), а не локальное хранилище]:remote-name' \
     '(--json)--json[JSON на stdout]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
@@ -2454,6 +2456,7 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(--remote)--remote=[Через https-remote проекта (роль admin), а не локальное хранилище]:remote-name' \
     '(- *)--help[Show this message and exit.]' \
     '1:handle' && ret=0
   return ret
@@ -3283,6 +3286,7 @@ _cod-doc() {
       case $words[1] in
         (add)    _cod_doc_remote_add && ret=0 ;;
         (list)   _cod_doc_remote_list && ret=0 ;;
+        (login)  _cod_doc_remote_login && ret=0 ;;
         (remove) _cod_doc_remote_remove && ret=0 ;;
         (*)      _default && ret=0 ;;
       esac
@@ -3296,6 +3300,7 @@ _cod-doc() {
   cmds=(
     'add:Добавить (или заменить) remote NAME → URL.'
     'list:Перечислить remotes проекта.'
+    'login:Сохранить Bearer-токен https-remote NAME (RFC 29 §10.8, CLO-038).'
     'remove:Удалить remote NAME из конфига проекта (состояние БД не трогается).'
   )
   _describe -t cod-doc-remote-commands 'cod-doc remote command' cmds
@@ -3323,6 +3328,19 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--json)--json[Machine-readable JSON output]' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_remote_login] )) || _cod_doc_remote_login() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--token-stdin)--token-stdin[Прочитать токен из stdin (иначе — скрытый ввод)]' \
+    '(--store)--store=[auto; Keychain на macOS, иначе ~/.cod-doc/credentials (0600)]:where:(auto keychain file)' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
   return ret
 }
 
@@ -4709,8 +4727,10 @@ _cod-doc() {
   local -a line
   typeset -A opt_args
   _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Проект remote'\''а (нужен с --remote)]:project:_cod_doc_projects' \
     '(--label)--label=[Устройство или агент; macbook, ci, cursor-cloud]:label' \
     '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(--remote)--remote=[Через https-remote проекта (роль admin), а не локальное хранилище]:remote-name' \
     '(--json)--json[JSON на stdout]' \
     '(- *)--help[Show this message and exit.]' \
     '1:handle' && ret=0
@@ -4722,7 +4742,9 @@ _cod-doc() {
   local -a line
   typeset -A opt_args
   _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Проект remote'\''а (нужен с --remote)]:project:_cod_doc_projects' \
     '(--handle)--handle=[Только токены этого actor'\''а]:handle' \
+    '(--remote)--remote=[Через https-remote проекта (роль admin), а не локальное хранилище]:remote-name' \
     '(--json)--json[JSON на stdout]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
@@ -4733,7 +4755,9 @@ _cod-doc() {
   local -a line
   typeset -A opt_args
   _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Проект remote'\''а (нужен с --remote)]:project:_cod_doc_projects' \
     '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(--remote)--remote=[Через https-remote проекта (роль admin), а не локальное хранилище]:remote-name' \
     '(- *)--help[Show this message and exit.]' \
     '1:token-uid' && ret=0
   return ret

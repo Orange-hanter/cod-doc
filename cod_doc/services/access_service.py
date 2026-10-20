@@ -28,6 +28,7 @@ CLO-036. ``init_store`` создаёт файл, и с этого момента
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import re
@@ -42,11 +43,11 @@ from typing import TYPE_CHECKING, Any, Final
 from sqlalchemy import select
 
 from cod_doc.infra.models import ActorModel, ApiTokenModel, ProjectMemberModel, ProjectModel
-from cod_doc.services import activity_service
+from cod_doc.services import activity_service, request_identity
 from cod_doc.services.request_identity import ROLES, Identity, role_at_least
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session, sessionmaker
@@ -77,6 +78,7 @@ __all__ = [
     "record_denied",
     "remove_member",
     "revoke_token",
+    "store_session",
     "store_url",
     "upgrade_store",
 ]
@@ -205,6 +207,19 @@ def init_store(url: str | None = None) -> str:
     return final
 
 
+@contextlib.contextmanager
+def store_session(url: str | None = None) -> Iterator[Session]:
+    """Транзакция в хранилище; его нет — ``AccessError`` с подсказкой ``access init``."""
+    from cod_doc.infra.db import transactional
+
+    factory = open_store(url)
+    if factory is None:
+        msg = f"хранилища доступа нет ({url or store_url()}): cod-doc access init"
+        raise AccessError(msg)
+    with transactional(factory) as session:
+        yield session
+
+
 def upgrade_store(url: str | None = None) -> str | None:
     """Догнать схему существующего хранилища; нет его — ``None``, ничего не создаётся.
 
@@ -236,15 +251,17 @@ def _emit(
 ) -> None:
     project_id = _store_project_id(session)
     assert project_id is not None  # create=True бросает раньше
-    activity_service.emit_for_write(
-        session,
-        project_id,
-        kind,
-        author,
-        scope_kind=scope_kind,
-        scope_id=scope_id,
-        payload=payload,
-    )
+    # Журнал хранилища пишет сервер: роль admin проверил маршрут (api/sync).
+    with request_identity.suspended():
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            kind,
+            author,
+            scope_kind=scope_kind,
+            scope_id=scope_id,
+            payload=payload,
+        )
 
 
 def project_uid_for(entry: ProjectEntry) -> str:
@@ -593,13 +610,14 @@ def record_denied(
     project_id = _store_project_id(session, create=False)
     if project_id is None:
         return
-    activity_service.emit(
-        session,
-        project_id,
-        "auth.denied",
-        actor_kind="system",
-        actor_id=None,
-        scope_kind="project",
-        scope_id=project,
-        payload={"token_label": token_label, "ip": ip, "path": path, "code": code},
-    )
+    with request_identity.suspended():
+        activity_service.emit(
+            session,
+            project_id,
+            "auth.denied",
+            actor_kind="system",
+            actor_id=None,
+            scope_kind="project",
+            scope_id=project,
+            payload={"token_label": token_label, "ip": ip, "path": path, "code": code},
+        )

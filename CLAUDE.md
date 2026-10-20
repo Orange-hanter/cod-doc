@@ -179,7 +179,9 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `mcp/access_policy.READER_TOOLS`), а `activity_service.emit` — каждую запись
   — требует роль writer+ и свой `author`. Новый write-путь мимо `emit` эту
   проверку обходит — ещё одна причина ADO-040; новый тул чтения reader'у не
-  виден, пока его не внесли в список.
+  виден, пока его не внесли в список. Умный remote `/api/sync/v1` (CLO-035) —
+  тот же гейт, объекты в `FileRemote` сервера (`services/sync_service/server`),
+  push проверяет `actor`/`author` changeset'а против владельца токена (CLO-037).
 - **Резолв БД** (`infra/db.py::resolve_db_url`): explicit override → env
   `COD_DOC_DB_URL` → embedded `<project_root>/.cod-doc/state.db`. Реестр
   проектов — `~/.cod-doc/config.yaml` (переопределяется `COD_DOC_HOME`),

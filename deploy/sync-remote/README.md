@@ -96,8 +96,11 @@ docker compose up -d --build             # entrypoint катит миграци�
 
 ## Чего здесь нет
 
-- **Синхронизации с ноутбуком.** Пока нет `/api/sync/v1` (CLO-035), данные
-  узла и локальной `state.db` расходятся: один из них должен быть источником
-  истины, второй — читать через MCP узла.
-- **Удалённого администрирования.** `member`/`token` — только на сервере; через
-  https-remote — вместе с CLO-035.
+- **Автосинка.** Узел — умный remote (`/api/sync/v1`): реплика подключается
+  `cod-doc remote add origin https://<host> -p <slug>`, `cod-doc remote login
+  origin -p <slug>`, дальше `pull`/`push` руками; рутина `sync` — секция F.
+  Push на умный remote принимает только операции владельца токена (`SYNC-203`).
+
+Удалённо администрировать можно с машины admin'а проекта:
+`cod-doc member add bob -p <slug> --role writer --remote origin`,
+`cod-doc token create <вы или ваш агент> --label … -p <slug> --remote origin`.

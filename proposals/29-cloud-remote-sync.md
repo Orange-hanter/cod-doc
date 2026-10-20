@@ -791,8 +791,32 @@ reader.
 - **Лимиты**: 10 неудачных попыток с адреса за минуту, 600 запросов на токен за
   минуту, дальше 429 с `Retry-After`; блок пишет `auth.denied` один раз на окно.
 - **CLI доступа работает на сервере** против его хранилища (`docker compose exec
-  … cod-doc token create`). Удалённое администрирование через https-remote и
-  `remote login` — вместе с `/api/sync/v1` (CLO-035).
+  … cod-doc token create`), а с `--remote NAME` — через https-remote проекта
+  (CLO-038, роль admin).
+
+**Как сделано (2026-10-20, CLO-035/037/038).**
+
+- **Объекты умного remote** сервер хранит в своём `FileRemote`
+  (`Config.sync_remote_root`, по умолчанию `$COD_DOC_HOME/remotes`): CAS, потолки и
+  проверка имён — те же, что у `file://`; маршруты `api/sync` только переводят HTTP
+  в `RemoteStore`. Клиент — `infra/remote/http.HttpRemote`; он проходит общий
+  контракт транспортов, включая межпроцессную гонку CAS и clone (SCN-082), против
+  настоящего сервера за гейтом. `http://` — только loopback.
+- **Сверх таблицы §10.9**: `GET json?prefix=` (`list_prefix`), `GET
+  snapshots/{epoch}/{sha}`, маршруты доступа `members` и `tokens`. `meta.json`
+  пишет и writer (`PUT json/meta.json` — первый push новой эпохи), `PUT meta` —
+  ручной `schema_min` admin'ом. CAS-отказ — 412 (`SYNC-103`).
+- **Проверка push** — на `PUT objects/{sha}`: сервер разбирает changeset тем же
+  `changeset.decode`, что pull; непригодный объект — 404 `SYNC-102` и не
+  хранится; `actor` не владелец токена, `author` операции не его handle/агент
+  (вид в префиксе тоже сверяется), чужой проект — 422 `SYNC-203`. Push локальной
+  истории с legacy-авторами (`mcp`, `cli`) на умный remote поэтому отвергается —
+  такой remote для истории одного владельца не нужен, для неё есть `file://`/`s3://`.
+- **Токен через remote** — только себе или своему агенту: иначе admin одного
+  проекта получал бы все роли владельца токена в других проектах.
+- **`remote login`** — Keychain на macOS (`security`, токен на время записи виден в
+  argv), иначе `~/.cod-doc/credentials` (0600, атомарная запись). Читает токен
+  `HttpRemote`: файл кредов, затем Keychain.
 
 ### 3.9 Поверхности
 

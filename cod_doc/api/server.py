@@ -24,6 +24,7 @@ from cod_doc.api.deps import (
 )
 from cod_doc.api.routes import router as core_router
 from cod_doc.api.structure import router as structure_router
+from cod_doc.api.sync import router as sync_router
 from cod_doc.api.v1.routes import router as v1_router
 from cod_doc.api.web import fragments_router, pages_router
 from cod_doc.api.web.errors import WebError, _safe_back_url, set_flash_cookie
@@ -75,6 +76,7 @@ app.add_middleware(BearerGate, protected=is_web_protected_path)
 
 app.include_router(core_router)
 app.include_router(v1_router)  # SYM-006C: /api/v1 — под Bearer-гейтом (CLO-036)
+app.include_router(sync_router)  # CLO-035: /api/sync/v1 — умный remote, тот же гейт
 app.include_router(structure_router)
 app.include_router(webhook_router)
 app.include_router(websocket_router)
