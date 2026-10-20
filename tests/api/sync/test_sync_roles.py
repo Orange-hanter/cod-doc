@@ -175,3 +175,60 @@ def test_admin_routes_members_and_own_tokens() -> None:
     with pytest.raises(RemoteAuthError):
         fresh.get_ref(PROJECT, "main")
     assert admin.admin("DELETE", PROJECT, "members", "carol") is None
+
+
+def test_agent_token_cannot_administer() -> None:
+    _token("root", "admin")
+    with access_service.store_session() as s:
+        agent = access_service.add_agent(s, owner="root", name="bot", author="human:root")
+        tok = access_service.create_token(s, handle=agent, label="a", author="human:root").token
+    bot = _remote(tok)
+    assert bot.get_ref(PROJECT, "main") is None  # роль владельца у агента есть
+    for method, parts, body in (
+        ("POST", ("tokens",), {"label": "self-issued"}),
+        ("GET", ("members",), None),
+        ("PUT", ("members", "eve"), {"role": "admin"}),
+    ):
+        with pytest.raises(RemoteAuthError, match="человек"):
+            bot.admin(method, PROJECT, *parts, body=body)
+
+
+def test_actor_kind_must_match_owner() -> None:
+    alice = _remote(_token("alice", "writer"))
+    sha, data = _changeset("agent:alice", "human:alice", seed="kind")
+    with pytest.raises(RemoteAuthError) as exc:
+        alice.put_object(PROJECT, sha, data)
+    assert exc.value.code == "SYNC-203"
+
+
+def test_snapshot_needs_known_head() -> None:
+    from cod_doc.infra.remote.base import SnapshotRef, snapshot_key
+
+    alice = _remote(_token("alice", "writer"))
+    ghost = hashlib.sha256(b"ghost").hexdigest()
+    ref = SnapshotRef(epoch="0050_sync_rank", sha=ghost, key=snapshot_key("0050_sync_rank", ghost))
+    with pytest.raises(Exception, match="SYNC-102"):
+        alice.put_snapshot(PROJECT, ref, b"forged db")
+    assert alice.latest_snapshot(PROJECT) is None
+    sha, data = _changeset("human:alice", "human:alice", seed="head")
+    alice.put_object(PROJECT, sha, data)
+    real = SnapshotRef(epoch="0050_sync_rank", sha=sha, key=snapshot_key("0050_sync_rank", sha))
+    alice.put_snapshot(PROJECT, real, b"db")
+    assert alice.latest_snapshot(PROJECT) == real
+
+
+def test_body_caps_and_role_before_body() -> None:
+    import httpx
+
+    from cod_doc.infra.remote.file import MAX_JSON_BYTES
+
+    writer = _token("alice", "writer")
+    reader = _token("bob", "reader")
+    url = f"{base_url()}/api/sync/v1/projects/{PROJECT}/json/leases/BIG"
+    big = b"{" + b" " * (MAX_JSON_BYTES + 1) + b"}"
+    auth_w = {"authorization": f"Bearer {writer}", "if-none-match": "*"}
+    assert httpx.put(url, content=big, headers=auth_w).status_code == 413
+    auth_r = {"authorization": f"Bearer {reader}", "if-none-match": "*"}
+    r = httpx.put(url, content=b"{}", headers=auth_r)
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "SYNC-202"

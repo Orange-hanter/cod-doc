@@ -55,7 +55,6 @@ _STATUS_BY_CODE: Final = {
     "SYNC-203": _HTTP_UNPROCESSABLE,
 }
 #: Потолок тела запроса: самый большой объект ``FileRemote`` — снапшот.
-_MAX_BODY: Final = 1024 * 1024 * 1024
 _OCTET: Final = "application/octet-stream"
 
 UidPath = Annotated[str, "project.uid"]
@@ -106,14 +105,45 @@ def _guard(fn: Callable[[], Response]) -> Response:
         return _error(_HTTP_BAD_REQUEST, "SYNC-110", str(exc))
 
 
-async def _body(request: Request) -> bytes | Response:
+async def _body(request: Request, cap: int) -> bytes | Response:
+    """Тело потоком, не больше ``cap`` байт; зовётся **после** проверки роли.
+
+    Чтение целиком (``request.body()``) держало бы в памяти любой объём до
+    сравнения с потолком; нечисловой ``Content-Length`` — отказ сразу.
+    """
+    too_large = _error(_HTTP_TOO_LARGE, "SYNC-110", f"тело запроса больше {cap} байт")
     declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > _MAX_BODY:
-        return _error(_HTTP_TOO_LARGE, "SYNC-110", "тело запроса больше потолка")
-    data = await request.body()
-    if len(data) > _MAX_BODY:
-        return _error(_HTTP_TOO_LARGE, "SYNC-110", "тело запроса больше потолка")
-    return data
+    if declared is not None:
+        if not declared.isdigit():
+            return _error(_HTTP_BAD_REQUEST, "SYNC-110", "Content-Length не число")
+        if int(declared) > cap:
+            return too_large
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > cap:
+            return too_large
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _role_first(project_uid: str, minimum: str) -> Response | None:
+    """Роль — до чтения тела: аноним и reader не заставят сервер читать гигабайт.
+
+    ``None`` — пускать; иначе готовый отказ. Маршрут всё равно повторяет
+    ``require`` внутри ``run``: проверка дешёвая, а ``run`` не зависит от порядка.
+    """
+    from cod_doc.infra.remote.errors import SyncError
+
+    try:
+        _check_uid(project_uid)
+        server.require(project_uid, minimum)
+    except SyncError as exc:
+        return _error(_STATUS_BY_CODE.get(exc.code, _HTTP_BAD_REQUEST), exc.code, str(exc))
+    except ValueError as exc:
+        return _error(_HTTP_BAD_REQUEST, "SYNC-110", str(exc))
+    return None
 
 
 def _check_uid(project_uid: str) -> None:
@@ -191,7 +221,11 @@ def has_objects(project_uid: UidPath, payload: Annotated[dict[str, Any], Body()]
 
 @router.put("/projects/{project_uid}/objects/{sha}")
 async def put_object(project_uid: UidPath, sha: str, request: Request) -> Response:
-    data = await _body(request)
+    from cod_doc.infra.remote.file import MAX_OBJECT_BYTES
+
+    if (denied := _role_first(project_uid, ROLE_WRITER)) is not None:
+        return denied
+    data = await _body(request, MAX_OBJECT_BYTES)
     if isinstance(data, Response):
         return data
 
@@ -253,7 +287,11 @@ async def put_json(
     if_match: Annotated[str | None, Header()] = None,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    raw = await _body(request)
+    from cod_doc.infra.remote.file import MAX_JSON_BYTES
+
+    if (denied := _role_first(project_uid, ROLE_WRITER)) is not None:
+        return denied
+    raw = await _body(request, MAX_JSON_BYTES)
     if isinstance(raw, Response):
         return raw
 
@@ -354,8 +392,11 @@ def get_snapshot(project_uid: UidPath, epoch: str, sha: str) -> Response:
 @router.put("/projects/{project_uid}/snapshots/{epoch}/{sha}")
 async def put_snapshot(project_uid: UidPath, epoch: str, sha: str, request: Request) -> Response:
     from cod_doc.infra.remote.base import SnapshotRef, snapshot_key
+    from cod_doc.infra.remote.file import MAX_SNAPSHOT_BYTES
 
-    data = await _body(request)
+    if (denied := _role_first(project_uid, ROLE_WRITER)) is not None:
+        return denied
+    data = await _body(request, MAX_SNAPSHOT_BYTES)
     if isinstance(data, Response):
         return data
 
@@ -363,7 +404,17 @@ async def put_snapshot(project_uid: UidPath, epoch: str, sha: str, request: Requ
         _check_uid(project_uid)
         server.require(project_uid, ROLE_WRITER)
         ref = SnapshotRef(epoch=epoch, sha=sha, key=snapshot_key(epoch, sha))
-        server.store().put_snapshot(project_uid, ref, data)
+        store = server.store()
+        # Снапшот адресуется головой: она обязана быть проверенным changeset'ом
+        # этого проекта (PUT objects прошёл check_changeset). Содержимое клиент
+        # сверяет сам при загрузке — дайджест против головы (snapshot/clone).
+        if not store.has_objects(project_uid, [sha]):
+            return _error(
+                _HTTP_UNPROCESSABLE,
+                "SYNC-102",
+                f"снапшот на {sha}: такого changeset'а на remote нет",
+            )
+        store.put_snapshot(project_uid, ref, data)
         return Response(status_code=201)
 
     return _guard(run)
@@ -378,7 +429,7 @@ def list_members(project_uid: UidPath) -> Response:
 
     def run() -> Response:
         _check_uid(project_uid)
-        server.require(project_uid, ROLE_ADMIN)
+        server.require_human(project_uid, ROLE_ADMIN)
         with access_service.store_session() as session:
             rows = access_service.list_members(session, project_uid)
         return JSONResponse([{"handle": r.handle, "kind": r.kind, "role": r.role} for r in rows])
@@ -394,7 +445,7 @@ def put_member(
 
     def run() -> Response:
         _check_uid(project_uid)
-        admin = server.require(project_uid, ROLE_ADMIN)
+        admin = server.require_human(project_uid, ROLE_ADMIN)
         role = payload.get("role")
         if not isinstance(role, str):
             return _error(_HTTP_BAD_REQUEST, "SYNC-110", "тело: {role}")
@@ -417,7 +468,7 @@ def delete_member(project_uid: UidPath, handle: str) -> Response:
 
     def run() -> Response:
         _check_uid(project_uid)
-        admin = server.require(project_uid, ROLE_ADMIN)
+        admin = server.require_human(project_uid, ROLE_ADMIN)
         with access_service.store_session() as session:
             removed = access_service.remove_member(
                 session,
@@ -437,7 +488,7 @@ def list_tokens(project_uid: UidPath) -> Response:
 
     def run() -> Response:
         _check_uid(project_uid)
-        me = server.require(project_uid, ROLE_ADMIN)
+        me = server.require_human(project_uid, ROLE_ADMIN)
         with access_service.store_session() as session:
             rows = [r for r in access_service.list_tokens(session) if r.handle in me.authors]
         return JSONResponse(
@@ -464,7 +515,7 @@ def create_token(project_uid: UidPath, payload: Annotated[dict[str, Any], Body()
 
     def run() -> Response:
         _check_uid(project_uid)
-        me = server.require(project_uid, ROLE_ADMIN)
+        me = server.require_human(project_uid, ROLE_ADMIN)
         handle = payload.get("handle") or me.handle
         label = payload.get("label")
         if not isinstance(handle, str) or not isinstance(label, str):
@@ -498,7 +549,7 @@ def revoke_token(project_uid: UidPath, token_uid: str) -> Response:
 
     def run() -> Response:
         _check_uid(project_uid)
-        me = server.require(project_uid, ROLE_ADMIN)
+        me = server.require_human(project_uid, ROLE_ADMIN)
         with access_service.store_session() as session:
             mine = {r.uid for r in access_service.list_tokens(session) if r.handle in me.authors}
             if token_uid not in mine:

@@ -49,6 +49,7 @@ __all__ = [
     "check_changeset",
     "remote_root",
     "require",
+    "require_human",
     "store",
 ]
 
@@ -92,6 +93,19 @@ def require(project_uid: str, minimum: str) -> Identity:
     return identity
 
 
+def require_human(project_uid: str, minimum: str) -> Identity:
+    """``require`` для администрирования доступа: токен агента сюда не пускается.
+
+    Агент admin'а иначе выпускал бы себе токены и раздавал роли — ровно та
+    эскалация, ради которой доступ не выставлен в MCP (§3.9).
+    """
+    identity = require(project_uid, minimum)
+    if identity.kind != "human":
+        msg = f"{identity.handle!r}: участниками и токенами управляет человек, не агент"
+        raise RemoteAuthError(msg, code="SYNC-202")
+    return identity
+
+
 def check_changeset(identity: Identity, project_uid: str, sha: str, data: bytes) -> None:
     """Changeset принадлежит проекту и владельцу токена (CLO-037); иначе ``SYNC-203``.
 
@@ -104,8 +118,10 @@ def check_changeset(identity: Identity, project_uid: str, sha: str, data: bytes)
     if cs.project != project_uid:
         msg = f"changeset проекта {cs.project}, а записывается в {project_uid}"
         raise AuthorMismatchError(msg)
-    _kind, actor = request_identity.split_author(cs.actor)
-    if actor != identity.handle:
+    kind, actor = request_identity.split_author(cs.actor)
+    # Вид в префиксе — как у author: ``agent:alice`` под токеном человека alice —
+    # подмена роли в журнале чужой реплики.
+    if actor != identity.handle or (kind is not None and kind != identity.kind):
         msg = f"actor {cs.actor!r} — не владелец токена {identity.handle!r}"
         raise AuthorMismatchError(msg)
     foreign = sorted(

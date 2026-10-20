@@ -333,12 +333,19 @@ def _snap(epoch: str, seed: str) -> SnapshotRef:
     return SnapshotRef(epoch=epoch, sha=s, key=f"snapshots/{epoch}/{s}.db.zst")
 
 
-def test_snapshots(remote: RemoteStore) -> None:
+def _head_snap(remote: RemoteStore, remote_url: str, epoch: str, seed: str) -> SnapshotRef:
+    """Снапшот на голову-объект: умный remote принимает снапшот только на свой changeset."""
+    sha, data = _object(remote_url, seed)
+    remote.put_object(PROJECT, sha, data)
+    return SnapshotRef(epoch=epoch, sha=sha, key=f"snapshots/{epoch}/{sha}.db.zst")
+
+
+def test_snapshots(remote: RemoteStore, remote_url: str) -> None:
     assert remote.latest_snapshot(PROJECT) is None
-    old_epoch = _snap("0050_sync_rank", "s1")
+    old_epoch = _head_snap(remote, remote_url, "0050_sync_rank", "s1")
     remote.put_snapshot(PROJECT, old_epoch, b"db1")
     assert remote.latest_snapshot(PROJECT) == old_epoch
-    new_epoch = _snap("0052_sync_access", "s0")
+    new_epoch = _head_snap(remote, remote_url, "0052_sync_access", "s0")
     remote.put_snapshot(PROJECT, new_epoch, b"db2")
     remote.put_snapshot(PROJECT, new_epoch, b"db2")  # идемпотентно
     assert remote.latest_snapshot(PROJECT) == new_epoch
