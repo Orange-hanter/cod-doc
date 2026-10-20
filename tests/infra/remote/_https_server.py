@@ -58,6 +58,27 @@ def base_url() -> str:
         return _STARTED["url"]
 
 
+def snapshot_bytes(project_uid: str, epoch: str, head: str, tag: str = "") -> bytes:
+    """Минимальный снапшот с честным заголовком: умный remote сверяет его с адресом."""
+    from cod_doc.infra.remote.file import MAX_SNAPSHOT_BYTES
+    from cod_doc.services.sync_service import snapshot
+
+    writer = snapshot._Writer(MAX_SNAPSHOT_BYTES)
+    writer.line(
+        {
+            "v": snapshot.FORMAT_VERSION,
+            "kind": "header",
+            "project": project_uid,
+            "head": head,
+            "epoch": epoch,
+            "schema_head": epoch,
+            "digest": "d" * 64,
+        }
+    )
+    writer.line(["row", "project", project_uid, {"title": tag}])
+    return writer.finish()
+
+
 def grant(project_uid: str) -> None:
     """Дать владельцу токена admin в ещё одном проекте (uid реплики известен поздно)."""
     from cod_doc.infra.db import transactional

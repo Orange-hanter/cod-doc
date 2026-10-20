@@ -25,10 +25,13 @@ __all__ = ["SERVICE", "available", "read_token", "store_token"]
 SERVICE: Final = "cod-doc-remote"
 _DISABLE_ENV: Final = "COD_DOC_KEYCHAIN"
 _TIMEOUT_S: Final = 10
+#: Через переменную, а не ``sys.platform`` в условии: mypy сужает по платформе
+#: сборки и на Linux объявил бы остаток функции недостижимым.
+_PLATFORM: str = sys.platform
 
 
 def available() -> bool:
-    if sys.platform != "darwin" or os.environ.get(_DISABLE_ENV, "").strip() == "0":
+    if _PLATFORM != "darwin" or os.environ.get(_DISABLE_ENV, "").strip() == "0":
         return False
     return shutil.which("security") is not None
 

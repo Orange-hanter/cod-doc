@@ -340,16 +340,27 @@ def _head_snap(remote: RemoteStore, remote_url: str, epoch: str, seed: str) -> S
     return SnapshotRef(epoch=epoch, sha=sha, key=f"snapshots/{epoch}/{sha}.db.zst")
 
 
+def _snap_data(remote_url: str, ref: SnapshotRef, tag: str) -> bytes:
+    """Тело снапшота: умному remote — с заголовком по адресу, байтовым — любые байты."""
+    if not remote_url.startswith("http"):
+        return tag.encode()
+    from tests.infra.remote._https_server import snapshot_bytes
+
+    return snapshot_bytes(PROJECT, ref.epoch, ref.sha, tag)
+
+
 def test_snapshots(remote: RemoteStore, remote_url: str) -> None:
     assert remote.latest_snapshot(PROJECT) is None
     old_epoch = _head_snap(remote, remote_url, "0050_sync_rank", "s1")
-    remote.put_snapshot(PROJECT, old_epoch, b"db1")
+    db1 = _snap_data(remote_url, old_epoch, "db1")
+    remote.put_snapshot(PROJECT, old_epoch, db1)
     assert remote.latest_snapshot(PROJECT) == old_epoch
     new_epoch = _head_snap(remote, remote_url, "0052_sync_access", "s0")
-    remote.put_snapshot(PROJECT, new_epoch, b"db2")
-    remote.put_snapshot(PROJECT, new_epoch, b"db2")  # идемпотентно
+    db2 = _snap_data(remote_url, new_epoch, "db2")
+    remote.put_snapshot(PROJECT, new_epoch, db2)
+    remote.put_snapshot(PROJECT, new_epoch, db2)  # идемпотентно
     assert remote.latest_snapshot(PROJECT) == new_epoch
-    assert remote.get_snapshot(PROJECT, old_epoch) == b"db1"
+    assert remote.get_snapshot(PROJECT, old_epoch) == db1
     assert remote.latest_snapshot(OTHER) is None
 
 

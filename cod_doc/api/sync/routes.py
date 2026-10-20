@@ -414,6 +414,7 @@ async def put_snapshot(project_uid: UidPath, epoch: str, sha: str, request: Requ
                 "SYNC-102",
                 f"снапшот на {sha}: такого changeset'а на remote нет",
             )
+        server.check_snapshot(project_uid, epoch, sha, data)
         store.put_snapshot(project_uid, ref, data)
         return Response(status_code=201)
 

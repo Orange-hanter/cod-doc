@@ -47,6 +47,7 @@ __all__ = [
     "ROLE_READER",
     "ROLE_WRITER",
     "check_changeset",
+    "check_snapshot",
     "remote_root",
     "require",
     "require_human",
@@ -104,6 +105,25 @@ def require_human(project_uid: str, minimum: str) -> Identity:
         msg = f"{identity.handle!r}: участниками и токенами управляет человек, не агент"
         raise RemoteAuthError(msg, code="SYNC-202")
     return identity
+
+
+def check_snapshot(project_uid: str, epoch: str, sha: str, data: bytes) -> None:
+    """Заголовок снапшота совпадает с адресом записи; иначе ``SYNC-102``.
+
+    Голова (``sha``) обязана уже лежать на remote changeset'ом — его проверил
+    ``check_changeset``. Тело дальше заголовка клиент сверяет сам при загрузке
+    (дайджест против головы, ``snapshot``/``clone``): сервер не пересобирает БД.
+    """
+    from cod_doc.services.sync_service import snapshot
+    from cod_doc.services.sync_service.errors import ObjectMissingError
+
+    header, _project_row = snapshot.peek(data)
+    if (header.project, header.head, header.epoch) != (project_uid, sha, epoch):
+        msg = (
+            f"снапшот: заголовок ({header.project}, {header.head}, {header.epoch}) "
+            f"не совпадает с адресом ({project_uid}, {sha}, {epoch})"
+        )
+        raise ObjectMissingError(msg)
 
 
 def check_changeset(identity: Identity, project_uid: str, sha: str, data: bytes) -> None:

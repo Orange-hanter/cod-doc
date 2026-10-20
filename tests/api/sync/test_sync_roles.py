@@ -22,7 +22,7 @@ from cod_doc.infra.remote.http import HttpRemote
 from cod_doc.services import access_service
 from cod_doc.services.sync_service import changeset, push
 from cod_doc.services.sync_service.changeset import Changeset, Op
-from tests.infra.remote._https_server import base_url
+from tests.infra.remote._https_server import base_url, snapshot_bytes
 from tests.services.sync import _replicas as r
 
 if TYPE_CHECKING:
@@ -213,7 +213,15 @@ def test_snapshot_needs_known_head() -> None:
     sha, data = _changeset("human:alice", "human:alice", seed="head")
     alice.put_object(PROJECT, sha, data)
     real = SnapshotRef(epoch="0050_sync_rank", sha=sha, key=snapshot_key("0050_sync_rank", sha))
-    alice.put_snapshot(PROJECT, real, b"db")
+    # голова есть, но заголовок о другом проекте/эпохе — отказ
+    for bad in (
+        b"not a snapshot",
+        snapshot_bytes("0199f2b0-7c3a-7000-8000-0000000000ee", "0050_sync_rank", sha),
+        snapshot_bytes(PROJECT, "0053_sync_access", sha),
+    ):
+        with pytest.raises(Exception, match="SYNC-102"):
+            alice.put_snapshot(PROJECT, real, bad)
+    alice.put_snapshot(PROJECT, real, snapshot_bytes(PROJECT, "0050_sync_rank", sha))
     assert alice.latest_snapshot(PROJECT) == real
 
 

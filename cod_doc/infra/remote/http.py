@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
-from typing import TYPE_CHECKING, Final, Self, cast
+from typing import TYPE_CHECKING, Final, NoReturn, Self, cast
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -179,6 +179,12 @@ class HttpRemote:
             msg = f"remote {self.base_url}: HTTP {status}"
             raise RemoteUnavailableError(msg)
 
+    def _rejected(self, response: httpx.Response, what: str) -> NoReturn:
+        """Сервер не принял запись: код и текст — из тела ответа (§10.9)."""
+        code, message = self._error(response)
+        text = f"{what}: {message or f'HTTP {response.status_code}'}"
+        raise ObjectMissingError(text, code=code or "SYNC-102")
+
     # --- refs -----------------------------------------------------------------
 
     def get_ref(self, project_uid: str, name: str) -> RefValue | None:
@@ -216,8 +222,7 @@ class HttpRemote:
         check_sha(sha)
         r = self._request("PUT", self._url(project_uid, "objects", sha), content=data)
         if r.status_code not in (_OK, _CREATED):
-            msg = f"объект {sha}: HTTP {r.status_code}"
-            raise ObjectMissingError(msg)
+            self._rejected(r, f"объект {sha}")
 
     def get_object(self, project_uid: str, sha: str) -> bytes:
         check_sha(sha)
@@ -294,8 +299,7 @@ class HttpRemote:
             "PUT", self._url(project_uid, "snapshots", ref.epoch, ref.sha), content=data
         )
         if r.status_code not in (_OK, _CREATED):
-            msg = f"снапшот {ref.key}: HTTP {r.status_code}"
-            raise RemoteUnavailableError(msg)
+            self._rejected(r, f"снапшот {ref.key}")
 
     def get_snapshot(self, project_uid: str, ref: SnapshotRef) -> bytes:
         check_snapshot(ref)
