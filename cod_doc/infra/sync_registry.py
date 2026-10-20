@@ -856,6 +856,10 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec("entity_alias", _L),
     # --- local: конфликты слияния (0051, RFC 29 §3.7) — решение реплики, не данные
     TableSpec("sync_conflict", _L),
+    # --- local: доступ к умному remote (0053, RFC 29 §3.8) — живёт только на сервере
+    TableSpec("actor", _L),
+    TableSpec("api_token", _L),
+    TableSpec("project_member", _L),
 )
 
 

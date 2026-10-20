@@ -151,7 +151,9 @@ def test_stdio_transport_leaves_shared_off(monkeypatch: pytest.MonkeyPatch) -> N
 
 @pytest.mark.usefixtures("_restore_profile")
 def test_http_transport_turns_shared_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mcp_server.mcp, "run", lambda *args, **kwargs: None)
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
     mcp_server.run_mcp_server(
         transport="streamable-http", host="127.0.0.1", port=8801, profile="full"
     )

@@ -27,7 +27,9 @@ related_docs:
 
 Реализовано локально: MCP `--transport streamable-http` слушает
 `127.0.0.1` по умолчанию; `POST /settings` — loopback-only (403 иначе,
-SYM-003). Bearer/TLS, Postgres-SoT и cloud-профиль **не** реализованы.
+SYM-003). Bearer-гейт на streamable-http MCP и `/api/v1` — с 2026-10-19
+(RFC 29 §3.8, CLO-034/036), TLS — у Caddy (`deploy/sync-remote`, CLO-039);
+Postgres-SoT и cloud-профиль **не** реализованы.
 Agent profile — 6 curator-тулов (CUR-008, 2026-09-19): `agent_capabilities`,
 `curator_next`, `ctx_search`, `ctx_drift`, `context_get`, `agent_report`.
 SoT по-прежнему embedded SQLite.

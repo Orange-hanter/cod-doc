@@ -168,6 +168,18 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   обязателен в каждом DB-туле»); (4) фаза B из тула накатила бы старую голову
   миграций — тул по построению исполняется старым кодом, ради чего и построен
   subprocess-relay.
+- **Доступ удалённых пользователей — хранилище, а не флаг** (RFC 29 §3.8,
+  CLO-034/036). `actor`/`api_token`/`project_member` живут в отдельной БД
+  сервера (`$COD_DOC_HOME/access.db`, `services/access_service`). Нет файла —
+  Bearer-гейт (`api/auth.py`, на `/api/v1` и streamable-http MCP) пропускает
+  всё, поэтому локальные демоны работают как раньше; `cod-doc access init`
+  включает его. Под токеном владелец привязан к контексту запроса
+  (`services/request_identity`): `mcp/tools/_db.session_factory` пускает
+  только в проект, где он участник (reader — лишь в тулы из
+  `mcp/access_policy.READER_TOOLS`), а `activity_service.emit` — каждую запись
+  — требует роль writer+ и свой `author`. Новый write-путь мимо `emit` эту
+  проверку обходит — ещё одна причина ADO-040; новый тул чтения reader'у не
+  виден, пока его не внесли в список.
 - **Резолв БД** (`infra/db.py::resolve_db_url`): explicit override → env
   `COD_DOC_DB_URL` → embedded `<project_root>/.cod-doc/state.db`. Реестр
   проектов — `~/.cod-doc/config.yaml` (переопределяется `COD_DOC_HOME`),

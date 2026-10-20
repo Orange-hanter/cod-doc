@@ -284,9 +284,14 @@ class CodDocError(Exception):
 
 ### 12.2 Identity
 
-> **Целевое, гейт неактивен (ADO-217).** Таблицы `actor` в схеме нет
-> (`cod_doc/infra/models/`); провенанс сегодня несёт `author`/`actor_id`, роль
-> выводится через `domain.entities.actor_kind_for_author` (ADR-012). DDL ниже — спека.
+> **Сделано по RFC 29 §3.8, не по DDL ниже (CLO-034/036, 2026-10-19).**
+> `actor`, `api_token`, `project_member` — миграция `0053_sync_access`; actor —
+> сущность **сервера** (без `project_id`), строки живут в хранилище доступа
+> (`services/access_service`, `$COD_DOC_HOME/access.db`). Bearer-гейт
+> (`api/auth.py`) закрывает `/api/v1` и streamable-http MCP, когда хранилище
+> есть; без него — локальный режим, провенанс несёт `author`/`actor_id`, роль
+> выводится через `domain.entities.actor_kind_for_author` (ADR-012). DDL ниже —
+> исходная спека.
 
 Каждый actor имеет запись в таблице `actor` (отдельно от `agent_definition`):
 
@@ -313,6 +318,13 @@ Server-профиль: REST/MCP требуют `Authorization: Bearer <token>`; 
 2. Проверка allowed_tools/denied_tools (см. [capabilities/agents-and-skills.md §3](capabilities/agents-and-skills.md)).
 3. Проверка sensitivity_clearance vs target document (см. [standards/sensitive-data.md §3](standards/sensitive-data.md)).
 4. При deny — `AuthDeniedError(code='AUTHZ-001'|'AUTHZ-002')`. Отказы в журнал пока не пишутся: `activity_event` фиксирует только состоявшиеся мутации, а `audit_log` удалён (ADR-012). Гейт неактивен — включается вместе с Bearer-гейтом `/api/v1`.
+
+> **Что действует сейчас (CLO-036).** Пункты 2–3 не реализованы. Вместо них —
+> роль проекта: вход в проект только участнику (`request_identity.enter_project`
+> из MCP `session_factory` и маршрутов `/api/v1/projects/{slug}`), запись — роль
+> не ниже writer и свой `author` (`request_identity.check_write` в
+> `activity_service.emit`); отказ — `AccessDeniedError` `SYNC-202`. Отказы
+> гейта (401/403/429) пишутся как `auth.denied` в журнал хранилища доступа.
 
 ## 12. Ссылки
 

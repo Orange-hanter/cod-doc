@@ -157,8 +157,24 @@ audience: [contributors, agents]
   `meta.epoch` среди скачанных — `SYNC-105`, ничего не применено. Событие
   `sync.epoch_rebased`, поле `PullResult.rebased`.
 
-Чего нет: умный `https://` remote и аутентификация ни в REST API, ни в MCP
-(секция E); рутина `sync` (секция F). Открытые пункты — [аудит секции D
+Секция E, доступ (CLO-034, CLO-036, CLO-038 без https-администрирования,
+CLO-039) — Bearer-токены на MCP и `/api/v1`:
+
+- **Хранилище доступа** — отдельная БД сервера (`$COD_DOC_HOME/access.db`,
+  миграция `0053_sync_access`): `actor` (человек или его агент
+  `<владелец>/<имя>`), `api_token` (только `sha256`), `project_member` (роль
+  по `project.uid`). Нет файла — гейт выключен.
+- **Гейт** `cod_doc/api/auth.py` на streamable-http MCP и `/api/v1`: 401
+  `SYNC-201`, 403 `SYNC-202`, 429 `SYNC-204`, `auth.denied` в журнале
+  хранилища. Внутри MCP — членство на входе в проект и роль + свой `author` на
+  каждой записи (`services/request_identity`).
+- **CLI на сервере**: `cod-doc access init|migrate|status`, `member
+  add|list|remove`, `token create|list|revoke`, `actor agent|disable`.
+- **Развёртывание** — `deploy/sync-remote/` (compose + Caddy).
+
+Чего нет: умный `https://` remote — `/api/sync/v1`, `HttpRemote`, проверка
+`actor`/`author` на push и удалённое администрирование (CLO-035/037/038); рутина
+`sync` (секция F). Открытые пункты — [аудит секции D
 §7](../audit/2026-10-19-cloud-remote-section-d.md).
 
 ## 1. Зачем

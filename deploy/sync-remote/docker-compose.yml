@@ -1,0 +1,87 @@
+# cod-doc для команды: веб на loopback, MCP наружу только через Caddy + Bearer.
+# RFC 29 §3.8, CLO-039. Рецепт и порядок первого запуска — README.md рядом.
+#
+# Наружу смотрит только Caddy (443). MCP-контейнер портов на хост не публикует:
+# Caddy ходит к нему по сети compose. Веб (`cod-doc serve`) — на 127.0.0.1:
+# legacy /api/* и POST /settings гейта не получают и в интернет не выставляются.
+services:
+  cod-doc:
+    image: cod-doc:${COD_DOC_TAG:-local}
+    build:
+      context: ${COD_DOC_SRC:-../..}
+      args:
+        COD_DOC_VERSION: ${COD_DOC_VERSION:-}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      <<: &env
+        COD_DOC_HOME: /data/cod-doc
+        LOG_FORMAT: json
+        LOG_LEVEL: INFO
+        # X-Forwarded-For принимается только от сети, где живёт Caddy.
+        COD_DOC_TRUSTED_PROXIES: ${COD_DOC_TRUSTED_PROXIES:-172.30.57.0/24}
+        # Нет access.db — 503, а не открытый /api/v1 (гейт fail-closed на узле).
+        COD_DOC_REQUIRE_AUTH: "1"
+      # Внутри контейнера слушать все интерфейсы; на хост порт опубликован на loopback.
+      COD_DOC_BIND: 0.0.0.0
+    volumes: &volumes
+      - ./home:/data/cod-doc
+      - ./projects:/projects
+    mem_limit: 768m
+
+  # Профиль standard: task_*/doc_*/plan_* для coding-агентов. Профиль agent
+  # (curator-тулы) — второй такой же сервис с --profile agent и своим путём
+  # в Caddyfile, если он нужен.
+  cod-doc-mcp:
+    image: cod-doc:${COD_DOC_TAG:-local}
+    restart: unless-stopped
+    # Миграции (проектов и хранилища) катит только cod-doc: два entrypoint'а на
+    # одном ./home гонялись бы за замок SQLite.
+    depends_on:
+      cod-doc:
+        condition: service_healthy
+    entrypoint: []
+    command:
+      - cod-doc-mcp
+      - --transport=streamable-http
+      - --host=0.0.0.0
+      - --port=8801
+      - --profile=standard
+    environment:
+      <<: *env
+      # Host, под которым MCP виден снаружи (защита SDK от DNS rebinding).
+      COD_DOC_MCP_ALLOWED_HOSTS: ${COD_DOC_PUBLIC_HOST:?Укажите COD_DOC_PUBLIC_HOST в .env}
+    volumes: *volumes
+    healthcheck:
+      # 401 без токена — значит, процесс жив и гейт на месте.
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8801/mcp | grep -qE '^(401|406|503)$'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 512m
+
+  caddy:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      COD_DOC_PUBLIC_HOST: ${COD_DOC_PUBLIC_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+networks:
+  default:
+    ipam:
+      config:
+        # Своя подсеть: XFF принимается только от неё (COD_DOC_TRUSTED_PROXIES).
+        - subnet: 172.30.57.0/24
+
+volumes:
+  caddy-data:
+  caddy-config:
