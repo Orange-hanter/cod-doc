@@ -25,6 +25,7 @@ from cod_doc.api.deps import (
 from cod_doc.api.routes import router as core_router
 from cod_doc.api.structure import router as structure_router
 from cod_doc.api.sync import router as sync_router
+from cod_doc.api.sync.limits import SyncBodyCap
 from cod_doc.api.v1.routes import router as v1_router
 from cod_doc.api.web import fragments_router, pages_router
 from cod_doc.api.web.errors import WebError, _safe_back_url, set_flash_cookie
@@ -73,6 +74,8 @@ app = FastAPI(
 # CLO-036: Bearer-гейт на /api/v1 (и будущем /api/sync/v1); legacy /api/* его
 # не получает. Без хранилища доступа гейт пропускает всё (api/auth.py).
 app.add_middleware(BearerGate, protected=is_web_protected_path)
+# CLO-035: потолок тела /api/sync/v1 снаружи гейта — до разбора JSON и проверки роли.
+app.add_middleware(SyncBodyCap)
 
 app.include_router(core_router)
 app.include_router(v1_router)  # SYM-006C: /api/v1 — под Bearer-гейтом (CLO-036)

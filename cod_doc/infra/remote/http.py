@@ -103,6 +103,10 @@ class HttpRemote:
         if parsed.scheme == "http" and not _is_loopback(parsed.hostname):
             msg = f"remote {url!r}: http:// только для loopback — токен не идёт открытым каналом"
             raise RemoteConfigError(msg)
+        if parsed.username or parsed.password:
+            # Креды в URL попали бы в тексты ошибок; токен — только remote login.
+            msg = "remote: логин/пароль в URL не принимаются — cod-doc remote login"
+            raise RemoteConfigError(msg)
         if parsed.query or parsed.fragment:
             msg = f"remote {url!r}: query и fragment в URL remote не нужны"
             raise RemoteConfigError(msg)
@@ -170,6 +174,8 @@ class HttpRemote:
             code, message = self._error(response)
             if code == "SYNC-203":
                 raise RemoteAuthError(message, code=code)
+            if code == "SYNC-102":
+                raise ObjectMissingError(message)
             raise RemoteConfigError(message or "remote отверг запрос", code=code or "SYNC-104")
         if status == _TOO_MANY:
             retry = response.headers.get("retry-after", "?")
@@ -180,10 +186,29 @@ class HttpRemote:
             raise RemoteUnavailableError(msg)
 
     def _rejected(self, response: httpx.Response, what: str) -> NoReturn:
-        """Сервер не принял запись: код и текст — из тела ответа (§10.9)."""
+        """Сервер не принял запрос: код и текст — из тела ответа (§10.9).
+
+        ``SYNC-102`` (объекта нет, содержимое не прошло разбор) — ``ObjectMissingError``;
+        прочие отказы — ``RemoteConfigError`` со своим кодом.
+        """
         code, message = self._error(response)
         text = f"{what}: {message or f'HTTP {response.status_code}'}"
-        raise ObjectMissingError(text, code=code or "SYNC-102")
+        if code in (None, "SYNC-102") and response.status_code == _NOT_FOUND:
+            raise ObjectMissingError(text)
+        if code == "SYNC-102":
+            raise ObjectMissingError(text)
+        raise RemoteConfigError(text, code=code or "SYNC-110")
+
+    @staticmethod
+    def _etag(response: httpx.Response) -> str:
+        etag = _unquote(response.headers.get("etag"))
+        if not etag:
+            msg = "remote ответил без ETag — CAS невозможен"
+            raise RemoteUnavailableError(msg)
+        return etag
+
+    def close(self) -> None:
+        self._client.close()
 
     # --- refs -----------------------------------------------------------------
 
@@ -192,7 +217,7 @@ class HttpRemote:
         r = self._request("GET", self._url(project_uid, "refs", name))
         if r.status_code == _NOT_FOUND:
             return None
-        return RefValue(sha=check_sha(r.json()["sha"]), etag=_unquote(r.headers["etag"]) or "")
+        return RefValue(sha=check_sha(r.json()["sha"]), etag=self._etag(r))
 
     def cas_ref(
         self, project_uid: str, name: str, expected: RefValue | None, new_sha: str
@@ -205,7 +230,7 @@ class HttpRemote:
         )
         if r.status_code in (_PRECONDITION, _NOT_FOUND):
             return None
-        return RefValue(sha=new_sha, etag=_unquote(r.headers["etag"]) or "")
+        return RefValue(sha=new_sha, etag=self._etag(r))
 
     # --- objects --------------------------------------------------------------
 
@@ -228,8 +253,7 @@ class HttpRemote:
         check_sha(sha)
         r = self._request("GET", self._url(project_uid, "objects", sha))
         if r.status_code != _OK:
-            msg = f"объекта {sha} на remote нет"
-            raise ObjectMissingError(msg)
+            self._rejected(r, f"объект {sha}")
         return r.content
 
     # --- JSON -----------------------------------------------------------------
@@ -246,7 +270,7 @@ class HttpRemote:
         if not isinstance(body, dict):
             msg = f"{key}: на remote не JSON-объект"
             raise ObjectMissingError(msg)
-        return cast("dict[str, JsonValue]", body), _unquote(r.headers["etag"]) or ""
+        return cast("dict[str, JsonValue]", body), self._etag(r)
 
     def cas_json(
         self,
@@ -266,7 +290,7 @@ class HttpRemote:
         )
         if r.status_code in (_PRECONDITION, _NOT_FOUND):
             return None
-        return _unquote(r.headers["etag"])
+        return self._etag(r)
 
     def delete_json(self, project_uid: str, key: str, expected_etag: str) -> bool:
         r = self._request(
@@ -305,8 +329,7 @@ class HttpRemote:
         check_snapshot(ref)
         r = self._request("GET", self._url(project_uid, "snapshots", ref.epoch, ref.sha))
         if r.status_code != _OK:
-            msg = f"снапшота {ref.key} на remote нет"
-            raise ObjectMissingError(msg)
+            self._rejected(r, f"снапшот {ref.key}")
         return r.content
 
     # --- доступ (CLO-038) -----------------------------------------------------

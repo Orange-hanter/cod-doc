@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Final
 
 from fastapi import APIRouter, Body, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
 from cod_doc.services.sync_service import server
 from cod_doc.services.sync_service.server import ROLE_ADMIN, ROLE_READER, ROLE_WRITER
@@ -103,6 +105,9 @@ def _guard(fn: Callable[[], Response]) -> Response:
     except ValueError as exc:
         # Недопустимое имя/sha/ключ — ошибка вызывающего (base.check_*).
         return _error(_HTTP_BAD_REQUEST, "SYNC-110", str(exc))
+    except (OSError, SQLAlchemyError) as exc:
+        # Диск или хранилище доступа: транзиентно для клиента, не его ошибка.
+        return _error(_HTTP_BAD_GATEWAY, "SYNC-101", f"сервер: {type(exc).__name__}")
 
 
 async def _body(request: Request, cap: int) -> bytes | Response:
@@ -233,13 +238,14 @@ async def put_object(project_uid: UidPath, sha: str, request: Request) -> Respon
         _check_uid(project_uid)
         identity = server.require(project_uid, ROLE_WRITER)
         store = server.store()
+        # Проверка — до дедупликации: «уже есть» не должно подтверждать чужое тело.
+        server.check_changeset(identity, project_uid, sha, data)
         if store.has_objects(project_uid, [sha]):
             return Response(status_code=200)
-        server.check_changeset(identity, project_uid, sha, data)
         store.put_object(project_uid, sha, data)
         return Response(status_code=201)
 
-    return _guard(run)
+    return await run_in_threadpool(_guard, run)
 
 
 @router.get("/projects/{project_uid}/objects/{sha}")
@@ -297,7 +303,7 @@ async def put_json(
 
     def run() -> Response:
         _check_uid(project_uid)
-        server.require(project_uid, ROLE_WRITER)
+        identity = server.require(project_uid, ROLE_WRITER)
         given, etag = _expected(if_match, if_none_match)
         if not given:
             return _error(_HTTP_PRECONDITION, "SYNC-110", "нужен If-Match или If-None-Match: *")
@@ -307,12 +313,16 @@ async def put_json(
             return _error(_HTTP_BAD_REQUEST, "SYNC-110", "тело — не JSON")
         if not isinstance(body, dict):
             return _error(_HTTP_BAD_REQUEST, "SYNC-110", "тело — JSON-объект")
-        new = server.store().cas_json(project_uid, key, etag, body)
+        store = server.store()
+        if key == "meta.json":
+            current = store.get_json(project_uid, key)
+            server.check_meta_forward(identity, project_uid, current[0] if current else None, body)
+        new = store.cas_json(project_uid, key, etag, body)
         if new is None:
             return _error(_HTTP_PRECONDITION, "SYNC-103", "CAS JSON отвергнут")
         return Response(status_code=200, headers={"ETag": _quote(new)})
 
-    return _guard(run)
+    return await run_in_threadpool(_guard, run)
 
 
 @router.delete("/projects/{project_uid}/json/{key:path}")
@@ -418,7 +428,7 @@ async def put_snapshot(project_uid: UidPath, epoch: str, sha: str, request: Requ
         store.put_snapshot(project_uid, ref, data)
         return Response(status_code=201)
 
-    return _guard(run)
+    return await run_in_threadpool(_guard, run)
 
 
 # --- доступ (CLO-038): участники и токены -----------------------------------------
@@ -477,7 +487,9 @@ def delete_member(project_uid: UidPath, handle: str) -> Response:
                 project_uid=project_uid,
                 author=f"{admin.kind}:{admin.handle}",
             )
-        return Response(status_code=204 if removed else _HTTP_NOT_FOUND)
+        if not removed:
+            return _error(_HTTP_NOT_FOUND, "SYNC-102", f"{handle!r} не участник проекта")
+        return Response(status_code=204)
 
     return _guard(run)
 
@@ -517,9 +529,9 @@ def create_token(project_uid: UidPath, payload: Annotated[dict[str, Any], Body()
     def run() -> Response:
         _check_uid(project_uid)
         me = server.require_human(project_uid, ROLE_ADMIN)
-        handle = payload.get("handle") or me.handle
+        handle = payload.get("handle", me.handle)
         label = payload.get("label")
-        if not isinstance(handle, str) or not isinstance(label, str):
+        if not isinstance(handle, str) or not handle or not isinstance(label, str):
             return _error(_HTTP_BAD_REQUEST, "SYNC-110", "тело: {label, handle?}")
         if handle not in me.authors:
             return _error(

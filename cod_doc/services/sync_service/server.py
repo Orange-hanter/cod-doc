@@ -36,6 +36,7 @@ from cod_doc.services.request_identity import ROLE_ADMIN, ROLE_READER, ROLE_WRIT
 from cod_doc.services.sync_service.errors import AuthorMismatchError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from cod_doc.infra.remote.file import FileRemote
@@ -47,6 +48,7 @@ __all__ = [
     "ROLE_READER",
     "ROLE_WRITER",
     "check_changeset",
+    "check_meta_forward",
     "check_snapshot",
     "remote_root",
     "require",
@@ -67,11 +69,16 @@ def remote_root() -> Path:
     return Path(configured) if configured else config_dir() / REMOTES_DIRNAME
 
 
+_CREATED_ROOTS: set[Path] = set()
+
+
 def store() -> FileRemote:
     from cod_doc.infra.remote.file import FileRemote
 
     root = remote_root()
-    root.mkdir(parents=True, exist_ok=True)
+    if root not in _CREATED_ROOTS:
+        root.mkdir(parents=True, exist_ok=True)
+        _CREATED_ROOTS.add(root)
     return FileRemote(root)
 
 
@@ -105,6 +112,39 @@ def require_human(project_uid: str, minimum: str) -> Identity:
         msg = f"{identity.handle!r}: участниками и токенами управляет человек, не агент"
         raise RemoteAuthError(msg, code="SYNC-202")
     return identity
+
+
+def check_meta_forward(
+    identity: Identity,
+    project_uid: str,
+    current: Mapping[str, object] | None,
+    new: Mapping[str, object],
+) -> None:
+    """Не-admin двигает ``epoch``/``schema_min`` в ``meta.json`` только вперёд.
+
+    Первый push новой эпохи поднимает их CAS'ом (CLO-032) — это право writer'а;
+    опустить ``schema_min`` значило бы снова пустить старые реплики, это решение
+    admin'а (``PUT meta``). Незнакомая серверу ревизия считается новее: её открыл
+    релиз, которого у сервера ещё нет.
+    """
+    from cod_doc.infra import sync_epochs
+
+    if current is None or identity.roles.get(project_uid) == ROLE_ADMIN:
+        return
+    for field in ("epoch", "schema_min"):
+        old, value = current.get(field), new.get(field)
+        if old == value or not isinstance(old, str):
+            continue
+        if not isinstance(value, str):
+            msg = f"meta.json: {field} нельзя убрать"
+            raise AuthorMismatchError(msg)
+        try:
+            older = sync_epochs.epoch_is_newer(old, value)
+        except sync_epochs.UnknownRevisionError:
+            older = False  # прежнее значение серверу незнакомо — сравнивать не с чем
+        if older:
+            msg = f"meta.json: {field} {value} старше {old} — опускает только admin (PUT meta)"
+            raise AuthorMismatchError(msg)
 
 
 def check_snapshot(project_uid: str, epoch: str, sha: str, data: bytes) -> None:
@@ -141,7 +181,7 @@ def check_changeset(identity: Identity, project_uid: str, sha: str, data: bytes)
     kind, actor = request_identity.split_author(cs.actor)
     # Вид в префиксе — как у author: ``agent:alice`` под токеном человека alice —
     # подмена роли в журнале чужой реплики.
-    if actor != identity.handle or (kind is not None and kind != identity.kind):
+    if actor != identity.handle or (kind or "human") != identity.kind:
         msg = f"actor {cs.actor!r} — не владелец токена {identity.handle!r}"
         raise AuthorMismatchError(msg)
     foreign = sorted(

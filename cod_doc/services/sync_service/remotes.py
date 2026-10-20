@@ -29,7 +29,6 @@ AUTO: Final = "auto"
 
 #: §10.8: ``s3://`` — плоское хранилище, роли и токены там не проверяются.
 S3_WARNING: Final = "s3-remote без разграничения доступа: любой с ключами бакета читает и пишет всё"
-_PENDING: Final[dict[str, str]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +98,6 @@ def add(project: str, name: str, url: str, *, kind: str = AUTO) -> AddedRemote:
     warnings: list[str] = []
     if resolved == "s3":
         warnings.append(S3_WARNING)
-    if resolved in _PENDING:
-        warnings.append(_PENDING[resolved])
     return AddedRemote(
         remote=RemoteSpec(name=name, url=url, kind=resolved),
         replaced=name in existing,

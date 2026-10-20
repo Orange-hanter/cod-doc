@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from cod_doc.infra.db import transactional
 from cod_doc.infra.models import ProjectModel
-from cod_doc.infra.remote.errors import RemoteAuthError
+from cod_doc.infra.remote.errors import ObjectMissingError, RemoteAuthError
 from cod_doc.infra.remote.http import HttpRemote
 from cod_doc.services import access_service
 from cod_doc.services.sync_service import changeset, push
@@ -123,8 +123,9 @@ def test_own_agent_author_accepted_kind_must_match() -> None:
 def test_garbage_object_is_rejected_not_stored() -> None:
     alice = _remote(_token("alice", "writer"))
     sha = hashlib.sha256(b"x").hexdigest()
-    with pytest.raises(Exception, match="SYNC-102"):
+    with pytest.raises(ObjectMissingError) as exc:
         alice.put_object(PROJECT, sha, b"not a changeset")
+    assert exc.value.code == "SYNC-102"
     assert alice.has_objects(PROJECT, [sha]) == set()
 
 
@@ -140,7 +141,16 @@ def test_non_member_and_no_token() -> None:
 
 def test_schema_min_admin_only() -> None:
     writer = _remote(_token("alice", "writer"))
-    assert writer.cas_json(PROJECT, "meta.json", None, {"v": 1, "schema_min": "0050"}) is not None
+    etag = writer.cas_json(PROJECT, "meta.json", None, {"v": 1, "schema_min": "0050_sync_rank"})
+    assert etag is not None
+    # writer двигает вперёд (первый push новой эпохи), но не назад
+    etag = writer.cas_json(
+        PROJECT, "meta.json", etag, {"v": 1, "schema_min": "0052_sync_conflict_opened_hlc"}
+    )
+    assert etag is not None
+    with pytest.raises(RemoteAuthError) as exc:
+        writer.cas_json(PROJECT, "meta.json", etag, {"v": 1, "schema_min": "0049_sync_identity"})
+    assert exc.value.code == "SYNC-203"
     with pytest.raises(RemoteAuthError):
         writer.admin("PUT", PROJECT, "meta", body={"schema_min": "0053"})
     admin = _remote(_token("root", "admin"))
@@ -207,8 +217,9 @@ def test_snapshot_needs_known_head() -> None:
     alice = _remote(_token("alice", "writer"))
     ghost = hashlib.sha256(b"ghost").hexdigest()
     ref = SnapshotRef(epoch="0050_sync_rank", sha=ghost, key=snapshot_key("0050_sync_rank", ghost))
-    with pytest.raises(Exception, match="SYNC-102"):
+    with pytest.raises(ObjectMissingError) as exc:
         alice.put_snapshot(PROJECT, ref, b"forged db")
+    assert exc.value.code == "SYNC-102"
     assert alice.latest_snapshot(PROJECT) is None
     sha, data = _changeset("human:alice", "human:alice", seed="head")
     alice.put_object(PROJECT, sha, data)
@@ -219,8 +230,9 @@ def test_snapshot_needs_known_head() -> None:
         snapshot_bytes("0199f2b0-7c3a-7000-8000-0000000000ee", "0050_sync_rank", sha),
         snapshot_bytes(PROJECT, "0053_sync_access", sha),
     ):
-        with pytest.raises(Exception, match="SYNC-102"):
+        with pytest.raises(ObjectMissingError) as exc:
             alice.put_snapshot(PROJECT, real, bad)
+        assert exc.value.code == "SYNC-102"
     alice.put_snapshot(PROJECT, real, snapshot_bytes(PROJECT, "0050_sync_rank", sha))
     assert alice.latest_snapshot(PROJECT) == real
 
@@ -240,3 +252,31 @@ def test_body_caps_and_role_before_body() -> None:
     r = httpx.put(url, content=b"{}", headers=auth_r)
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "SYNC-202"
+
+
+def test_agent_author_needs_agent_prefix() -> None:
+    """Без префикса вид выводится как human — агенту так подписываться нельзя."""
+    _token("root", "admin")
+    with access_service.store_session() as s:
+        agent = access_service.add_agent(s, owner="root", name="bot", author="human:root")
+        tok = access_service.create_token(s, handle=agent, label="a", author="human:root").token
+    bot = _remote(tok)
+    sha, data = _changeset(f"agent:{agent}", agent, seed="bare")
+    with pytest.raises(RemoteAuthError) as exc:
+        bot.put_object(PROJECT, sha, data)
+    assert exc.value.code == "SYNC-203"
+    sha, data = _changeset(agent, f"agent:{agent}", seed="bare-actor")
+    with pytest.raises(RemoteAuthError):
+        bot.put_object(PROJECT, sha, data)
+    sha, data = _changeset(f"agent:{agent}", f"agent:{agent}", seed="ok")
+    bot.put_object(PROJECT, sha, data)
+
+
+def test_small_json_routes_capped_before_parsing() -> None:
+    import httpx
+
+    reader = _token("bob", "reader")
+    url = f"{base_url()}/api/sync/v1/projects/{PROJECT}/refs/main"
+    big = b'{"sha": "' + b"a" * (128 * 1024) + b'"}'
+    r = httpx.put(url, content=big, headers={"authorization": f"Bearer {reader}"})
+    assert r.status_code == 413

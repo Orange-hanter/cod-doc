@@ -26,12 +26,14 @@ def _app() -> object:
 
     from cod_doc.api.auth import BearerGate, RateLimiter, is_web_protected_path
     from cod_doc.api.sync import router
+    from cod_doc.api.sync.limits import SyncBodyCap
 
     app = FastAPI()
     app.include_router(router)
     # Гонка CAS контракта — ~1000 запросов одного токена за минуту; лимит гейта
     # (600) проверяется в tests/api/test_bearer_gate.py, здесь он мешал бы.
     app.add_middleware(BearerGate, protected=is_web_protected_path, requests=RateLimiter(1_000_000))
+    app.add_middleware(SyncBodyCap)
     return app
 
 

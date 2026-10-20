@@ -281,7 +281,11 @@ def member_list(
         store, puid = _remote_admin(ctx, project, remote_name)
         with _remote_errors():
             rows = store.admin("GET", puid, "members")
-        items = rows if isinstance(rows, list) else []
+        items = [
+            m
+            for m in (rows if isinstance(rows, list) else [])
+            if isinstance(m, dict) and {"handle", "kind", "role"} <= m.keys()
+        ]
         if as_json:
             _echo_json(items)
             return
@@ -337,7 +341,8 @@ def token_create(
         store, puid = _remote_admin(ctx, project, remote_name)
         with _remote_errors():
             body = store.admin("POST", puid, "tokens", body={"label": label, "handle": handle})
-        assert isinstance(body, dict)
+        if not isinstance(body, dict) or not {"uid", "handle", "label", "token"} <= body.keys():
+            raise click.ClickException("SYNC-110: remote вернул ответ не по форме §10.9")
         issued = access_service.IssuedToken(
             uid=body["uid"], handle=body["handle"], label=body["label"], token=body["token"]
         )

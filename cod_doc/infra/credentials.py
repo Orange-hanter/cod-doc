@@ -39,15 +39,14 @@ import errno
 import os
 import re
 import stat
-from typing import TYPE_CHECKING, Final
+import tempfile
+from pathlib import Path
+from typing import Final
 from urllib.parse import urlparse
 
 import yaml
 
 from cod_doc.infra.remote.errors import RemoteConfigError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 __all__ = [
     "CREDENTIALS_FILENAME",
@@ -204,8 +203,9 @@ def store_token(url: str, token: str, *, path: Path | None = None) -> Path:
     entries = load_credentials(path)
     entries.setdefault(key, {})["token"] = token
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    # mkstemp: уникальное имя и 0600 сразу; хвост прерванной записи не мешает следующей.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             yaml.safe_dump(entries, fh, allow_unicode=True, sort_keys=True)

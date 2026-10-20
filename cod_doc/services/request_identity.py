@@ -201,7 +201,9 @@ def author_allowed(identity: Identity, author: str | None) -> bool:
     """
     kind, handle = split_author(author)
     expected = identity.authors.get(handle)
-    return expected is not None and (kind is None or kind == expected)
+    # Без префикса actor_kind_for_author выводит human (legacy-форма): агенту
+    # без ``agent:`` это дало бы в журнале роль человека.
+    return expected is not None and (kind or "human") == expected
 
 
 def allowed_authors(identity: Identity) -> str:
