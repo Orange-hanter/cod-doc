@@ -50,6 +50,7 @@ sha``; схема и штампы сверяются и у него.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
@@ -112,6 +113,9 @@ class PullResult:
     head: str | None = None
     #: Голова снапшота эпохи, на который встала отставшая реплика (CLO-050).
     rebased: str | None = None
+    #: CLO-053: отложенная фазой D ``update`` починка выполнена этим pull; её
+    #: записи уедут следующим push. ``None`` — откладывать было нечего.
+    repaired: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,7 +447,31 @@ def pull(
     dry_run: bool = False,
     store: RemoteStore | None = None,
 ) -> PullResult:
-    """Fetch + merge: чужие changeset'ы поверх своей головы, хвост слит по §3.7 (§10.6)."""
+    """Fetch + merge: чужие changeset'ы поверх своей головы, хвост слит по §3.7 (§10.6).
+
+    После успешного pull — отложенная ``cod-doc update`` починка (CLO-053):
+    перескок на снапшот эпохи уже позади, её хвост ему не помешает.
+    """
+    result = _pull(sf, project, remote=remote, author=author, dry_run=dry_run, store=store)
+    if dry_run:
+        return result
+    from cod_doc.services.sync_service import deferred_repair
+
+    repaired = deferred_repair.run_if_deferred(sf, project, author=author)
+    if repaired is None:
+        return result
+    return dataclasses.replace(result, repaired=repaired.as_dict())
+
+
+def _pull(
+    sf: sessionmaker[Session],
+    project: str,
+    *,
+    remote: str,
+    author: str,
+    dry_run: bool,
+    store: RemoteStore | None,
+) -> PullResult:
     store = store if store is not None else _local.open_store(project, remote)
     meta = _check_epoch(sf, project, store)
     rebased = _rebase(sf, project, store, meta, author=author, dry_run=dry_run)

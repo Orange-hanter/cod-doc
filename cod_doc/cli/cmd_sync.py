@@ -307,6 +307,12 @@ def pull(
         f"голова {_short(result.head)}",
         markup=False,
     )
+    if result.repaired is not None:
+        console.print(
+            f"выполнена отложенная cod-doc update починка: применено "
+            f"{result.repaired.get('applied', 0)} — уедет следующим push",
+            markup=False,
+        )
 
 
 @click.command("push")

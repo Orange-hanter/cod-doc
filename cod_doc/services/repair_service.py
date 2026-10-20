@@ -196,6 +196,9 @@ class RepairResult:
     errors: list[str] = field(default_factory=list)
     #: Разделы диагноза, которые не собирались, — см. :class:`RepairPlan`.
     not_collected: list[str] = field(default_factory=list)
+    #: CLO-053: починка отложена до pull — эпоха головы реплики, которую
+    #: перескок на снапшот новой эпохи ещё впереди. ``None`` — не откладывалась.
+    deferred: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -224,6 +227,7 @@ class RepairResult:
             "actions": [asdict(action) for action in self.actions],
             "reported_only": dict(self.reported_only),
             "errors": list(self.errors),
+            "deferred": self.deferred,
         }
 
 
