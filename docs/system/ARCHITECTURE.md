@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-26
+last_updated: 2026-10-20
 related_code:
   - cod_doc/core/
   - cod_doc/agent/
@@ -195,9 +195,18 @@ ContextService.build(target, depth)
 
 | Профиль | Когда | БД | MCP | Auth | Projection |
 |---------|-------|-----|-----|------|------------|
-| **embedded** | один разработчик | SQLite `.cod-doc/state.db` | stdio | implicit OS user | проекция в рабочем дереве |
-| **server** | команда, один хост | Postgres | stdio и/или localhost HTTP | token (спека §12) | FS volume |
-| **cloud** | ИИ-агенты remote | Postgres | streamable-http + TLS | Bearer enforced | optional export |
+| **embedded** | один разработчик | SQLite `.cod-doc/state.db` | stdio или localhost HTTP | implicit OS user | проекция в рабочем дереве |
+| **реплика + remote** | несколько машин или людей (RFC 29) | SQLite на каждой реплике; обмен changeset'ами | localhost HTTP | `file://` — ФС, `s3://` — ключи бакета, `https://` — Bearer + роль (§12.2) | проекция у каждой реплики |
+| **узел команды** | общий сервер, к нему ходят клиенты | SQLite проектов на узле + хранилище доступа | streamable-http за reverse proxy (TLS у Caddy) | Bearer + роль в проекте (§12.2) | проекция на узле |
+| **server (Postgres)** | опционально: одна БД на всех | Postgres (`COD_DOC_DB_URL`) | stdio и/или localhost HTTP | как у узла команды | FS volume |
+
+> **Postgres опционален** (ADR-016, RFC 29). Командная работа строится на
+> репликах SQLite с remote или на узле команды — общая Postgres не нужна; профиль
+> `server (Postgres)` остаётся для тех, кому нужна одна БД. Узел команды —
+> `deploy/sync-remote/` (compose + Caddy): MCP и `/api/v1`, `/api/sync/v1`
+> (умный remote) за Bearer-гейтом, веб-UI и legacy `/api/*` наружу не
+> выставляются. Проект, переехавший на узел, на прежней машине помечается
+> `moved_to` в реестре — локальные поверхности его БД не открывают.
 
 - **Local embedded**: нет REST, только CLI + MCP.
 - **Shared Postgres (server)**: docker-compose стек, REST API активен;
@@ -211,15 +220,16 @@ ContextService.build(target, depth)
 - **CI**: headless; CLI (`cod-doc audit`, `cod-doc plan next`,
   `cod-doc link verify`).
 
-Переключение — через `COD_DOC_DB_URL` (+ `COD_DOC_AUTH` / MCP transport
-для cloud).
+Переключение — через `COD_DOC_DB_URL` (Postgres), `remotes:` проекта в
+`~/.cod-doc/config.yaml` (реплика + remote) и MCP transport / хранилище
+доступа `cod-doc access init` (узел команды).
 
 ## 9. Безопасность
 
 - Данные проекта не покидают БД без явного export.
 - Встроенный LLM-клиент не видит содержимого документов сверх того, что ContextService положил в сессию.
 - Audit-лог всех write-операций через MCP/REST/CLI/TUI — в таблицах `Revision` (что изменилось) и `ActivityEvent` (кто и что сделал), см. [DATA_MODEL.md §3.13](DATA_MODEL.md). Пишутся одним атомарным вызовом `activity_service.write_revision_and_emit_event` внутри транзакции мутации (ADO-040). Отдельной таблицы `AuditLog` больше нет — она была объявлена, но за всю историю проекта не получила ни одного writer'а и удалена по ADR-012.
-- **`/api/v1` — единственная поверхность будущего Bearer-гейта** (контракт RFC 22 §3.3, см. `proposals/22-symbiosis-zairgrush-orakul.md`): `COD_DOC_API_TOKEN`, ASGI-middleware только на `/api/v1` (`cod_doc/api/v1/`), constant-time compare, 401 JSON. Гейт включается при появлении первого удалённого вызывающего. Legacy `/api/*` заморожен и Bearer-гейта не получит.
+- **Bearer-гейт** (RFC 29 §3.8, CLO-036; `cod_doc/api/auth.py`) закрывает `/api/v1`, `/api/sync/v1` и streamable-http MCP: токены и роли — из хранилища доступа (§12.2), а не единый `COD_DOC_API_TOKEN` из RFC 22 §3.3; sha256, constant-time compare, 401/403/429 в JSON, отказы — `auth.denied`. Без хранилища гейт выключен (локальная машина); `COD_DOC_REQUIRE_AUTH=1` делает узел fail-closed (503). Legacy `/api/*` и веб-UI гейта не получают и наружу не выставляются.
 
 ## 10. Error Model
 
@@ -261,6 +271,26 @@ class CodDocError(Exception):
 | ExternalError      | 7 | ↑ | 502 | retry-toast |
 | Unknown / panic    | 1 | ↑ | 500 | crash screen |
 
+### 11.2a Коды синхронизации и доступа `SYNC-NNN`
+
+Синхронизация с remote и доступ к узлу (RFC 29 §10.10) не входят в иерархию
+`CodDocError`: их исключения — потомки stdlib-классов с атрибутом `code`
+(`cod_doc/infra/remote/errors.py` — то, что бросает транспорт;
+`cod_doc/services/sync_service/errors.py` — реэкспорт и сервисные коды), текст
+начинается с кода. При появлении `cod_doc/errors.py` их перевешивают на
+`CodDocError` без смены кодов.
+
+| Диапазон | Что | Примеры |
+|---|---|---|
+| `SYNC-0xx` | гейт полноты журнала | `SYNC-001` — bulk-запись в authored мимо `record`, restricted в changeset'е |
+| `SYNC-1xx` | обмен с remote | `101` remote недоступен · `102` объекта нет / sha не совпал · `103` push не прошёл CAS · `104` схема · `105` эпоха remote новее · `106` незапушенное перед эпохой · `108`/`109` замок checkout · `110` remote не настроен |
+| `SYNC-2xx` | доступ к узлу | `201` нет или неверный токен (401) · `202` роль не позволяет (403) · `203` `actor`/`author` changeset'а не владельца токена (422) · `204` частота (429) · `205` узел без хранилища доступа (503) |
+| `SYNC-3xx` | разрешение конфликтов | `301` `take` не подходит к виду конфликта · `302` конфликт не найден |
+
+Поверхности: CLI — exit 1 с текстом кода (`click.ClickException`), MCP — ошибка
+тула (ValueError), REST `/api/sync/v1` — `{"error": {code, message, details}}` со
+статусом из таблицы RFC.
+
 ### 11.3 Правило write-path
 
 Любая ошибка в транзакции = полный rollback.
@@ -284,31 +314,30 @@ class CodDocError(Exception):
 
 ### 12.2 Identity
 
-> **Сделано по RFC 29 §3.8, не по DDL ниже (CLO-034/036, 2026-10-19).**
-> `actor`, `api_token`, `project_member` — миграция `0053_sync_access`; actor —
-> сущность **сервера** (без `project_id`), строки живут в хранилище доступа
-> (`services/access_service`, `$COD_DOC_HOME/access.db`). Bearer-гейт
-> (`api/auth.py`) закрывает `/api/v1` и streamable-http MCP, когда хранилище
-> есть; без него — локальный режим, провенанс несёт `author`/`actor_id`, роль
-> выводится через `domain.entities.actor_kind_for_author` (ADR-012). DDL ниже —
-> исходная спека.
+Actor — сущность **сервера**, а не проекта (RFC 29 §3.8; CLO-034/036,
+2026-10-19): один токен открывает все проекты, где его владелец участник.
+Таблицы — миграция `0053_sync_access` (DDL — [DATA_MODEL §3.18.4](DATA_MODEL.md)),
+строки живут в хранилище доступа узла (`services/access_service`,
+`$COD_DOC_HOME/access.db`), а не в БД проекта:
 
-Каждый actor имеет запись в таблице `actor` (отдельно от `agent_definition`):
+| Таблица | Что |
+|---|---|
+| `actor` | человек (`human`) или его агент (`agent`, `handle` `<владелец>/<имя>`, роль не выше владельца) |
+| `api_token` | Bearer-токен: хранится только sha256, показывается один раз, отзыв действует на следующем запросе |
+| `project_member` | роль actor'а в проекте по `project.uid`: `reader` · `writer` · `admin` |
 
-```sql
-CREATE TABLE actor (
-  row_id     INTEGER PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES project(row_id),
-  kind       TEXT    NOT NULL,    -- 'human'|'agent'|'mcp'|'system'
-  handle     TEXT    NOT NULL,    -- 'dakh','task-steward','claude-code'
-  token_hash TEXT,                -- SHA256 для server-profile; NULL для embedded
-  created    TEXT    NOT NULL,
-  UNIQUE(project_id, kind, handle)
-);
-```
-
-Embedded-профиль: единственный неявный actor `human:<os-user>` без токена.
-Server-профиль: REST/MCP требуют `Authorization: Bearer <token>`; токен резолвится в `actor.handle`. CLI-локально на сервере — через keyring.
+- **Локальная машина** (хранилища нет): гейт выключен, неявный actor — человек
+  за терминалом; провенанс несёт строка `author`/`actor_id`, роль выводится
+  через `domain.entities.actor_kind_for_author` (ADR-012).
+- **Узел команды**: REST, умный remote и MCP требуют `Authorization: Bearer
+  <token>`; владелец токена привязан к запросу (`services/request_identity`),
+  `author` записи обязан быть его handle или handle его агента с совпадающим
+  видом. Администрирование — CLI на узле (`cod-doc access|member|token|actor`)
+  или `--remote` через `/api/sync/v1` для admin проекта; в MCP его нет
+  намеренно. Токен клиента — Keychain macOS или `~/.cod-doc/credentials`
+  (`cod-doc remote login`).
+- Исходная спека этого раздела (actor с `project_id`, `token_hash` в той же
+  строке) заменена этой моделью; `agent_definition` по-прежнему только спека.
 
 ### 12.3 Authz
 
