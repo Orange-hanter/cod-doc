@@ -60,6 +60,23 @@ def _raw_config() -> dict[str, Any] | None:
     return data
 
 
+class ProjectMovedError(RuntimeError):
+    """Проект переехал на другой узел (``moved_to``): локальной БД больше не открывать.
+
+    Живёт здесь, а не в ``infra``: CLI ловит её на верхнем уровне, а
+    ``import cod_doc.cli`` не тянет SQLAlchemy (ADO-179).
+    """
+
+    def __init__(self, name: str, moved_to: str) -> None:
+        self.name = name
+        self.moved_to = moved_to
+        super().__init__(
+            f"проект {name!r} переехал на {moved_to}: работайте через MCP cod-doc этого узла. "
+            "Локальная БД — только откат и не обновляется; вернуть её — убрать moved_to "
+            "у проекта в ~/.cod-doc/config.yaml."
+        )
+
+
 class ProjectEntry(BaseSettings):
     """Запись о проекте в реестре."""
 
@@ -81,6 +98,11 @@ class ProjectEntry(BaseSettings):
     #: ACU-012 (RFC 28 §3.10 п.4): LLM-предлагатели прогона (ссылки, раскладка).
     #: Фрагменты документов уходят в облачную модель — включается явно.
     curator_llm: bool = False
+    #: Проект переехал на другой узел — URL его MCP. Локальные поверхности (CLI,
+    #: MCP, веб) отказываются открывать БД проекта (``ProjectMovedError``), а
+    #: обходы реестра (``update``, рутины, веб, куратор) его пропускают: правки
+    #: в отставшую копию молча разошлись бы с узлом.
+    moved_to: str | None = None
 
     @property
     def root(self) -> Path:
@@ -408,8 +430,11 @@ class Config(BaseSettings):
                 return True
         raise KeyError(name)
 
-    def list_projects(self) -> list[ProjectEntry]:
+    def list_projects(self, *, include_moved: bool = False) -> list[ProjectEntry]:
+        """Проекты реестра (+ workspace); переехавшие (``moved_to``) — только по просьбе."""
         projects = [ProjectEntry(**p) for p in self.projects]
+        if not include_moved:
+            projects = [p for p in projects if not p.moved_to]
         seen = {p.name for p in projects}
         for entry in self.discover_workspace_projects():
             if entry.name not in seen:

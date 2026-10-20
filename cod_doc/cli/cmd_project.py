@@ -56,18 +56,23 @@ def project_list(ctx: click.Context, as_json: bool) -> None:
 
     cfg: Config = ctx.obj["config"]
     projects = cfg.list_projects()
+    moved = [e for e in cfg.list_projects(include_moved=True) if e.moved_to]
 
     if as_json:
         from cod_doc.infra.db import db_url_for_entry
 
-        rows = [
+        rows: list[dict[str, str | None]] = [
             {"slug": entry.name, "root_path": entry.path, "db_url": db_url_for_entry(entry)}
             for entry in projects
+        ]
+        rows += [
+            {"slug": e.name, "root_path": e.path, "db_url": None, "moved_to": e.moved_to}
+            for e in moved
         ]
         click.echo(_json.dumps(rows, ensure_ascii=False))
         return
 
-    if not projects:
+    if not projects and not moved:
         console.print("[yellow]Проектов нет. Добавьте: cod-doc project add[/yellow]")
         return
 
@@ -91,6 +96,9 @@ def project_list(ctx: click.Context, as_json: bool) -> None:
             f"{status_icon} {stats['status']}",
             " · ".join(task_bits) if task_bits else "0",
         )
+    for e in moved:
+        # БД переехавшего проекта не открывается — статистики нет.
+        table.add_row(e.name, e.path, "—", f"↗ {e.moved_to}", "—")
     console.print(table)
 
 

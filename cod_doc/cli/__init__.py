@@ -132,7 +132,19 @@ from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
 
 
-@click.group()
+class _Main(click.Group):
+    """Корневая группа: переезд проекта — понятная ошибка, а не трейсбек."""
+
+    def invoke(self, ctx: click.Context) -> object:
+        from cod_doc.config import ProjectMovedError
+
+        try:
+            return super().invoke(ctx)
+        except ProjectMovedError as exc:
+            raise click.ClickException(str(exc)) from exc
+
+
+@click.group(cls=_Main)
 # Версия выводится из git (setuptools-scm) и живёт в метаданных дистрибутива.
 # На машине одновременно стоят несколько сборок cod-doc — репозиторный venv,
 # пиннованный рантайм демонов, uv-tool в PATH; без этого флага ответить
