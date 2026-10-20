@@ -129,6 +129,13 @@ def db_url_for_entry(entry: ProjectEntry) -> str:
     Функция чистая: каталог под embedded-файл создаёт уже ``db_for_entry``,
     иначе простой резолв URL создавал бы `.cod-doc/` на каждый запрос к web.
     """
+    moved_to = getattr(entry, "moved_to", None)
+    if moved_to:
+        # Единая точка резолва БД — значит, и единая точка отказа: CLI, MCP,
+        # веб, init и миграции переехавшего проекта не откроют отставшую копию.
+        from cod_doc.config import ProjectMovedError
+
+        raise ProjectMovedError(getattr(entry, "name", "<unknown>"), str(moved_to))
     db_url = getattr(entry, "db_url", None)
     if db_url:
         return str(db_url)
