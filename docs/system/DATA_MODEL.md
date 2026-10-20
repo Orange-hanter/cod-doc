@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-10-17
+last_updated: 2026-10-20
 ---
 
 # COD-DOC — Data Model
@@ -589,9 +589,11 @@ CREATE TABLE scenario_link (
 | Дерево документации | `doc_node`, `doc_node_suggestion`, `document.node_id` | `0035_doc_nodes` |
 | Репликация (RFC 29, секция A) | `uid` в authored-таблицах, `rank`/`node_rank`, `replica`, `sync_op`, `changeset`, `sync_ref`, `sync_lease`, `entity_alias` — см. §3.18 | `0049_sync_identity`, `0050_sync_rank` |
 | Конфликты слияния (RFC 29, секция C) | `sync_conflict` (local; + `opened_hlc`, 0052) — см. §3.18 | `0051_sync_conflict`, `0052_sync_conflict_opened_hlc` |
+| Доступ к узлу (RFC 29, секция E) | `actor`, `api_token`, `project_member` (local; живут в хранилище доступа узла) — см. §3.18.4 | `0053_sync_access` |
 
-Таблицы `agent_definition` и `actor` из capability-доков в схеме **нет** — это
-целевые спеки (ARCHITECTURE §12.2, agents-and-skills §1.1).
+Таблицы `agent_definition` из capability-доков в схеме **нет** — это целевая
+спека (agents-and-skills §1.1). `actor` есть с `0053_sync_access`, но как
+сущность сервера (§3.18.4), а не проекта, как в исходной спеке.
 
 ### 3.18 Репликация: `uid`, `rank` и служебные таблицы sync
 
@@ -677,8 +679,9 @@ ALTER TABLE document ADD COLUMN node_rank TEXT;  -- порядок докуме�
 #### 3.18.3 Служебные таблицы синхронизации
 
 Шесть таблиц — класс `local`: это состояние реплики, а не проекта, они не
-уезжают. После секции A пишутся только `replica` и `sync_op`; остальные ждут
-секций B–C.
+уезжают. `replica` и `sync_op` пишутся всегда (журнал копится и без remote);
+`changeset`, `sync_ref` — push/pull (секция B), `sync_lease`, `entity_alias` —
+аренды номеров, склейки и clone (секции C–D), `sync_conflict` — слияние (C).
 
 ```sql
 CREATE TABLE replica (
@@ -826,6 +829,53 @@ CREATE INDEX ix_sync_conflict_status ON sync_conflict(project_id, status);
   заглушкой `WITHHELD_FILL`, у владельца тоже (`sync_capture._shipped_line`).
   Иначе дайджест владельца не воспроизводим, и `sync verify` расходится у
   каждого приёмника проекта с придержанной ссылкой.
+
+#### 3.18.4 Доступ к узлу: `actor`, `api_token`, `project_member`
+
+> Миграция `0053_sync_access` (2026-10-19, секция E, CLO-034; RFC 29 §3.8).
+> Таблицы есть в общей схеме ради одной цепочки миграций, но заполняются только
+> в **хранилище доступа** узла (`Config.access_db_url`, по умолчанию
+> `$COD_DOC_HOME/access.db`); в БД проекта пусты. Класс `local`, эпоху не
+> открывают.
+
+```sql
+CREATE TABLE actor (
+  uid        TEXT PRIMARY KEY,                 -- uuid7
+  kind       TEXT NOT NULL CHECK (kind IN ('human','agent')),
+  handle     TEXT NOT NULL UNIQUE,             -- 'dakh', агент — 'dakh/claude-code'
+  owner_uid  TEXT REFERENCES actor(uid) ON DELETE CASCADE,  -- у агента — владелец
+  created    DATETIME NOT NULL,
+  disabled   BOOLEAN NOT NULL DEFAULT 0,       -- гасит и токены его агентов
+  CHECK ((kind = 'agent') = (owner_uid IS NOT NULL))
+);
+
+CREATE TABLE api_token (
+  uid        TEXT PRIMARY KEY,                 -- uuid7
+  actor_uid  TEXT NOT NULL REFERENCES actor(uid) ON DELETE CASCADE,
+  label      TEXT NOT NULL,                    -- 'macbook', 'ci', 'cursor-cloud'
+  token_hash TEXT NOT NULL UNIQUE,             -- sha256('cdt_…'); сам токен — один раз
+  created    DATETIME NOT NULL,
+  last_used  DATETIME,                         -- не чаще раза в минуту
+  revoked_at DATETIME
+);
+CREATE INDEX ix_api_token_actor ON api_token(actor_uid);
+
+CREATE TABLE project_member (
+  project_uid TEXT NOT NULL,                   -- project.uid; без FK — проект в своей БД
+  actor_uid   TEXT NOT NULL REFERENCES actor(uid) ON DELETE CASCADE,
+  role        TEXT NOT NULL CHECK (role IN ('reader','writer','admin')),
+  PRIMARY KEY (project_uid, actor_uid)
+);
+```
+
+- **Журнал хранилища** — `activity_event` (`access.*`, `auth.denied`) с FK на
+  служебную строку `project` со слагом `_access`, которой нет в реестре.
+  Ревизий нет: `revision_revert` вернул бы отозванный токен.
+- **Роль агента** — роль владельца, суженная собственной строкой
+  `project_member`, если она есть; выше владельца — никогда.
+- **Отметка отложенной починки** (CLO-053) —
+  `project.config_json["repair_deferred_until_pull"]`: local-колонка, хвоста
+  журнала не даёт.
 
 ## 4. Вычисляемые представления
 
