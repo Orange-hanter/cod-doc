@@ -316,6 +316,10 @@ async def put_json(
         store = server.store()
         if key == "meta.json":
             current = store.get_json(project_uid, key)
+            # Сверяем с той версией, которую сравнит CAS: иначе между чтением и
+            # записью meta.json могли подменить, и проверка шла бы по чужой версии.
+            if (current[1] if current else None) != etag:
+                return _error(_HTTP_PRECONDITION, "SYNC-103", "CAS JSON отвергнут")
             server.check_meta_forward(identity, project_uid, current[0] if current else None, body)
         new = store.cas_json(project_uid, key, etag, body)
         if new is None:
@@ -331,7 +335,8 @@ def delete_json(
 ) -> Response:
     def run() -> Response:
         _check_uid(project_uid)
-        server.require(project_uid, ROLE_WRITER)
+        # meta.json несёт epoch/schema_min: удалить его — снять пол схемы; это admin.
+        server.require(project_uid, ROLE_ADMIN if key == "meta.json" else ROLE_WRITER)
         etag = _unquote(if_match)
         if etag is None:
             return _error(_HTTP_PRECONDITION, "SYNC-110", "нужен If-Match")

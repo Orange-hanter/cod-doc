@@ -23,18 +23,29 @@ _KIB: Final = 1024
 _MIB: Final = 1024 * _KIB
 #: Потолок по умолчанию — для небольших JSON-тел (``{sha}``, ``{role}`` …).
 _SMALL: Final = 64 * _KIB
+#: Полная форма пути после ``/api/sync/v1/`` (``fullmatch``): ``members/{handle:path}``
+#: вида ``members/x/snapshots/a/b`` не должен получить потолок снапшота.
 _RULES: Final = (
-    (re.compile(r"/projects/[^/]+/objects/has$"), 8 * _MIB),
-    (re.compile(r"/projects/[^/]+/objects/[^/]+$"), 128 * _MIB),
-    (re.compile(r"/projects/[^/]+/json/"), 1 * _MIB),
-    (re.compile(r"/projects/[^/]+/snapshots/[^/]+/[^/]+$"), 1024 * _MIB),
+    ("POST", re.compile(r"projects/[^/]+/objects/has"), 8 * _MIB),
+    ("PUT", re.compile(r"projects/[^/]+/objects/[0-9a-f]{64}"), 128 * _MIB),
+    (
+        "PUT",
+        re.compile(r"projects/[^/]+/json/leases/[^?]+|projects/[^/]+/json/meta\.json"),
+        1 * _MIB,
+    ),
+    (
+        "PUT",
+        re.compile(r"projects/[^/]+/snapshots/[A-Za-z0-9_][A-Za-z0-9._-]*/[0-9a-f]{64}"),
+        1024 * _MIB,
+    ),
 )
 _HTTP_TOO_LARGE: Final = 413
 
 
-def cap_for(path: str) -> int:
-    for pattern, cap in _RULES:
-        if pattern.search(path):
+def cap_for(method: str, path: str) -> int:
+    tail = path.removeprefix(_PREFIX)
+    for rule_method, pattern, cap in _RULES:
+        if method == rule_method and pattern.fullmatch(tail):
             return cap
     return _SMALL
 
@@ -51,7 +62,7 @@ class SyncBodyCap:
         if scope["type"] != "http" or not scope["path"].startswith(_PREFIX):
             await self.app(scope, receive, send)
             return
-        cap = cap_for(scope["path"])
+        cap = cap_for(scope.get("method", "GET"), scope["path"])
         for name, value in scope.get("headers", []):
             if name == b"content-length":
                 declared = bytes(value).decode("latin-1").strip()

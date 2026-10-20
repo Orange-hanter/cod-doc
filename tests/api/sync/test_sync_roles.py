@@ -280,3 +280,26 @@ def test_small_json_routes_capped_before_parsing() -> None:
     big = b'{"sha": "' + b"a" * (128 * 1024) + b'"}'
     r = httpx.put(url, content=big, headers={"authorization": f"Bearer {reader}"})
     assert r.status_code == 413
+
+
+def test_cap_rules_match_full_route_shape() -> None:
+    from cod_doc.api.sync.limits import cap_for
+
+    p = f"/api/sync/v1/projects/{PROJECT}"
+    head = "a" * 64
+    small = cap_for("PUT", f"{p}/refs/main")
+    snap = cap_for("PUT", f"{p}/snapshots/0050_sync_rank/{head}")
+    assert snap > cap_for("PUT", f"{p}/objects/{head}") > small
+    # members/{handle:path} с хвостом формы снапшота — всё равно маленький потолок
+    assert cap_for("PUT", f"{p}/members/x/snapshots/0050_sync_rank/{head}") == small
+    assert cap_for("GET", f"{p}/snapshots/0050_sync_rank/{head}") == small
+
+
+def test_writer_cannot_delete_meta() -> None:
+    writer = _remote(_token("alice", "writer"))
+    etag = writer.cas_json(PROJECT, "meta.json", None, {"v": 1, "schema_min": "0050_sync_rank"})
+    assert etag is not None
+    with pytest.raises(RemoteAuthError) as exc:
+        writer.delete_json(PROJECT, "meta.json", etag)
+    assert exc.value.code == "SYNC-202"
+    assert writer.get_json(PROJECT, "meta.json") is not None
