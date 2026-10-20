@@ -68,7 +68,10 @@ def register(mcp: FastMCP) -> None:
         """Register a new routine.
 
         check_name: one of {approval_stale, stale_refs, link_integrity,
-                            doc_drift, task_stale}
+                            doc_drift, task_stale, sync}
+        sync (CLO-040): pull, then push with the project's remote;
+                        check_args {"remote": "origin", "author": "human:<handle>"}
+                        — for an https remote the author must be the token owner.
         trigger: 'cron' | 'manual' | 'event'  (cron requires `cron` expr).
         on_finding: 'create_task' | 'update_existing_task' | 'comment_only'.
         concurrency: 'skip' | 'queue' | 'parallel'.

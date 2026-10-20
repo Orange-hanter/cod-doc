@@ -185,7 +185,12 @@ CLO-039) — Bearer-токены на MCP и `/api/v1`:
 `remote login` (Keychain или файл кредов), `member`/`token --remote` для admin
 проекта.
 
-Чего нет: рутина `sync` (секция F). Открытые пункты — [аудит секции D
+Рутина `sync` (CLO-040, `sync_service/routine.py`): `pull`, затем `push` по
+расписанию через движок рутин; движок фиксирует свою транзакцию до сети
+(`OWN_TRANSACTION_CHECKS`), обмен идёт короткими транзакциями. Нет remote или
+сети — тихий пропуск; дайджест разошёлся при общей голове или ошибка
+синхронизации — находка. Заводится MCP `routine_create(check_name="sync",
+check_args={"author": …})`; на https-remote `author` — владелец токена. Открытые пункты — [аудит секции D
 §7](../audit/2026-10-19-cloud-remote-section-d.md).
 
 ## 1. Зачем

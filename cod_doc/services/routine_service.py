@@ -542,6 +542,20 @@ def _project_slug(session: Session, project_id: int) -> str:
 
 CheckFn = Callable[..., dict[str, Any]]
 
+
+def _check_sync(session: Session, project_id: int, **kwargs: Any) -> dict[str, Any]:
+    """RFC 29 §3.9 (CLO-040): автосинк — ``pull``, затем ``push`` (``sync_service.routine``)."""
+    from cod_doc.services.sync_service.routine import check_sync
+
+    return check_sync(session, project_id, **kwargs)
+
+
+#: Проверки, которые сами ходят в сеть и пишут своими транзакциями (CLO-040):
+#: ``run_now`` фиксирует транзакцию рутины до вызова. На SQLite открытая запись
+#: рутины (строка ``routine_run``) иначе держала бы блокировку, и запись
+#: ``pull``/``push`` через свою сессию упёрлась бы в ``database is locked``.
+OWN_TRANSACTION_CHECKS: frozenset[str] = frozenset({"sync"})
+
 CHECK_CATALOG: dict[str, CheckFn] = {
     "approval_stale": _check_approval_stale,
     "stale_refs": _check_stale_refs,
@@ -555,6 +569,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "question_links": _check_question_links,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,
+    "sync": _check_sync,
 }
 
 
@@ -715,6 +730,9 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
     )
 
     check_fn = CHECK_CATALOG[routine.check_name]
+    if routine.check_name in OWN_TRANSACTION_CHECKS:
+        # Строка «running» и routine.fired фиксируются до сети (CLO-040).
+        session.commit()
     try:
         result = check_fn(session, project_id, **(routine.check_args or {}))
         findings_count = int(
