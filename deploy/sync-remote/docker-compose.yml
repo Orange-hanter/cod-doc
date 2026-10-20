@@ -20,7 +20,7 @@ services:
         LOG_FORMAT: json
         LOG_LEVEL: INFO
         # X-Forwarded-For принимается только от сети, где живёт Caddy.
-        COD_DOC_TRUSTED_PROXIES: ${COD_DOC_TRUSTED_PROXIES:-172.16.0.0/12}
+        COD_DOC_TRUSTED_PROXIES: ${COD_DOC_TRUSTED_PROXIES:-172.30.57.0/24}
         # Нет access.db — 503, а не открытый /api/v1 (гейт fail-closed на узле).
         COD_DOC_REQUIRE_AUTH: "1"
       # Внутри контейнера слушать все интерфейсы; на хост порт опубликован на loopback.
@@ -36,7 +36,12 @@ services:
   cod-doc-mcp:
     image: cod-doc:${COD_DOC_TAG:-local}
     restart: unless-stopped
-    depends_on: [cod-doc]
+    # Миграции (проектов и хранилища) катит только cod-doc: два entrypoint'а на
+    # одном ./home гонялись бы за замок SQLite.
+    depends_on:
+      cod-doc:
+        condition: service_healthy
+    entrypoint: []
     command:
       - cod-doc-mcp
       - --transport=streamable-http
@@ -50,7 +55,7 @@ services:
     volumes: *volumes
     healthcheck:
       # 401 без токена — значит, процесс жив и гейт на месте.
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8801/mcp | grep -qE '^(401|406)$'"]
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8801/mcp | grep -qE '^(401|406|503)$'"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -69,6 +74,13 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+
+networks:
+  default:
+    ipam:
+      config:
+        # Своя подсеть: XFF принимается только от неё (COD_DOC_TRUSTED_PROXIES).
+        - subnet: 172.30.57.0/24
 
 volumes:
   caddy-data:

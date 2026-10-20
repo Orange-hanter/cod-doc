@@ -1361,6 +1361,7 @@ def release_lease(sf, project: str, task_uid: str, *, actor: str) -> None
 | `SYNC-202` | роль не позволяет | `RemoteAuthError` | ValueError / 1 / 403 |
 | `SYNC-203` | `actor`/`author` changeset'а не совпал с токеном | `AuthorMismatchError(PermissionError)` | — / 1 / 422 |
 | `SYNC-204` | превышена частота запросов | `RemoteRateLimitedError(RemoteUnavailableError)` | ValueError / 1 / 429 |
+| `SYNC-205` | узел требует аутентификацию (`COD_DOC_REQUIRE_AUTH=1`), а хранилища доступа нет (CLO-036) | — | — / — / 503 |
 | `SYNC-301` | `take` не подходит к виду конфликта | `ConflictResolveError(ValueError)` | ValueError / 1 / — |
 | `SYNC-302` | конфликт не найден или уже разрешён | `ConflictNotFoundError(LookupError)` | ValueError / 1 / — |
 

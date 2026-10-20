@@ -90,8 +90,8 @@ def _slug_by_uid(ctx: click.Context) -> dict[str, str]:
     for entry in cfg.list_projects():
         try:
             out[access_service.project_uid_for(entry)] = entry.name
-        except Exception:
-            continue
+        except access_service.AccessError:
+            continue  # проект без uid — в списке остаётся uid, как и записан
     return out
 
 

@@ -93,6 +93,30 @@ def test_revoked_token_rejected_immediately(store: sessionmaker[Session]) -> Non
         assert acc.revoke_token(s, token_uid=issued.uid, author=ADMIN) is False
 
 
+def test_revoke_rejects_short_prefix(store: sessionmaker[Session]) -> None:
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid=P1, role="writer", author=ADMIN)
+        acc.create_token(s, handle="alice", label="ci", author=ADMIN)
+        # пустой префикс совпал бы с единственным токеном и отозвал его
+        for prefix in ("", "0", "019a"):
+            with pytest.raises(AccessError, match="не короче"):
+                acc.revoke_token(s, token_uid=prefix, author=ADMIN)
+
+
+def test_store_file_private_even_if_init_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cod_doc.services import project_service
+
+    def boom(_url: str) -> None:
+        raise RuntimeError("migration failed")
+
+    monkeypatch.setattr(project_service, "upgrade_url", boom)
+    with pytest.raises(RuntimeError):
+        acc.init_store(f"sqlite:///{tmp_path / 'access.db'}")
+    assert (tmp_path / "access.db").stat().st_mode & 0o077 == 0
+
+
 def test_disabled_owner_disables_agent_tokens(store: sessionmaker[Session]) -> None:
     with transactional(store) as s:
         acc.add_member(s, handle="alice", project_uid=P1, role="writer", author=ADMIN)

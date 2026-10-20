@@ -7,7 +7,7 @@ MCP (``mcp/server.py``) оборачивают им своё приложени�
   пропускает всё: локальные демоны ``:8801``/``:8802`` и ``cod-doc serve`` на
   ноутбуке работают как раньше. Файл проверяется на каждом запросе, поэтому
   ``cod-doc access init`` включает гейт без рестарта.
-- **Хранилища нет, но ``COD_DOC_REQUIRE_AUTH=1``** — 503 на каждый защищённый
+- **Хранилища нет, но ``COD_DOC_REQUIRE_AUTH=1``** — 503 ``SYNC-205`` на каждый защищённый
   путь: развёрнутый узел без хранилища закрыт, а не открыт.
 - **Хранилище есть** — защищённому пути нужен ``Authorization: Bearer cdt_…``
   с любого адреса, включая loopback: за reverse proxy на том же хосте каждый
@@ -33,8 +33,10 @@ MCP (``mcp/server.py``) оборачивают им своё приложени�
 
 from __future__ import annotations
 
+import functools
 import ipaddress
 import json
+import logging
 import os
 import re
 import threading
@@ -72,8 +74,13 @@ _HTTP_FORBIDDEN: Final = 403
 _HTTP_TOO_MANY: Final = 429
 _PROJECT_PATH: Final = re.compile(r"^/api/v1/projects/(?P<slug>[^/]+)(?:/|$)")
 _TRUSTED_PROXIES_ENV: Final = "COD_DOC_TRUSTED_PROXIES"
+_log = logging.getLogger("cod_doc.api.auth")
+#: Код закрытия websocket «policy violation» (RFC 6455 §7.4.1).
+_WS_POLICY_VIOLATION: Final = 1008
 _REQUIRE_AUTH_ENV: Final = "COD_DOC_REQUIRE_AUTH"
 _HTTP_UNAVAILABLE: Final = 503
+#: Размер журнала «уже записанных блоков», после которого он чистится от истёкших.
+_LOGGED_SWEEP_AT: Final = 1024
 
 
 def _auth_required() -> bool:
@@ -105,12 +112,30 @@ class RateLimiter:
     window: float = WINDOW_SECONDS
     _hits: defaultdict[str, deque[float]] = field(default_factory=lambda: defaultdict(deque))
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _swept: float = 0.0
 
     def _trim(self, key: str, now: float) -> deque[float]:
+        self._sweep(now)
         hits = self._hits[key]
         while hits and now - hits[0] >= self.window:
             hits.popleft()
         return hits
+
+    def _sweep(self, now: float) -> None:
+        """Раз в окно выкинуть ключи без событий в окне.
+
+        Без этого каждый новый адрес перебора оставлял бы ключ навсегда, и
+        ротация адресов росла бы памятью процесса без предела.
+        """
+        if now - self._swept < self.window:
+            return
+        self._swept = now
+        stale = [k for k, hits in self._hits.items() if not hits or now - hits[-1] >= self.window]
+        for key in stale:
+            del self._hits[key]
+
+    def __len__(self) -> int:
+        return len(self._hits)
 
     def retry_after(self, key: str, now: float | None = None) -> int:
         """Сколько секунд ждать; ``0`` — лимит не исчерпан."""
@@ -145,8 +170,24 @@ class _Denial:
 
 
 def _trusted_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
-    raw = os.environ.get(_TRUSTED_PROXIES_ENV, "")
-    nets = [ipaddress.ip_network(part.strip(), strict=False) for part in raw.split(",") if part]
+    return _parse_networks(os.environ.get(_TRUSTED_PROXIES_ENV, ""))
+
+
+@functools.cache
+def _parse_networks(raw: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Разбор списка сетей; кривая запись пропускается с предупреждением в лог.
+
+    Опечатка в env не должна ронять 500 каждый защищённый запрос: пропущенная
+    сеть значит лишь «XFF от неё не принимается» — безопасная сторона.
+    """
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for part in (p.strip() for p in raw.split(",")):
+        if not part:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            _log.warning("%s: не сеть, пропущено: %r", _TRUSTED_PROXIES_ENV, part)
     return tuple(nets)
 
 
@@ -179,7 +220,11 @@ def _bearer(scope: Scope) -> str | None:
     return None
 
 
-async def _send_denial(send: Send, denial: _Denial) -> None:
+async def _send_denial(send: Send, denial: _Denial, *, websocket: bool = False) -> None:
+    if websocket:
+        # До accept отказ websocket — только close; HTTP-ответ нарушил бы ASGI.
+        await send({"type": "websocket.close", "code": _WS_POLICY_VIOLATION})
+        return
     body = json.dumps(
         {"error": {"code": denial.code, "message": denial.message, "details": {}}},
         ensure_ascii=False,
@@ -198,7 +243,7 @@ async def _send_denial(send: Send, denial: _Denial) -> None:
 
 _NO_STORE: Final = _Denial(
     _HTTP_UNAVAILABLE,
-    "SYNC-201",
+    "SYNC-205",
     "хранилище доступа не инициализировано (COD_DOC_REQUIRE_AUTH): cod-doc access init",
 )
 
@@ -230,9 +275,10 @@ class BearerGate:
         from cod_doc.services import access_service
 
         factory = await anyio.to_thread.run_sync(access_service.open_store, self.store_url)
+        ws = scope["type"] == "websocket"
         if factory is None:
             if _auth_required():
-                await _send_denial(send, _NO_STORE)
+                await _send_denial(send, _NO_STORE, websocket=ws)
                 return
             await self.app(scope, receive, send)
             return
@@ -240,7 +286,7 @@ class BearerGate:
         path = scope["path"]
         outcome = await anyio.to_thread.run_sync(self._admit, factory, scope, ip)
         if isinstance(outcome, _Denial):
-            await _send_denial(send, outcome)
+            await _send_denial(send, outcome, websocket=ws)
             return
         with request_identity.bind(outcome):
             denial = await self._enter_project(path, outcome)
@@ -250,7 +296,7 @@ class BearerGate:
         # Запись отказа — вне привязки: журнал хранилища пишет сервер, а не
         # владелец токена, и проверка записи (check_write) его бы не пустила.
         await anyio.to_thread.run_sync(self._record, factory, denial, ip, path)
-        await _send_denial(send, denial)
+        await _send_denial(send, denial, websocket=ws)
 
     def _admit(self, factory: sessionmaker[Session], scope: Scope, ip: str) -> Identity | _Denial:
         """Аутентификация (в потоке: SQLite синхронный). Отказ уже записан в журнал."""
@@ -294,6 +340,8 @@ class BearerGate:
         """Первый отказ по частоте для ключа за окно — его и пишем в журнал."""
         now = time.monotonic()
         with self._logged_lock:
+            if len(self._logged) > _LOGGED_SWEEP_AT:
+                self._logged = {k: t for k, t in self._logged.items() if now - t < WINDOW_SECONDS}
             last = self._logged.get(key)
             if last is not None and now - last < WINDOW_SECONDS:
                 return False

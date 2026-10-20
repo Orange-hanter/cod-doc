@@ -20,6 +20,13 @@ fi
 
 # CLO-034: схема хранилища доступа догоняется вместе с проектами; его самого
 # entrypoint не создаёт — гейт включает только явный `cod-doc access init`.
-cod-doc access migrate || echo "[migrate] access store FAILED" >&2
+# На узле с COD_DOC_REQUIRE_AUTH=1 непрогнанная схема хранилища — отказ старта:
+# гейт со старой схемой падал бы на каждом запросе.
+if ! cod-doc access migrate; then
+    echo "[migrate] access store FAILED" >&2
+    case "${COD_DOC_REQUIRE_AUTH:-}" in 1|true|yes) exit 1 ;; esac
+fi
 
+# Без команды — прежний дефолт.
+[ "$#" -eq 0 ] && set -- cod-doc serve
 exec "$@"

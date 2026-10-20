@@ -91,6 +91,8 @@ _TOKEN_BYTES: Final = 32
 #: ``last_used`` пишется не чаще раза в минуту на токен: запись на каждый
 #: запрос держала бы пишущую транзакцию SQLite на горячем пути гейта.
 _TOUCH_EVERY: Final = timedelta(minutes=1)
+#: Короче — префикс uuid7 совпадает у всех токенов одного дня.
+_MIN_UID_PREFIX: Final = 12
 _HANDLE_RE: Final = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 
 
@@ -180,6 +182,9 @@ def init_store(url: str | None = None) -> str:
     path = sqlite_file_path(final)
     if path is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Права — до первой записи: упавшая миграция не оставит файл с хэшами 0644.
+        path.touch(mode=0o600, exist_ok=True)
+        path.chmod(0o600)
     upgrade_url(final)
     with transactional(_factory(final)) as session:
         if _store_project_id(session, create=False) is None:
@@ -455,6 +460,9 @@ def create_token(session: Session, *, handle: str, label: str, author: str) -> I
 
 def revoke_token(session: Session, *, token_uid: str, author: str) -> bool:
     """Отозвать токен по uid (или его уникальному префиксу); ``False`` — уже отозван."""
+    if len(token_uid.strip()) < _MIN_UID_PREFIX:
+        msg = f"uid токена: не короче {_MIN_UID_PREFIX} символов (cod-doc token list)"
+        raise AccessError(msg)
     rows = session.scalars(
         select(ApiTokenModel).where(ApiTokenModel.uid.startswith(token_uid, autoescape=True))
     ).all()

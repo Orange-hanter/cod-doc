@@ -283,6 +283,46 @@ def test_v1_open_without_store(project: tuple[str, Path], web_client: TestClient
 # --- лимитер ------------------------------------------------------------------
 
 
+def test_rate_limiter_forgets_expired_keys() -> None:
+    limiter = RateLimiter(limit=2, window=10.0)
+    for i in range(500):
+        limiter.hit(f"198.51.100.{i}", now=float(i % 5))
+    assert len(limiter) == 500
+    limiter.hit("fresh", now=100.0)
+    assert len(limiter) == 1
+
+
+def test_bad_trusted_proxies_does_not_break_requests(
+    project: tuple[str, Path], store: None, mcp_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COD_DOC_TRUSTED_PROXIES", "10.0.0.0/33, not-a-net")
+    assert _call(mcp_client, "doc_list", None, project="demo").status_code == 401
+
+
+async def test_websocket_denied_with_close() -> None:
+    from cod_doc.api.auth import BearerGate
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        pytest.fail("гейт пропустил websocket")
+
+    sent: list[dict[str, Any]] = []
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "websocket.connect"}
+
+    gate = BearerGate(app, protected=lambda _p: True)
+    acc.init_store()
+    try:
+        scope = {"type": "websocket", "path": "/api/v1/x", "headers": [], "client": ("1.2.3.4", 1)}
+        await gate(scope, receive, send)
+    finally:
+        acc._ENGINES.clear()
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
 def test_rate_limiter_window() -> None:
     limiter = RateLimiter(limit=2, window=10.0)
     assert limiter.hit("k", now=0.0) == 0
@@ -396,6 +436,7 @@ def test_require_auth_without_store_is_503(
     monkeypatch.setenv("COD_DOC_REQUIRE_AUTH", "1")
     resp = _call(mcp_client, "doc_list", None, project="demo")
     assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "SYNC-205"
     assert "access init" in resp.json()["error"]["message"]
 
 
