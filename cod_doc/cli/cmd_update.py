@@ -304,6 +304,14 @@ def _render_migrate(results: Sequence[MigrateResult], out: Console) -> None:
 
 def _render_repair(results: Sequence[RepairResult], out: Console) -> None:
     for result in results:
+        if result.deferred is not None:
+            # CLO-053: голова в прошлой эпохе — хвост починки сорвал бы перескок.
+            out.print(
+                f"Починка {result.project}: отложена до pull — голова реплики в эпохе "
+                f"{result.deferred}; выполнит cod-doc pull -p {result.project}",
+                markup=False,
+            )
+            continue
         out.print(
             f"Починка {result.project}: применено {result.applied} из {len(result.actions)}"
             + (f", ошибок {len(result.errors)}" if result.errors else "")

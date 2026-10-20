@@ -115,6 +115,7 @@ from cod_doc.infra.db import (
 )
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import launchd_service, project_service, repair_service, runtime_service
+from cod_doc.services.sync_service import deferred_repair
 from cod_doc.services.sync_service import epochs as sync_epochs_svc
 from cod_doc.services.sync_service.errors import PendingOpsError
 
@@ -951,7 +952,13 @@ def _repair_one(cfg: Config, slug: str, *, ttl_minutes: int) -> repair_service.R
     except Exception as exc:
         return _repair_failure(slug, f"БД не открывается: {exc}")
     try:
-        return _repair_in_session(factory, entry, slug=slug, ttl_minutes=ttl_minutes)
+        return _repair_in_session(
+            factory,
+            entry,
+            slug=slug,
+            ttl_minutes=ttl_minutes,
+            has_remote=bool(cfg.project_remotes(slug)),
+        )
     except SchemaMismatchError as exc:
         return _repair_failure(slug, f"{SCHEMA_BEHIND_HINT}: {exc}")
     except Exception as exc:
@@ -967,11 +974,17 @@ def _repair_in_session(
     *,
     slug: str,
     ttl_minutes: int,
+    has_remote: bool = False,
 ) -> repair_service.RepairResult:
     with transactional(factory) as session:
         project_id = _project_id(session, slug)
         if project_id is None:
             return _repair_failure(slug, _ERR_NOT_IN_DB)
+        # CLO-053: голова в прошлой эпохе — починка создала бы хвост, и pull
+        # отказал бы перескоку на снапшот эпохи (SYNC-105). Чинит сам pull.
+        behind = deferred_repair.defer_if_needed(session, project_id, has_remote=has_remote)
+        if behind is not None:
+            return repair_service.RepairResult(project=slug, dry_run=False, deferred=behind)
         return repair_service.apply(
             session,
             project_id=project_id,

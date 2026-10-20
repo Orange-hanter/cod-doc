@@ -99,6 +99,7 @@ def test_push_then_status_and_pull(project: Path) -> None:
         "aliases": [],
         "head": pushed["head"],
         "rebased": None,
+        "repaired": None,  # CLO-053: отложенной починки не было
     }
 
 

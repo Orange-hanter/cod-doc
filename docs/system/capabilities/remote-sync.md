@@ -156,6 +156,13 @@ audience: [contributors, agents]
   выходом `export-pending` + новый `clone`. Changeset эпохи старше
   `meta.epoch` среди скачанных — `SYNC-105`, ничего не применено. Событие
   `sync.epoch_rebased`, поле `PullResult.rebased`.
+- **Починка `cod-doc update` ждёт перескока** (CLO-053,
+  `sync_service/deferred_repair.py`): у синхронизируемого проекта, чья голова
+  после обновления схемы осталась в прошлой эпохе, фаза D не чинит, а ставит
+  отметку в local-колонку `project.config_json` (хвоста нет) — иначе её же
+  записи сорвали бы перескок `SYNC-105`. Отложенную починку выполняет следующий
+  `pull` после перескока (или обычного pull, если remote эпоху ещё не открыл);
+  её записи уезжают обычным push, `PullResult.repaired`.
 
 Секция E, доступ (CLO-034, CLO-036, CLO-038 без https-администрирования,
 CLO-039) — Bearer-токены на MCP и `/api/v1`:
