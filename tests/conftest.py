@@ -28,6 +28,19 @@ _GIT_REPO_LOCATORS = (
 )
 
 
+@pytest.fixture(autouse=True, scope="session")
+def doc_event_subscribers() -> None:
+    """SVC-007: подписчики событий документов, как у точек входа (CLI, MCP, web).
+
+    Без них первая же запись документа в тесте упала бы
+    `MissingSubscriberError`. Тесту, которому нужна шина без подписчиков,
+    — `monkeypatch.setattr(doc_events, "_HANDLERS", {})`.
+    """
+    from cod_doc.services import event_wiring
+
+    event_wiring.install()
+
+
 @pytest.fixture(autouse=True)
 def no_keychain(isolated_cod_doc_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Тесты не ходят в настоящий Keychain macOS (``infra/keychain``, CLO-038).

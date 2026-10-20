@@ -225,8 +225,18 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   (`MAX_SCC_SIZE`, только вниз). Нужен общий код двум сторонам — вынеси его в
   лист: исключения — `doc_errors`/`task_errors`, разбор markdown —
   `markdown_parse`, `run_id` — свой модуль, откат ревизий — `revert_service`
-  над сервисами-владельцами. Остаток потолка — каскад якорей
-  `doc_service ↔ link_service` (SVC-007).
+  над сервисами-владельцами. Остаток потолка — кольцо `sync_service`
+  (`apply ↔ journal`, `apply ↔ tombstone`).
+- **Каскад ссылок — подписчик события, а не вызов** (SVC-007, ADR-018).
+  `doc_service` не знает про `link_service`: он публикует
+  `doc_events.SectionWritten` / `SectionAnchorChanged` / `DocumentRenamed`, а
+  `link_service.doc_event_handlers` их обрабатывает — синхронно, в той же
+  транзакции. Связывает их `services/event_wiring.install()`; её зовут корень
+  CLI (кроме `runtime`/`completion`), `mcp/server.py`, `api/server.py` и
+  session-фикстура `tests/conftest.py`. Новая точка входа, которая пишет
+  документы, обязана её звать: публикация без подписчика падает
+  `MissingSubscriberError`, а не теряет каскад молча (гейт
+  `tests/services/test_doc_events.py`).
 - **Атомарный checkout — протокольное правило (ADO-039).** Переход
   `todo→in_progress` разрешён только через `task_checkout`: прямой
   `update_status` падает, если не передан `via_checkout=True`. `complete()`
@@ -354,6 +364,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_task_status_write_canonicalisation.py` | ни один write-путь не пишет легаси-написание статуса в `task.status` |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_services_import_cycles.py` | самая большая компонента циклов импортов в `services` (с импортами в телах функций) не больше `MAX_SCC_SIZE`, и потолок плотный (SVC-006) |
+| `services/test_doc_events.py` | точки входа (CLI, MCP, web) зовут `event_wiring.install()`; `doc_service` не импортирует `link_service`; событие без подписчика падает (SVC-007) |
 | `services/test_project_lookup_single_source.py` | `cod_doc/{cli,api,mcp}` не ищут проект по слагу сами: только `services.project_lookup` (в CLI — `cli/_common.require_project_id[_click]`) (SVC-008) |
 | `services/test_presentation_no_orm_writes.py` | `cod_doc/{mcp,cli,api}` не пишут в ORM мимо сервисов: ни `session.add/delete/merge`, ни `*Repository(...).add/update/delete` (включая форму через локальную переменную); allowlist пуст (ADO-208, RFC 26 §5.1) |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |

@@ -158,6 +158,19 @@ def main(ctx: click.Context, log_level: str | None, log_format: str | None) -> N
     setup_logging(level=log_level, fmt=log_format)
     ctx.ensure_object(dict)
     ctx.obj["config"] = Config.load()
+    if ctx.invoked_subcommand not in _NO_DB_GROUPS:
+        # SVC-007: подписчики событий документов — до первой записи. Здесь, а
+        # не на импорте: импорт тянет SQLAlchemy (~220 мс), а `import cod_doc.cli`
+        # обязан оставаться лёгким (ADO-179).
+        from cod_doc.services import event_wiring
+
+        event_wiring.install()
+
+
+#: Группы, которые не трогают БД проектов и не должны тянуть services:
+#: `runtime` работает и тогда, когда сборка services сломана (граница свапа
+#: рантайма, ADO-192), `completion` печатает готовый файл.
+_NO_DB_GROUPS = frozenset({"runtime", "completion"})
 
 
 # Регистрация подкоманд
