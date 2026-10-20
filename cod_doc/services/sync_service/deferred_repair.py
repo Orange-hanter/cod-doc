@@ -94,6 +94,9 @@ def run_if_deferred(sf: sessionmaker[Session], project: str, *, author: str) -> 
     if entry is None:
         return None
     with transactional(sf) as session:
+        # Перепроверка в транзакции починки: параллельный pull мог успеть сам.
+        if not is_deferred(session, project_id):
+            return None
         result = repair_service.apply(
             session,
             project_id=project_id,
@@ -102,8 +105,11 @@ def run_if_deferred(sf: sessionmaker[Session], project: str, *, author: str) -> 
             slug=project,
             author=author,
         )
-        project_row = session.get_one(ProjectModel, project_id)
-        config = dict(project_row.config_json or {})
-        config.pop(FLAG, None)
-        project_row.config_json = config
+        # Ошибки apply отдаёт отчётом, а не исключением: при них отметка
+        # остаётся, и следующий pull повторит (идемпотентную) починку.
+        if result.ok:
+            project_row = session.get_one(ProjectModel, project_id)
+            config = dict(project_row.config_json or {})
+            config.pop(FLAG, None)
+            project_row.config_json = config
     return result

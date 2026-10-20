@@ -173,3 +173,31 @@ def test_dry_run_pull_does_not_repair(world: tuple, tmp_path: Path) -> None:
     assert r.pending(b) == 0
     with transactional(b.sf, commit=False) as s:
         assert s.scalars(select(ProjectModel.root_path)).first() == "/tmp/b"
+
+
+def test_failed_repair_keeps_the_mark_for_the_next_pull(
+    world: tuple, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ошибки починки — отчётом, а не исключением: отметка остаётся, следующий pull повторит."""
+    a, b, store = world
+    _lagging(a, b, store)
+    entry = _register(tmp_path, store)
+    _set_schema(b, NEW)
+    _phase_d(b, entry, has_remote=True)
+
+    def broken(*_a: object, **_k: object) -> repair_service.RepairResult:
+        return repair_service.RepairResult(project=r.SLUG, dry_run=False, errors=["boom"])
+
+    original = repair_service.apply
+    monkeypatch.setattr(repair_service, "apply", broken)
+    result = _pull(b, store)
+    assert result.repaired is not None
+    assert result.repaired["ok"] is False
+    assert _deferred(b)
+
+    # не monkeypatch.undo(): он откатил бы и автофикстуру эпох
+    monkeypatch.setattr(repair_service, "apply", original)
+    retried = _pull(b, store)
+    assert retried.repaired is not None
+    assert retried.repaired["ok"] is True
+    assert not _deferred(b)
