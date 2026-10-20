@@ -49,11 +49,15 @@ from cod_doc.mcp.tools import (
     task_doc_tools,
     task_tools,
 )
+from cod_doc.services import event_wiring
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 mcp = FastMCP("COD-DOC", json_response=True)
+
+# SVC-007: подписчики событий документов — до первого вызова пишущего тула.
+event_wiring.install()
 
 # Order doesn't matter for FastMCP — tool/resource/prompt names live in a
 # flat namespace. Group registrations by surface for grep-ability.

@@ -12,8 +12,10 @@
 только уменьшаться. Разорвал кольцо — опусти `MAX_SCC_SIZE` до нового значения,
 тест подскажет его сам.
 
-Что осталось внутри потолка и почему, — задача SVC-007 (каскад якорей
-`doc_service ↔ link_service`, нужна развилка дизайна).
+SVC-007 разорвал последнее кольцо ядра (`doc_service ↔ link_service`)
+событиями `doc_events`. Потолок теперь держит кольцо `sync_service`
+(`apply ↔ journal`, `apply ↔ tombstone`), пришедшее с репликацией RFC 29
+после SVC-006.
 """
 
 from __future__ import annotations
@@ -25,8 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVICES_DIR = REPO_ROOT / "cod_doc" / "services"
 PACKAGE = "cod_doc.services"
 
-#: Размер самой большой компоненты на момент SVC-001…006. Только вниз.
-MAX_SCC_SIZE = 4
+#: Размер самой большой компоненты на момент SVC-007. Только вниз.
+MAX_SCC_SIZE = 3
 
 
 def _module_name(path: Path) -> str:

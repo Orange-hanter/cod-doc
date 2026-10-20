@@ -34,13 +34,15 @@ from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.api.websocket import router as websocket_router
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
-from cod_doc.services import event_bus
+from cod_doc.services import event_bus, event_wiring
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
 setup_logging()
 logger = logging.getLogger("cod_doc.api")
+# SVC-007: подписчики событий документов — до первого запроса, который пишет.
+event_wiring.install()
 
 
 @asynccontextmanager

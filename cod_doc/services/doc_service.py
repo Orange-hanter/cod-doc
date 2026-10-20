@@ -46,7 +46,7 @@ from cod_doc.domain.entities import (
 from cod_doc.infra import ordering, sync_capture, sync_registry, sync_withdraw
 from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
-from cod_doc.services import activity_service, search_service, validation
+from cod_doc.services import activity_service, doc_events, search_service, validation
 from cod_doc.services import revision_service as rev
 
 # SVC-004: классы живут в листовом `doc_errors`; здесь реэкспорт под прежними именами.
@@ -508,14 +508,11 @@ def _sync_section_links_safe(session: Session, section_id: int) -> None:
     if session.info.get(SKIP_AUTO_LINK_SYNC):
         return
     try:
-        from cod_doc.services import link_service as _links
-
-        # sync first (delete + re-parse from body) so a body change invalidates
-        # stale rows; resolve_section then walks the fresh rows and populates
-        # to_doc_key / to_task_id where the target exists. resolve_section
-        # alone would not pick up body changes when rows already existed.
-        _links.sync_section(session, section_id)
-        _links.resolve_section(session, section_id)
+        # SVC-007: ссылки ведёт подписчик (`link_service.doc_event_handlers`).
+        doc_events.publish(doc_events.SectionWritten(session, section_id))
+    except doc_events.MissingSubscriberError:
+        # Не сбой подписчика, а пропущенная точка входа — её не глотаем.
+        raise
     except Exception:
         import logging
 
@@ -848,7 +845,8 @@ def rename_section(
 
     The section row, body and SECTION history stay. Links to the old anchor
     in any document (``[[doc:KEY#a]]``, ``[x](path.md#a)``, ``[x](#a)``) are
-    rewritten by ``link_service.anchor_cascade``, each changed section with
+    rewritten by the subscriber of ``doc_events.SectionAnchorChanged``
+    (``link_service.anchor_cascade``, SVC-007), each changed section with
     its own SECTION revision. The rename itself is a DOCUMENT revision
     ``op="rename_section"``, by the precedent of :func:`delete_section`.
 
@@ -857,8 +855,6 @@ def rename_section(
     taken in the document → `SectionAlreadyExistsError`; unknown ``anchor`` →
     `SectionNotFoundError`. Same heading and anchor — no-op.
     """
-    from cod_doc.services import link_service
-
     doc = _require_doc(session, document_id, project_id)
     if not heading.strip():
         raise validation.ValidationError("DM-001", "section heading must not be empty")
@@ -924,22 +920,29 @@ def rename_section(
         activity_summary=f"Document {doc.doc_key}: section {anchor} → {target_anchor}",
     )
 
-    report = link_service.AnchorCascadeReport([], 0)
+    rewritten: list[str] = []
+    links = 0
     if target_anchor != anchor:
-        report = link_service.anchor_cascade(
-            session,
-            project_id=doc.project_id,
-            document_id=document_id,
-            old_anchor=anchor,
-            new_anchor=target_anchor,
-            author=author,
-            reason=reason,
+        answers = doc_events.publish(
+            doc_events.SectionAnchorChanged(
+                session,
+                project_id=doc.project_id,
+                document_id=document_id,
+                old_anchor=anchor,
+                new_anchor=target_anchor,
+                author=author,
+                reason=reason,
+            )
         )
+        for answer in answers:
+            if isinstance(answer, doc_events.Rewrites):
+                rewritten.extend(answer.rewritten)
+                links += answer.links
     session.flush()
     search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     renamed = SectionRepository(session).get(sec.row_id)
     assert renamed is not None
-    return SectionRename(renamed, old_heading, anchor, report.rewritten, report.links)
+    return SectionRename(renamed, old_heading, anchor, rewritten, links)
 
 
 def update_status(
@@ -1191,9 +1194,10 @@ def rename(
 ) -> Document:
     """Change `doc_key` / `path`; writes a DOCUMENT revision.
 
-    When `cascade_links=True` (default), runs `LinkService.rename_cascade`
-    inside the same transaction to update incoming `link.to_doc_key` rows
-    and rewrite canonical refs in section bodies. Pass `cascade_links=False`
+    When `cascade_links=True` (default), publishes `doc_events.DocumentRenamed`;
+    its subscriber (`link_service.rename_cascade`, SVC-007) runs inside the
+    same transaction to update incoming `link.to_doc_key` rows and rewrite
+    canonical refs in section bodies. Pass `cascade_links=False`
     only when the caller will run the cascade later (e.g. bulk import).
     """
     doc = _require_doc(session, document_id, project_id)
@@ -1247,17 +1251,16 @@ def rename(
 
     path_changed = old_path != target_path
     if cascade_links and (old_key != new_doc_key or path_changed):
-        # Local import to avoid a cycle: link_service imports doc_service.
-        from cod_doc.services import link_service as _links
-
-        _links.rename_cascade(
-            session,
-            project_id=doc.project_id,
-            old_doc_key=old_key,
-            new_doc_key=new_doc_key,
-            author=author,
-            reason=reason,
-            path_map={old_path: target_path} if path_changed else None,
+        doc_events.publish(
+            doc_events.DocumentRenamed(
+                session,
+                project_id=doc.project_id,
+                old_doc_key=old_key,
+                new_doc_key=new_doc_key,
+                author=author,
+                reason=reason,
+                path_map={old_path: target_path} if path_changed else None,
+            )
         )
 
     # ADO-211: индекс ключуется по doc_key — без этого поиск отдавал бы старый
