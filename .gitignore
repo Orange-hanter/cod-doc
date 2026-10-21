@@ -45,3 +45,8 @@ venv/
 .graphify/
 # чекаут движка ai-reviewer в pr-review.yml; без игнора graphify индексирует его в граф cod-doc
 .ai-reviewer-engine/
+
+# graphify: локальный вывод `graphify` в корне (граф, отчёт, кэш — десятки МБ)
+graphify-out/
+# Разовые скриншоты в корне; картинки документации живут в docs/assets/
+/*.png
