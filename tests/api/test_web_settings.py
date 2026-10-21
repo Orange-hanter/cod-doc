@@ -182,8 +182,9 @@ def test_settings_get_renders_model_preset_dropdown(settings_client) -> None:
     assert 'id="model-preset"' in r.text
     assert "syncModelPreset" in r.text
     # At least the default Sonnet entry is listed with context + price tags
-    assert "Claude Sonnet 4.6" in r.text
-    assert "200K ctx" in r.text
+    assert "Claude Sonnet 5.5" in r.text
+    assert "GLM 5.3 Flash" in r.text
+    assert "1M ctx" in r.text
     assert "per 1M tok" in r.text
     # Custom-fallback option exists
     assert "__custom__" in r.text
@@ -202,7 +203,7 @@ def test_settings_get_marks_known_preset_selected() -> None:
     """A catalog model on the OpenRouter endpoint → that preset is selected."""
     Config(
         api_key="sk-test",
-        model="anthropic/claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-5.5",
         base_url="https://openrouter.ai/api/v1",
     ).save()
     from cod_doc.api.server import app
@@ -210,8 +211,8 @@ def test_settings_get_marks_known_preset_selected() -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get("/settings")
     assert r.status_code == 200
-    # The catalog option for Sonnet 4.6 is rendered with selected attribute
-    assert 'value="anthropic/claude-sonnet-4-6"' in r.text
+    # The catalog option for Sonnet 5.5 is rendered with selected attribute
+    assert 'value="anthropic/claude-sonnet-5.5"' in r.text
     assert "selected" in r.text
 
 
@@ -313,7 +314,7 @@ def test_settings_ollama_source_drops_unrelated_fields() -> None:
     Config(
         api_key="sk",
         base_url="https://ollama.com/v1",
-        model="qwen3.5:397b",
+        model="glm-5.3",
         lite_model="gemma4:31b",
     ).save()
     from cod_doc.api.server import app
@@ -326,6 +327,8 @@ def test_settings_ollama_source_drops_unrelated_fields() -> None:
     assert 'id="provider-row"' in body
     assert "Ollama Cloud" in body
     assert "Direct API" in body
+    assert "GLM 5.3" in body
+    assert "Kimi K3" in body
 
 
 def test_settings_post_local_ollama_fills_placeholder_key(settings_client) -> None:
