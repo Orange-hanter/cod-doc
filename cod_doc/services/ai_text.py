@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletion
+
     from cod_doc.config import Config
 
 
@@ -351,6 +353,9 @@ def expand_doc_sections(
 
 # ── Low-level lite-model helper ────────────────────────────────────────────
 
+#: Текст 400 от OpenRouter, когда модель не даёт выключить рассуждения.
+_REASONING_MANDATORY = "Reasoning is mandatory"
+
 
 def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
     """Call the lite model with a single user message and return the raw string.
@@ -377,23 +382,37 @@ def call_lite(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> LiteReply:
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
 
     _t = _time.monotonic()
-    try:
-        completion = client.chat.completions.create(
+
+    def _create(reasoning: dict[str, object]) -> ChatCompletion:
+        return client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=0.3,
-            # Рассуждения выключены намеренно. У reasoning-модели `max_tokens` —
-            # общий бюджет вывода, и рассуждения тратят его до того, как напечатан
-            # первый токен ответа: замер на `anthropic/claude-sonnet-5` через
-            # OpenRouter — 2740 токенов, все до единого reasoning,
-            # `finish_reason="length"`, пустой `content` и счёт на 4 цента за ничто.
-            # Все вызовы этой функции просят структурированный JSON или короткую
-            # выжимку с бюджетом 400…2048 токенов, то есть ломались бы все.
-            # Ключ нестандартный, но незнакомые поля тела OpenAI-совместимые
-            # серверы игнорируют.
-            extra_body={"reasoning": {"enabled": False}},
+            extra_body={"reasoning": reasoning},
         )
+
+    try:
+        # Рассуждения выключены намеренно. У reasoning-модели `max_tokens` —
+        # общий бюджет вывода, и рассуждения тратят его до того, как напечатан
+        # первый токен ответа: замер на `anthropic/claude-sonnet-5` через
+        # OpenRouter — 2740 токенов, все до единого reasoning,
+        # `finish_reason="length"`, пустой `content` и счёт на 4 цента за ничто.
+        # Все вызовы этой функции просят структурированный JSON или короткую
+        # выжимку с бюджетом 400…2048 токенов, то есть ломались бы все.
+        # Ключ нестандартный, но незнакомые поля тела OpenAI-совместимые
+        # серверы игнорируют.
+        try:
+            completion = _create({"enabled": False})
+        except Exception as exc:
+            if _REASONING_MANDATORY not in str(exc):
+                raise
+            # Часть моделей выключить рассуждения не даёт: OpenRouter отвечает 400
+            # «Reasoning is mandatory…» (`z-ai/glm-5.3-flash`,
+            # `minimax/minimax-m3.1-flash`, 2026-10-22). Минимальное усилие —
+            # ближайшее к «выключено»: на обеих 0…20 токенов рассуждений и
+            # готовый JSON в бюджете 200.
+            completion = _create({"effort": "minimal"})
     except Exception as exc:
         raise AIBackendError(f"LLM call failed: {exc}") from exc
 
