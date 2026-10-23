@@ -405,7 +405,8 @@ def call_lite(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> LiteReply:
         try:
             completion = _create({"enabled": False})
         except Exception as exc:
-            if _REASONING_MANDATORY not in str(exc):
+            if getattr(exc, "status_code", None) != 400 or _REASONING_MANDATORY not in str(exc):
+                raise
                 raise
             # Часть моделей выключить рассуждения не даёт: OpenRouter отвечает 400
             # «Reasoning is mandatory…» (`z-ai/glm-5.3-flash`,
