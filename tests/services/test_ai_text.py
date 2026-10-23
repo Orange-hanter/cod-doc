@@ -176,3 +176,60 @@ def test_other_empty_answers_carry_the_finish_reason(monkeypatch) -> None:
 
     with pytest.raises(ai_text.AIBackendError, match="content_filter"):
         ai_text._call_lite_raw("prompt", _cfg(), max_tokens=400)
+
+
+def _fake_openai_seq(monkeypatch, create, calls: list) -> None:  # type: ignore[no-untyped-def]
+    """Подменить клиента OpenAI функцией `create(extra_body)`; тела запросов — в `calls`."""
+
+    class FakeChat:
+        def create(self, **kwargs):  # type: ignore[no-untyped-def]
+            calls.append(kwargs["extra_body"])
+            return create(kwargs["extra_body"])
+
+    class FakeClient:
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.chat = type("_C", (), {"completions": FakeChat()})()
+
+    monkeypatch.setattr("openai.OpenAI", FakeClient)
+
+
+class _StatusError(RuntimeError):
+    """Как `openai.APIStatusError`: код ответа в `status_code`."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def test_mandatory_reasoning_falls_back_to_minimal_effort(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """`z-ai/glm-5.3-flash` и `minimax/minimax-m3.1-flash` отвечают 400 на `enabled: false`.
+
+    Без отката каждый lite-вызов на таких моделях падал бы `AIBackendError`.
+    """
+
+    def create(extra_body: dict) -> object:
+        if extra_body == {"reasoning": {"enabled": False}}:
+            raise _StatusError(
+                "Error code: 400 - {'error': {'message': 'Reasoning is mandatory "
+                "for this endpoint and cannot be disabled.'}}",
+                400,
+            )
+        return _completion('{"ok": true}', "stop", 12)
+
+    calls: list[dict] = []
+    _fake_openai_seq(monkeypatch, create, calls)
+
+    assert ai_text._call_lite_raw("prompt", _cfg(), max_tokens=200) == '{"ok": true}'
+    assert calls == [{"reasoning": {"enabled": False}}, {"reasoning": {"effort": "minimal"}}]
+
+
+def test_other_backend_errors_are_not_retried(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def create(extra_body: dict) -> object:
+        raise _StatusError("Error code: 401 - invalid key", 401)
+
+    calls: list[dict] = []
+    _fake_openai_seq(monkeypatch, create, calls)
+
+    with pytest.raises(ai_text.AIBackendError, match="401"):
+        ai_text._call_lite_raw("prompt", _cfg(), max_tokens=200)
+    assert len(calls) == 1
