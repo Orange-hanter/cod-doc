@@ -193,6 +193,14 @@ def _fake_openai_seq(monkeypatch, create, calls: list) -> None:  # type: ignore[
     monkeypatch.setattr("openai.OpenAI", FakeClient)
 
 
+class _StatusError(RuntimeError):
+    """Как `openai.APIStatusError`: код ответа в `status_code`."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def test_mandatory_reasoning_falls_back_to_minimal_effort(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """`z-ai/glm-5.3-flash` и `minimax/minimax-m3.1-flash` отвечают 400 на `enabled: false`.
 
@@ -201,9 +209,10 @@ def test_mandatory_reasoning_falls_back_to_minimal_effort(monkeypatch) -> None: 
 
     def create(extra_body: dict) -> object:
         if extra_body == {"reasoning": {"enabled": False}}:
-            raise RuntimeError(
+            raise _StatusError(
                 "Error code: 400 - {'error': {'message': 'Reasoning is mandatory "
-                "for this endpoint and cannot be disabled.'}}"
+                "for this endpoint and cannot be disabled.'}}",
+                400,
             )
         return _completion('{"ok": true}', "stop", 12)
 
@@ -216,7 +225,7 @@ def test_mandatory_reasoning_falls_back_to_minimal_effort(monkeypatch) -> None: 
 
 def test_other_backend_errors_are_not_retried(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     def create(extra_body: dict) -> object:
-        raise RuntimeError("Error code: 401 - invalid key")
+        raise _StatusError("Error code: 401 - invalid key", 401)
 
     calls: list[dict] = []
     _fake_openai_seq(monkeypatch, create, calls)

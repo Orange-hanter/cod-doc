@@ -355,6 +355,7 @@ def expand_doc_sections(
 
 #: Текст 400 от OpenRouter, когда модель не даёт выключить рассуждения.
 _REASONING_MANDATORY = "Reasoning is mandatory"
+_HTTP_BAD_REQUEST = 400
 
 
 def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
@@ -405,8 +406,8 @@ def call_lite(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> LiteReply:
         try:
             completion = _create({"enabled": False})
         except Exception as exc:
-            if getattr(exc, "status_code", None) != 400 or _REASONING_MANDATORY not in str(exc):
-                raise
+            status = getattr(exc, "status_code", None)
+            if status != _HTTP_BAD_REQUEST or _REASONING_MANDATORY not in str(exc):
                 raise
             # Часть моделей выключить рассуждения не даёт: OpenRouter отвечает 400
             # «Reasoning is mandatory…» (`z-ai/glm-5.3-flash`,
