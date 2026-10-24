@@ -107,7 +107,15 @@ class OpenAICompatAdapter:
 _PRICING_USD_PER_MTOK: dict[str, tuple[Decimal, Decimal]] = {
     # OpenRouter routes
     "anthropic/claude-sonnet-4-6": (Decimal("3.00"), Decimal("15.00")),
+    "anthropic/claude-sonnet-5.5": (Decimal("2.00"), Decimal("10.00")),
     "anthropic/claude-opus-4": (Decimal("15.00"), Decimal("75.00")),
+    "anthropic/claude-opus-5.5": (Decimal("4.00"), Decimal("20.00")),
+    "anthropic/claude-haiku-4.5": (Decimal("1.00"), Decimal("5.00")),
+    "z-ai/glm-5.3-flash": (Decimal("0.15"), Decimal("0.50")),
+    "~deepseek/deepseek-flash-latest": (Decimal("0.30"), Decimal("1.20")),
+    "deepseek/deepseek-v4.1-flash": (Decimal("0.30"), Decimal("1.20")),
+    "~openai/gpt-luna-latest": (Decimal("0.10"), Decimal("0.50")),
+    "openai/gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
     "anthropic/claude-3-5-sonnet": (Decimal("3.00"), Decimal("15.00")),
     "anthropic/claude-3-5-haiku": (Decimal("0.80"), Decimal("4.00")),
     "openai/gpt-4o": (Decimal("2.50"), Decimal("10.00")),

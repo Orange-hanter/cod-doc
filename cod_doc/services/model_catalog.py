@@ -41,70 +41,57 @@ class ModelInfo:
 
 
 # Order = recommended order in the dropdown (most common / capable first).
+# Prices and context are the OpenRouter listing on 2026-10-02. A leading ``~``
+# is an alias that follows the vendor's latest flash/luna model.
+# See docs/system/research/2026-10-02-openrouter-presets.md.
 CATALOG: tuple[ModelInfo, ...] = (
     ModelInfo(
-        model_id="anthropic/claude-sonnet-4-6",
-        label="Claude Sonnet 4.6",
-        context_window=200_000,
-        input_per_million=3.0,
-        output_per_million=15.0,
-        notes="Default — strong reasoning, large context.",
+        model_id="anthropic/claude-sonnet-5.5",
+        label="Claude Sonnet 5.5",
+        context_window=1_000_000,
+        input_per_million=2.0,
+        output_per_million=10.0,
+        notes="Обычный выбор. Выход до 128K.",
     ),
     ModelInfo(
-        model_id="anthropic/claude-opus-4",
-        label="Claude Opus 4",
-        context_window=200_000,
-        input_per_million=15.0,
-        output_per_million=75.0,
-        notes="Highest capability; expensive.",
+        model_id="anthropic/claude-opus-5.5",
+        label="Claude Opus 5.5",
+        context_window=1_000_000,
+        input_per_million=4.0,
+        output_per_million=20.0,
+        notes="Верх списка. Выход до 128K.",
     ),
     ModelInfo(
-        model_id="anthropic/claude-haiku-4-5",
+        model_id="z-ai/glm-5.3-flash",
+        label="GLM 5.3 Flash",
+        context_window=1_048_576,
+        input_per_million=0.15,
+        output_per_million=0.5,
+        notes="Дешёвый длинный выход. Лучший GDPval из тройки flash.",
+    ),
+    ModelInfo(
+        model_id="~deepseek/deepseek-flash-latest",
+        label="DeepSeek Flash latest",
+        context_window=1_048_576,
+        input_per_million=0.3,
+        output_per_million=1.2,
+        notes="Алиас DeepSeek V4.1 Flash. Лучший AA-LCR из тройки.",
+    ),
+    ModelInfo(
+        model_id="~openai/gpt-luna-latest",
+        label="GPT Luna latest",
+        context_window=1_050_000,
+        input_per_million=0.1,
+        output_per_million=0.5,
+        notes="Алиас GPT-6 Luna. Быстрые подсказки.",
+    ),
+    ModelInfo(
+        model_id="anthropic/claude-haiku-4.5",
         label="Claude Haiku 4.5",
         context_window=200_000,
         input_per_million=1.0,
         output_per_million=5.0,
-        notes="Fast/cheap; good for routine edits.",
-    ),
-    ModelInfo(
-        model_id="openai/gpt-5",
-        label="GPT-5",
-        context_window=400_000,
-        input_per_million=5.0,
-        output_per_million=20.0,
-        notes="Large context window.",
-    ),
-    ModelInfo(
-        model_id="openai/gpt-4.1-mini",
-        label="GPT-4.1 mini",
-        context_window=1_000_000,
-        input_per_million=0.4,
-        output_per_million=1.6,
-        notes="Cheap with 1M-token context.",
-    ),
-    ModelInfo(
-        model_id="google/gemini-2.5-pro",
-        label="Gemini 2.5 Pro",
-        context_window=2_000_000,
-        input_per_million=1.25,
-        output_per_million=5.0,
-        notes="Massive context; multimodal-capable.",
-    ),
-    ModelInfo(
-        model_id="deepseek/deepseek-r1",
-        label="DeepSeek R1",
-        context_window=128_000,
-        input_per_million=0.55,
-        output_per_million=2.19,
-        notes="Strong reasoning at low cost.",
-    ),
-    ModelInfo(
-        model_id="meta-llama/llama-3.3-70b-instruct",
-        label="Llama 3.3 70B",
-        context_window=128_000,
-        input_per_million=0.13,
-        output_per_million=0.4,
-        notes="Open weights; bargain pricing.",
+        notes="Быстрая. Потолок выхода ровно 64K.",
     ),
 )
 
@@ -128,20 +115,25 @@ _PROVIDER_LABELS: dict[str, str] = {
     "google": "Google",
     "deepseek": "DeepSeek",
     "meta-llama": "Meta",
+    "z-ai": "Z.ai",
 }
 
 _LITE_IDS = frozenset(
     {
-        "anthropic/claude-haiku-4-5",
-        "openai/gpt-4.1-mini",
-        "meta-llama/llama-3.3-70b-instruct",
+        "anthropic/claude-haiku-4.5",
+        "~openai/gpt-luna-latest",
+        "~deepseek/deepseek-flash-latest",
     }
 )
 
 
 def provider_label(info: ModelInfo) -> str:
-    """Human name of the vendor, for an ``<optgroup>``."""
-    slug = info.model_id.split("/", 1)[0]
+    """Human name of the vendor, for an ``<optgroup>``.
+
+    Alias ids start with ``~`` (``~openai/gpt-luna-latest``). The tilde is
+    not part of the vendor name.
+    """
+    slug = info.model_id.split("/", 1)[0].removeprefix("~")
     return _PROVIDER_LABELS.get(slug, slug)
 
 
@@ -186,23 +178,23 @@ BUNDLES: tuple[ModelBundle, ...] = (
     ModelBundle(
         bundle_id="quality",
         label="Quality",
-        blurb="Opus for the agent, Haiku for quick UI fills.",
-        model="anthropic/claude-opus-4",
-        lite_model="anthropic/claude-haiku-4-5",
+        blurb="Opus 5.5 for the agent, Haiku for quick UI fills.",
+        model="anthropic/claude-opus-5.5",
+        lite_model="anthropic/claude-haiku-4.5",
     ),
     ModelBundle(
         bundle_id="balanced",
         label="Balanced",
-        blurb="Sonnet 4.6 plus a cheap helper. The usual default.",
-        model="anthropic/claude-sonnet-4-6",
-        lite_model="openai/gpt-4.1-mini",
+        blurb="Sonnet 5.5 plus Luna for helpers. The usual default.",
+        model="anthropic/claude-sonnet-5.5",
+        lite_model="~openai/gpt-luna-latest",
     ),
     ModelBundle(
         bundle_id="economy",
         label="Economy",
-        blurb="Llama 3.3 for the agent, GPT-4.1 mini for helpers.",
-        model="meta-llama/llama-3.3-70b-instruct",
-        lite_model="openai/gpt-4.1-mini",
+        blurb="GLM 5.3 Flash for the agent, DeepSeek Flash for helpers.",
+        model="z-ai/glm-5.3-flash",
+        lite_model="~deepseek/deepseek-flash-latest",
     ),
 )
 
@@ -277,8 +269,37 @@ FAMILIES: tuple[ProviderFamily, ...] = (
     ),
 )
 
-_OLLAMA_MODELS: tuple[SourceModel, ...] = (
-    SourceModel("qwen3.5:397b", "Qwen3.5 397B", "Большая модель Ollama."),
+# Снимок GET https://ollama.com/api/tags на 2026-10-02. Имена — те, которыми
+# зовут облачный API (gemma4:31b), а не суффикс :cloud из приложения Ollama.
+# qwen3.5:397b в этом списке больше нет.
+_OLLAMA_CLOUD_MODELS: tuple[SourceModel, ...] = (
+    SourceModel("glm-5.3", "GLM 5.3", "Текущий GLM в облаке Ollama."),
+    SourceModel("glm-5.2", "GLM 5.2", "Предыдущий GLM."),
+    SourceModel("glm-5.3-flash", "GLM 5.3 Flash", "Быстрее GLM 5.3."),
+    SourceModel("kimi-k3", "Kimi K3", "Большая модель Kimi."),
+    SourceModel("kimi-k2.6", "Kimi K2.6", "Kimi предыдущего поколения."),
+    SourceModel("kimi-k2.7-code", "Kimi K2.7 Code", "Kimi для кода."),
+    SourceModel("deepseek-v4-pro:0813", "DeepSeek V4 Pro", "Тег deepseek-v4-pro:0813."),
+    SourceModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", "Быстрый DeepSeek."),
+    SourceModel("minimax-m3", "MiniMax M3", "Текущий MiniMax."),
+    SourceModel("minimax-m2.7", "MiniMax M2.7", "Предыдущий MiniMax."),
+    SourceModel("mistral-large-3:675b", "Mistral Large 3 675B", "Большая модель Mistral."),
+    SourceModel("nemotron-3-ultra", "Nemotron 3 Ultra", "Старший Nemotron."),
+    SourceModel("nemotron-3-super", "Nemotron 3 Super", "Nemotron меньше Ultra."),
+    SourceModel("gpt-oss:120b", "GPT-OSS 120B", "Открытые веса, 120B."),
+    SourceModel("gemma4:31b", "Gemma 4 31B", "Меньше флагманов, для подсказок.", lite=True),
+    SourceModel(
+        "nemotron-3-nano:30b",
+        "Nemotron 3 Nano 30B",
+        "Малый Nemotron, для подсказок.",
+        lite=True,
+    ),
+    SourceModel("gpt-oss:20b", "GPT-OSS 20B", "Малый GPT-OSS, для подсказок.", lite=True),
+)
+
+# Локальный демон отдаёт то, что скачано. Это частые теги, не облачный каталог.
+_OLLAMA_LOCAL_MODELS: tuple[SourceModel, ...] = (
+    SourceModel("qwen3.5:397b", "Qwen3.5 397B", "Большая локальная модель."),
     SourceModel("gemma4:31b", "Gemma 4 31B", "Легче 397B, для подсказок.", lite=True),
     SourceModel("llama3.3", "Llama 3.3", "Открытые веса."),
     SourceModel("deepseek-r1", "DeepSeek R1", "Рассуждения."),
@@ -384,10 +405,10 @@ PROVIDERS: tuple[ChatProvider, ...] = (
         provider_id="ollama-cloud",
         family="ollama",
         label="Ollama Cloud",
-        blurb="ollama.com, тег вида qwen3.5:397b.",
+        blurb="ollama.com, тег вида gemma4:31b.",
         base_url="https://ollama.com/v1",
         needs_key=True,
-        models=_OLLAMA_MODELS,
+        models=_OLLAMA_CLOUD_MODELS,
         key_note="Ключ Ollama Cloud.",
     ),
     ChatProvider(
@@ -397,7 +418,7 @@ PROVIDERS: tuple[ChatProvider, ...] = (
         blurb="Демон на этой машине. Ключ не нужен.",
         base_url="http://127.0.0.1:11434/v1",
         needs_key=False,
-        models=_OLLAMA_MODELS,
+        models=_OLLAMA_LOCAL_MODELS,
         fallback_key="ollama",
     ),
     ChatProvider(
