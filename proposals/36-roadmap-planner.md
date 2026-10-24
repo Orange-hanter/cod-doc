@@ -75,17 +75,189 @@ type: rfc
 (`due_date`, `target_date`, baseline) в модели нет — это и есть «даты ничего
 не значат».
 
-### 3.2. Модель данных (миграция 0054)
+### 3.2. Модель данных
 
-- `plan.rank` — `RankMixin`, тот же механизм, что у секций (RFC 29 §3.2):
-  дробный ранг, чтение через `ordering.order_by(PlanModel)`, перестановка —
-  `ordering.place`, соседи не трогаются. Бэкфилл — по `(created, row_id)`.
-  В `sync_registry` у `TableSpec("plan", …)` появляется `rank_column=_RANK`
-  по образцу `plan_section` (T10).
-- `plan_list`, список планов в вебе и `plan_sections_list` без `plan_scope`
-  отдают планы в порядке ранга.
-- Больше ничего: ни календаря (T9 — и прогнозу по пропускной способности он
-  не нужен, §3.4), ни полей задачи в V1.
+Правило модели: в БД хранится только слой «порядок» (§3.1) и то, из чего
+прогноз считается; ни одной колонки с плановой датой. Всё, что движок
+выдаёт, — значения в памяти (§3.2.5).
+
+#### 3.2.1. Что хранится, по этапам
+
+| Этап | Миграция | Объект | Изменение | Класс синхронизации |
+|---|---|---|---|---|
+| V1 | 0054 | `plan` | `+ rank TEXT NULL` | authored, `rank_column` |
+| V2 | 0055 | `task` | `+ estimate_hours REAL NULL` | authored, колонка в `_SHIPPED_BEFORE_UID["task"]` |
+| V2 | 0056 | `milestone` | новая таблица | authored, ключ `_leased("milestone_key")` |
+| V2 | 0056 | `milestone_task` | новая таблица | authored, `deterministic_uid` |
+| V3 | 0057 | `forecast_snapshot` | новая таблица | local |
+
+Номера 0055–0057 — плановые: ревизия берёт следующий свободный номер на
+момент мержа. Остальное движок читает из существующих колонок:
+`task.status`, `priority`, `plan_id`, `section_id`, `created`,
+`completed_at`; `dependency(kind = 'blocks')`; `plan_section.rank`; в V2 —
+`task_metrics.in_progress_hours`.
+
+```mermaid
+erDiagram
+    project ||--o{ plan : ""
+    plan ||--o{ plan_section : ""
+    plan_section ||--o{ task : ""
+    task ||--o{ dependency : "blocks"
+    project ||--o{ milestone : "V2"
+    milestone ||--o{ milestone_task : "V2"
+    task ||--o{ milestone_task : "V2"
+    project ||--o{ forecast_snapshot : "V3, local"
+    plan {
+        text rank "V1: порядок планов в проекте"
+    }
+    task {
+        real estimate_hours "V2: оценка, не срок"
+    }
+    milestone {
+        text milestone_key "MS-NNN"
+        text title
+    }
+```
+
+#### 3.2.2. V1 — `plan.rank` (миграция 0054)
+
+- **Колонка.** `ALTER TABLE plan ADD COLUMN rank TEXT` — как у десяти
+  таблиц в 0050: правка на месте, без `batch_alter_table`. Пересборка `plan`
+  на SQLite унесла бы по CASCADE секции и задачи (тот же механизм, что у
+  `document`, §«Миграции» CLAUDE.md). Индекса нет: в проекте ~20 планов, и
+  очередь читает их все.
+- **Бэкфилл.** В пределах `project_id`, `ORDER BY created, row_id`, ранги —
+  застывшая копия `rank.initial(n)` внутри миграции (образец 0050: миграция
+  не импортирует `cod_doc.infra.rank`). После upgrade `rank` не пуст ни у
+  одной строки.
+- **Downgrade.** `ALTER TABLE plan DROP COLUMN rank` (SQLite ≥ 3.35, на месте).
+- **ORM.** `PlanModel(RankMixin, SyncUidMixin, Base)`;
+  `ordering.PARENTS["plan"] = ("project_id",)`. Новый план получает ранг в
+  `before_flush`; позиции у плана нет, поэтому он встаёт **в конец** очереди
+  проекта, перестановка — явным `plan_move`.
+- **Домен.** `Plan.rank: str | None = None` (`domain/entities.py`).
+- **Синхронизация.** `TableSpec("plan", _A, natural_keys=…, rank_column=_RANK)`;
+  `SHIPPED_COLUMNS` добавляет ранг сам (`_with_identity_and_rank`). Две
+  реплики, переставившие один план, сходятся так же, как при перестановке
+  секции.
+- **Чтение.** `ordering.order_by(PlanModel)` в `plan_list`, списке планов в
+  вебе, `plan_sections_list` без `plan_scope` и в очереди. Закрытые планы
+  ранг сохраняют; на экране дорожной карты их нет, пока не включён тумблер
+  «история».
+
+#### 3.2.3. V2 — `task.estimate_hours` (миграция 0055)
+
+- `ALTER TABLE task ADD COLUMN estimate_hours REAL` — на месте, по той же
+  причине: на `task` висят `dependency`, `affected_file`, `task_document`.
+- Без `CHECK`: `> 0` проверяет сервис (`task_service.set_estimate`), как и
+  остальные инварианты задачи. `NULL` = оценки нет — нормальное состояние
+  большинства задач.
+- Единица — часы работы: при ИИ-исполнителе задача закрывается за часы, дни
+  — слишком грубая сетка. Это вес задачи в очереди, а не обязательство: из
+  оценки никакая дата не пишется.
+- Мутация пишет ревизию `op=estimate` и событие `task.estimate_changed`
+  (ADO-040); `Task.estimate_hours` в домене; колонка вносится в
+  `_SHIPPED_BEFORE_UID["task"]` — иначе она не уезжает.
+
+#### 3.2.4. V2 — вехи (миграция 0056)
+
+Веха нужна там, где «фича пригодна» собирается из задач **нескольких**
+планов; один план уже отвечает на этот вопрос сам.
+
+```
+milestone
+  row_id          INTEGER PK
+  uid             TEXT              -- SyncUidMixin
+  project_id      INTEGER NOT NULL  -- FK project ON DELETE CASCADE
+  milestone_key   TEXT NOT NULL     -- MS-NNN
+  title           TEXT NOT NULL
+  description     TEXT NULL
+  created         DATETIME NOT NULL
+  last_updated    DATETIME NOT NULL
+  UNIQUE (project_id, milestone_key)
+
+milestone_task
+  row_id          INTEGER PK
+  uid             TEXT              -- uuid5(milestone_id, task_id)
+  milestone_id    INTEGER NOT NULL  -- FK milestone ON DELETE CASCADE
+  task_id         INTEGER NOT NULL  -- FK task.row_id ON DELETE CASCADE
+  UNIQUE (milestone_id, task_id)
+```
+
+- **Нет `target_date`, нет `status`, нет ранга.** Дата вехи — max p50/p85 её
+  задач из прогноза; «достигнута» — все задачи `done`/`cancelled`; порядок
+  вех на шкале — по выведенной дате. Ни одно из трёх не хранится.
+- **Ключ.** `MS-NNN` аренды номеров, как `ADR`/`Q`/`SCN`: `"MS"` в
+  `leases._FIXED_PREFIXES`, `"milestone": "milestone"` в `_EVENT_SCOPES` и
+  `HUMAN_ID_KINDS`. Без аренды две реплики выдали бы один `MS-004`.
+- **Ревизии.** `EntityKind.MILESTONE` — своя нумерация `row_id` (логика
+  ADO-143). Привязка и отвязка задачи — ревизии вехи (`op=link_task` /
+  `unlink_task`) плюс событие одним вызовом
+  `write_revision_and_emit_event`. Не как у `adr_service.link_task`, где
+  только событие (`emit_for_write`): состав вехи откатывается
+  `revision_revert`.
+- **Инварианты сервиса.** Задача и веха из одного проекта; повторная
+  привязка — no-op без ревизии.
+
+#### 3.2.5. Что не хранится: типы движка (`cod_doc/domain/roadmap.py`)
+
+Неизменяемые `@dataclass(frozen=True, slots=True)` и `StrEnum` в слое
+`domain` — их собирают сервисы, сериализуют `services/serializers.py`, а
+MCP, CLI `--json` и REST отдают одну и ту же форму.
+
+```python
+class QueueFlag(StrEnum):
+    IN_PROGRESS = "in_progress"   # идёт первой
+    BLOCKED = "blocked"           # status blocked или blocked_reason
+    PULLED = "pulled"             # подтянута ради задачи раньше в очереди
+    CROSS_PLAN = "cross_plan"     # есть ребро в другой план
+    BACKLOG = "backlog"           # только при include_backlog
+
+class QueueRow:      task_id, plan_scope, section_letter, position: int,
+                     status: TaskStatus, priority: Priority,
+                     pulled_by: tuple[str, ...], flags: frozenset[QueueFlag]
+class PlanBar:       scope, rank, first_position, last_position, open_count
+class Queue:         rows: tuple[QueueRow, ...], plans: tuple[PlanBar, ...]
+
+class ThroughputWeek: week_start: date, closed: int, created: int
+
+class ForecastWarning(StrEnum):
+    INFLOW_EXCEEDS = "inflow_exceeds"   # создано за окно больше, чем закрыто
+    SHORT_SAMPLE = "short_sample"       # меньше MIN_SAMPLE_WEEKS
+    ZERO_SAMPLE = "zero_sample"         # ни одной закрытой задачи за окно
+    BEYOND_HORIZON = "beyond_horizon"   # хвост очереди за HORIZON_WEEKS
+
+class ForecastRow:   task_id, p50: date | None, p85: date | None
+class PlanForecast:  scope, p50_start: date | None, p50_finish: date | None,
+                     p85_finish: date | None
+class Forecast:      asof: date, sample: tuple[ThroughputWeek, ...],
+                     rows: tuple[ForecastRow, ...], plans: tuple[PlanForecast, ...],
+                     warnings: tuple[ForecastWarning, ...], runs: int, seed: int
+class Roadmap:       queue: Queue, forecast: Forecast   # ответ roadmap_get
+```
+
+Константы — именованные (PLR2004): `FORECAST_WINDOW_WEEKS = 8`,
+`MIN_SAMPLE_WEEKS = 4`, `HORIZON_WEEKS = 26`, `FORECAST_RUNS = 1000`.
+
+#### 3.2.6. V3 — `forecast_snapshot` (миграция 0057, эскиз)
+
+`forecast_snapshot(row_id, project_id, taken_at, asof, payload_json)` —
+сериализованный `Roadmap`, раз в неделю, рутиной. Класс **local**: снимок
+описывает прогноз той реплики, где его сняли, и на другую не уезжает;
+источник истины — узел, где идут рутины. Строка «прогноз по плану X
+сдвинулся на N дней» — разница двух снимков. Это не baseline: снимок ничего
+не обещает и на очередь не влияет.
+
+#### 3.2.7. Инварианты модели (тесты)
+
+- Ни у `plan`, ни у `task`, ни у `milestone` нет колонки с плановой датой:
+  тест проходит по схеме и падает на именах с `due`, `deadline`, `target`,
+  `planned`.
+- `sequence()` и `forecast()` ничего не пишут: после вызова в сессии нет
+  new/dirty объектов, число ревизий и событий не изменилось.
+- После любого flush у каждого плана непустой `rank`.
+- `plan.rank`, `task.estimate_hours`, `milestone*` уезжают в changeset
+  (тест захвата синхронизации).
 
 ### 3.3. Очередь: `cod_doc/services/roadmap_service.py`
 
@@ -110,15 +282,15 @@ sequence(session, *, project_id, include_backlog=False) -> Queue
    `in_progress` идут первыми, `blocked` остаются на своём месте с флагом
    риска.
 
-Выход — `QueueRow(task_id, plan_scope, section_letter, position, status,
-pulled_by, flags)` и `PlanBar(scope, rank, first_position, last_position,
-open_count)`.
+Выход — `Queue` из `QueueRow` и `PlanBar` (§3.2.5).
 
 ### 3.4. Прогноз: пропускная способность, не длительности
 
 ```python
-forecast(queue, *, closed_per_week: list[int], asof: date,
-         runs=1000, seed=0) -> Forecast
+throughput(session, *, project_id, asof, weeks=FORECAST_WINDOW_WEEKS)
+    -> tuple[ThroughputWeek, ...]
+forecast(queue, *, sample: tuple[ThroughputWeek, ...], asof: date,
+         runs=FORECAST_RUNS, seed=0) -> Forecast
 ```
 
 - **Выборка** — закрытые (`done`) задачи по неделям за окно (дефолт 8 недель,
@@ -135,8 +307,9 @@ forecast(queue, *, closed_per_week: list[int], asof: date,
   - очередь длиннее того, что выборка закрывает за 26 недель → хвост «за
     горизонтом», без дат.
 
-Выход: `ForecastRow(task_id, p50, p85)`, `PlanBar` дополняется
-`p50_start`, `p50_finish`, `p85_finish`.
+Выход — `Forecast` из `ForecastRow`, `PlanForecast` и `ForecastWarning`
+(§3.2.5). Неполная текущая неделя в выборку не входит: на снимке 10-19 она
+дала бы 8 закрытых против медианы 39.
 
 Почему не длительности в V1: время работы не измерено (T6), lead time мерит
 очередь (T7), а прогноз по длительностям при этом всё равно требует
