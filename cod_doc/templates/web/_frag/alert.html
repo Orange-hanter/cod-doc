@@ -3,9 +3,15 @@
 When rendered as an OOB swap target, HTMX prepends it into #alerts.
 When rendered standalone (via cookie-flash on full page load), the same
 markup is embedded directly inside #alerts via base.html.
-#}
-<div class="alert alert-{{ severity }}"{% if oob %} hx-swap-oob="afterbegin:#alerts"{% endif %}>
+
+The OOB form needs a wrapper: with a positional strategy (`afterbegin:`)
+htmx inserts the *children* of the hx-swap-oob element, not the element
+itself — without the wrapper #alerts got a bare <span> and <button> and the
+alert lost its .alert box (WUI-001). #}
+{%- if oob %}<div hx-swap-oob="afterbegin:#alerts">{% endif -%}
+<div class="alert alert-{{ severity }}">
   <span class="alert-msg">{{ message }}</span>
   <button type="button" class="alert-close" aria-label="dismiss"
           onclick="this.parentNode.remove()">×</button>
 </div>
+{%- if oob %}</div>{% endif %}

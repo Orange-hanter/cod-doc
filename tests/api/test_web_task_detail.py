@@ -757,6 +757,22 @@ def test_complete_refusal_keeps_alert_and_sends_no_trigger(task_detail_client) -
     assert "HX-Trigger" not in r.headers
 
 
+def test_oob_alert_is_wrapped_so_the_box_survives(task_detail_client) -> None:
+    """`afterbegin:` вставляет детей OOB-элемента: .alert обязан быть внутри обёртки.
+
+    Без неё в #alerts приезжали голые <span> и <button> — алерт без рамки.
+    """
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-002/complete",
+        data={"view": "detail"},
+        headers={"HX-Request": "true"},
+    )
+    assert re.search(
+        r'<div hx-swap-oob="afterbegin:#alerts">\s*<div class="alert alert-warning">', r.text
+    )
+
+
 def test_field_patch_announces_task_change(task_detail_client) -> None:
     client, entry = task_detail_client
     r = client.post(
@@ -799,16 +815,18 @@ def test_task_lists_mark_refresh_regions_and_peek_links(task_detail_client) -> N
 def test_completed_commit_reaches_page_and_sheet(task_detail_client) -> None:
     """Коммит закрытия — в шапке и страницы, и шторки (контекст собран один раз)."""
     client, entry = task_detail_client
-    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
-    with transactional(make_session_factory(engine)) as session:
-        tasks.complete(
-            session,
-            project_id=sole_project_id(session),
-            task_id="DET-001",
-            author="human:dakh",
-            commit_sha="abcdef1234567890",
-        )
-    engine.dispose()
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            tasks.complete(
+                session,
+                project_id=sole_project_id(session),
+                task_id="DET-001",
+                author="human:dakh",
+                commit_sha="abcdef1234567890",
+            )
+    finally:
+        engine.dispose()
     for url in (f"/p/{entry.name}/tasks/DET-001", f"/p/{entry.name}/tasks/DET-001?peek=1"):
         assert "<code>abcdef12</code>" in client.get(url).text, url
 
@@ -820,5 +838,13 @@ def test_peek_404_escapes_id_and_keeps_query(task_detail_client) -> None:
     assert "<b>x" not in r.text
     assert "&lt;b&gt;x" in r.text
     # Ссылка на полную страницу сохраняет прочие параметры, но не `peek`.
-    assert "?tab=history" in r.text
+    assert 'href="/p/demo/tasks/%3Cb%3Ex?tab=history"' in r.text
     assert "peek=1" not in r.text
+
+
+def test_peek_404_full_page_link_reencodes_path(task_detail_client) -> None:
+    """Starlette отдаёт путь раскодированным: `?` из id без кодирования стал бы query."""
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/A%3FB%23C?peek=1")
+    assert r.status_code == 404
+    assert 'href="/p/demo/tasks/A%3FB%23C" data-no-peek' in r.text

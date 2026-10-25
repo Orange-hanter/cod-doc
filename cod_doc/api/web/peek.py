@@ -8,7 +8,7 @@ URL — не прихоть: ответ-фрагмент и ответ-стра�
 
 from __future__ import annotations
 
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
@@ -43,7 +43,11 @@ def full_page_url(request: Request) -> str:
     """URL полной страницы: тот же путь и query, но без `peek`.
 
     Прочие параметры — состояние страницы (`?raw=1` у документа): ссылка
-    «открыть полную страницу» обязана его сохранить.
+    «открыть полную страницу» обязана его сохранить. Путь берётся из
+    `scope["path"]` и кодируется заново: он раскодирован, а
+    `request.url.path` и вовсе обрезан на раскодированном `?` — для id
+    `A%3FB` там уже `/tasks/A`.
     """
     rest = [(k, v) for k, v in request.query_params.multi_items() if k != PEEK_PARAM]
-    return request.url.path + (f"?{urlencode(rest)}" if rest else "")
+    path = quote(request.scope["path"], safe="/")
+    return path + (f"?{urlencode(rest)}" if rest else "")

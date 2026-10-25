@@ -177,7 +177,10 @@
     closing = true;
     hideGuard();
     let timer = null;
-    const done = () => {
+    const done = (ev) => {
+      // animationend всплывает от потомков (заглушка загрузки в теле) и
+      // приходит от ::backdrop; закрытие ждёт только peek-out самой шторки.
+      if (ev && (ev.target !== dialog || ev.animationName !== 'peek-out')) return;
       if (!closing) return;
       closing = false;
       clearTimeout(timer);
@@ -200,8 +203,11 @@
     htmx.trigger(body, 'htmx:abort');
     body.replaceChildren();
     titleEl.textContent = '';
-    alertsSlot.replaceChildren();
+    // Алерты, пришедшие при открытой шторке, возвращаются на страницу: их
+    // могли не успеть прочитать, а «Не удалось сохранить» терять нельзя.
     watchAlerts(false);
+    if (pageAlerts) pageAlerts.prepend(...alertsSlot.children);
+    alertsSlot.replaceChildren();
     unlockScroll();
     document.title = pageTitle;
     depth = 0;
