@@ -55,6 +55,16 @@ def test_every_task_detail_link_opens_in_sheet() -> None:
     assert not missing, "ссылка на карточку задачи без data-peek:\n" + "\n".join(missing)
 
 
+def test_non_detail_task_pages_stay_plain_links() -> None:
+    """`/tasks/legacy` и прочие страницы под `/tasks/` — не карточки."""
+    wrong = []
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        for tag in _ANCHOR.findall(path.read_text()):
+            if re.search(r'href="/p/\{\{[^}]+\}\}/tasks/[a-z]', tag) and "data-peek" in tag:
+                wrong.append(f"{path.relative_to(TEMPLATES)}: {' '.join(tag.split())}")
+    assert not wrong, "data-peek на ссылке не на карточку:\n" + "\n".join(wrong)
+
+
 def test_python_built_links_ask_peekable() -> None:
     for name in _PYTHON_BUILT_LINKS:
         assert "peekable(" in (TEMPLATES / name).read_text(), name
