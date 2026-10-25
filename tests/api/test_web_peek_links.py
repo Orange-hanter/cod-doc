@@ -27,12 +27,12 @@ _TASK_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/\{\{[^}]+\}\}"')
 _NON_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/[^{"]')
 
 # Шаблоны, где href пришёл из Python (`_link_href`, `_DEEPLINK_BY_KIND`)
-# и вид цели известен только строкой.
-_PYTHON_BUILT_LINKS = (
-    "project/search.html",
-    "project/question_show.html",
-    "project/scenario_show.html",
-)
+# и вид цели известен только строкой: шаблон → выражение href.
+_PYTHON_BUILT_LINKS = {
+    "project/search.html": "{{ h.url }}",
+    "project/question_show.html": "{{ l.href }}",
+    "project/scenario_show.html": "{{ l.href }}",
+}
 
 
 def _task_detail_anchors() -> list[tuple[str, str]]:
@@ -77,8 +77,12 @@ def test_non_detail_task_pages_stay_plain_links() -> None:
 
 
 def test_python_built_links_ask_peekable() -> None:
-    for name in _PYTHON_BUILT_LINKS:
-        assert "peekable(" in (TEMPLATES / name).read_text(), name
+    """Каждый `<a>` с href из Python сам решает `peekable(вид)`, а не файл где-то рядом."""
+    for name, href in _PYTHON_BUILT_LINKS.items():
+        tags = [t for t in _ANCHOR.findall((TEMPLATES / name).read_text()) if f'href="{href}"' in t]
+        assert tags, f"{name}: нет ссылки {href}"
+        for tag in tags:
+            assert "peekable(" in tag and "data-peek" in tag, f"{name}: {' '.join(tag.split())}"
 
 
 def test_peekable_kinds() -> None:

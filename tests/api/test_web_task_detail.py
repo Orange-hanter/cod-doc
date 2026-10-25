@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
+from cod_doc.api.web.peek import full_page_url
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
@@ -848,3 +850,21 @@ def test_peek_404_full_page_link_reencodes_path(task_detail_client) -> None:
     r = client.get(f"/p/{entry.name}/tasks/A%3FB%23C?peek=1")
     assert r.status_code == 404
     assert 'href="/p/demo/tasks/A%3FB%23C" data-no-peek' in r.text
+
+
+def _request(path: str, raw_path: bytes | None, query: bytes) -> Request:
+    scope = {"type": "http", "path": path, "query_string": query, "headers": []}
+    if raw_path is not None:
+        scope["raw_path"] = raw_path
+    return Request(scope)
+
+
+def test_full_page_url_keeps_encoded_slash() -> None:
+    """`%2F` в ключе документа: в scope["path"] он уже неотличим от `/`."""
+    req = _request("/p/x/docs/a/b", b"/p/x/docs/a%2Fb", b"peek=1&raw=1")
+    assert full_page_url(req) == "/p/x/docs/a%2Fb?raw=1"
+
+
+def test_full_page_url_without_raw_path_reencodes() -> None:
+    req = _request("/p/x/tasks/A?B", None, b"peek=1")
+    assert full_page_url(req) == "/p/x/tasks/A%3FB"

@@ -338,7 +338,8 @@
     // Открывший шторку элемент будет заменён свежей копией; фокус вернём на
     // её двойника. У карточки канбана id на самой ссылке, у карточки
     // цепочки — на обёртке вокруг неё.
-    const holder = opener && opener.closest && opener.closest('[id]');
+    // id="" валиден в HTML, но даёт селектор '#', на котором querySelector бросает.
+    const holder = opener && opener.closest && opener.closest('[id]:not([id=""])');
     const focusSelector = !holder ? null
       : (holder === opener ? '#' + CSS.escape(holder.id)
         : '#' + CSS.escape(holder.id) + ' a[data-peek]');
@@ -367,10 +368,15 @@
     if (ev.defaultPrevented) return;
     const link = ev.target.closest('a[href^="#"]');
     if (!link) return;
-    const id = decodeURIComponent(link.getAttribute('href').slice(1));
-    const target = id && body.querySelector('[id="' + CSS.escape(id) + '"]');
-    if (!target) return;
+    // Хэш-переход внутри шторки не пропускаем никогда, даже без цели: он
+    // добавил бы запись в историю, и Esc (history.go(-depth)) вернулся бы
+    // не к списку, а на карточку.
     ev.preventDefault();
-    target.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+    const raw = link.getAttribute('href').slice(1);
+    let id = raw;
+    // Битая percent-последовательность (`#100%`) — якорь как есть, а не URIError.
+    try { id = decodeURIComponent(raw); } catch (e) { /* keep raw */ }
+    const target = id && body.querySelector('[id="' + CSS.escape(id) + '"]');
+    if (target) target.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
   });
 })();
