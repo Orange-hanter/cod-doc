@@ -126,8 +126,8 @@
             {% for c in b.kind_chips %}
               <span class="meta-chip">{{ c.icon }} {{ c.kind }} {{ c.count }}</span>
             {% endfor %}
-            <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ b.capability_doc_key }}">capability</a>
-            <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ b.doc_key }}">проекция</a>
+            <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ b.capability_doc_key }}" data-peek>capability</a>
+            <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ b.doc_key }}" data-peek>проекция</a>
           </p>
 
           {% if b.missing_kinds %}

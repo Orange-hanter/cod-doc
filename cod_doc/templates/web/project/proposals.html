@@ -42,7 +42,7 @@
       <div class="proposal-head">
         <span class="badge">{{ p.op }}</span>
         <code class="mono muted">{{ p.approval_id[:8] }}</code>
-        {% if p.args.doc_key %}<a href="/p/{{ project.name }}/docs/{{ p.args.doc_key }}">{{ p.args.doc_key }}</a>{% endif %}
+        {% if p.args.doc_key %}<a href="/p/{{ project.name }}/docs/{{ p.args.doc_key }}" data-peek>{{ p.args.doc_key }}</a>{% endif %}
         {% if p.args.anchor %}<span class="muted">#{{ p.args.anchor }}</span>{% endif %}
         {% if p.args.question_id %}<a href="/p/{{ project.name }}/questions/{{ p.args.question_id }}">{{ p.args.question_id }}</a>{% endif %}
       </div>

@@ -28,7 +28,7 @@
     <span class="meta-chip">{{ scenario.kind_icon }} {{ scenario.kind }}</span>
     <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/scenarios?group={{ scenario.group_key }}">{{ scenario.group_key }}</a>
     {% if scenario.doc_key %}
-      <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ scenario.doc_key }}{% if section_anchor %}#{{ section_anchor }}{% endif %}">⚓ {{ section_anchor or scenario.doc_key }}</a>
+      <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ scenario.doc_key }}{% if section_anchor %}#{{ section_anchor }}{% endif %}" data-peek>⚓ {{ section_anchor or scenario.doc_key }}</a>
     {% endif %}
     <span class="meta-chip">Автор: {{ author }}</span>
     <span class="meta-chip" title="{{ created | ts_tooltip }}">Создан: {{ created | short_date }}</span>
@@ -101,7 +101,7 @@
 <section class="task-card">
   <div class="task-card-header"><h2>Проекция</h2></div>
   <p>
-    <a href="/p/{{ project.name }}/docs/{{ projection_doc_key }}">{{ projection_doc_key }}</a>
+    <a href="/p/{{ project.name }}/docs/{{ projection_doc_key }}" data-peek>{{ projection_doc_key }}</a>
     — генерируется, править файл руками нельзя.
   </p>
   <p class="empty-hint">

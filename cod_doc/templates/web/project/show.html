@@ -217,7 +217,7 @@
     {% if master_truncated %}
       <p class="muted">Показаны первые строки.
         {% if master_doc_key %}
-          <a href="/p/{{ project.name }}/docs/{{ master_doc_key }}">Открыть целиком</a>.
+          <a href="/p/{{ project.name }}/docs/{{ master_doc_key }}" data-peek>Открыть целиком</a>.
         {% else %}
           Полный текст — в файле <code>{{ project.master_md }}</code>; в БД документа нет.
         {% endif %}

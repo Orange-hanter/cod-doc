@@ -413,9 +413,9 @@
           {# Одна строка на документ: секций одного документа бывает с десяток. #}
           {% for doc_key, secs in refs.docs|groupby("doc_key") %}
             <li><span class="muted">doc</span>
-              <a href="/p/{{ project.name }}/docs/{{ doc_key }}">{{ secs[0].title }}</a>
+              <a href="/p/{{ project.name }}/docs/{{ doc_key }}" data-peek>{{ secs[0].title }}</a>
               <div class="muted adr-side-sub">
-                {%- for s in secs %}<a class="muted" href="/p/{{ project.name }}/docs/{{ doc_key }}#{{ s.anchor }}">§ {{ s.heading }}</a>{% if not loop.last %} · {% endif %}{% endfor -%}
+                {%- for s in secs %}<a class="muted" href="/p/{{ project.name }}/docs/{{ doc_key }}#{{ s.anchor }}" data-peek>§ {{ s.heading }}</a>{% if not loop.last %} · {% endif %}{% endfor -%}
               </div></li>
           {% endfor %}
           {% for t in refs.tasks %}

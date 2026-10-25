@@ -1,0 +1,12 @@
+{# Peek sheet body for a document (WUI-002): GET /p/{slug}/docs/{key}?peek=1.
+   Same contract as peek_task.html: one root <article class="peek-doc">, its
+   data-* feed the sheet header; read-only card, no page ids, no scripts. #}
+{% set peek = true %}
+<article class="peek-doc peek-document"
+         data-peek-kind="doc"
+         data-peek-title="{{ doc.title }}"
+         data-peek-page-title="{{ doc.doc_key }} · {{ project.name }} — COD-DOC"
+         data-peek-url="/p/{{ project.name }}/docs/{{ doc.doc_key }}">
+  {% include "_frag/doc_detail.html" %}
+  {% include "_frag/linked_questions.html" %}
+</article>

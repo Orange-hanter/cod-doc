@@ -1,7 +1,8 @@
-/* COD-DOC web — peek sheet (WUI-001).
+/* COD-DOC web — peek sheet (WUI-001 tasks, WUI-002 documents, read-only).
  *
- * A link marked `data-peek` opens its task in a <dialog> that slides up over
- * the current page, instead of navigating away. The body is the server's
+ * A link marked `data-peek` opens its task or document in a <dialog> that
+ * slides up over the current page, instead of navigating away. A `#anchor`
+ * in the link scrolls the sheet to that section. The body is the server's
  * `<canonical url>?peek=1` fragment (cod_doc/api/web/peek.py); the address bar
  * shows the canonical URL, so a reload or a shared link gives the full page.
  *
@@ -49,6 +50,12 @@
   // приходит в тот же документ с пустым state, и страница должна
   // перерисоваться под новый URL сама.
   const docUrl = location.pathname + location.search;
+  // Перезагрузка с открытой шторкой оставляет текущей записи её state, хотя
+  // документ теперь — полная страница этой карточки. Стираем: иначе «Назад»
+  // на эту запись открыл бы карточку шторкой поверх её же страницы.
+  if (history.state && history.state[STATE_KEY]) {
+    history.replaceState(null, '', location.href);
+  }
 
   // ── Loading ──────────────────────────────────────────────────────────
   function peekUrl(url) {
@@ -73,7 +80,9 @@
     const card = body.querySelector('.peek-doc');
     const title = card ? card.dataset.peekTitle : '';
     titleEl.textContent = title || '';
-    fullLink.href = (card && card.dataset.peekUrl) || currentUrl;
+    fullLink.href = card && card.dataset.peekUrl
+      ? card.dataset.peekUrl + new URL(currentUrl, location.href).hash
+      : currentUrl;
     // Заголовок вкладки — тот же, что у полной страницы карточки.
     document.title = (card && card.dataset.peekPageTitle) || pageTitle;
   }
@@ -109,16 +118,47 @@
       ev.detail.isError = false;
     }
   });
+  // Новая карточка начинается сверху — или с секции из `#якоря` ссылки
+  // (связь вопроса с секцией документа, ADR → § раздел).
+  function initialScroll() {
+    const hash = new URL(currentUrl, location.href).hash.slice(1);
+    const target = hash && findInBody(hash);
+    if (target) {
+      target.scrollIntoView({ block: 'start' });
+    } else {
+      body.scrollTop = 0;
+    }
+  }
+  // Дважды, оба раза на самом первом открытии в свежем браузере, шторка
+  // оказывалась прокрученной вниз (до самого конца документа) уже после
+  // того, как initialScroll отработал; воспроизвести под наблюдением не
+  // удалось. Поэтому начальная позиция удерживается после поздних событий
+  // (кадр, settle, отрисовка схем, секунда), пока пользователь сам не тронул
+  // прокрутку; исправление пишется в консоль — чтобы поймать причину.
+  let userMoved = false;
+  ['wheel', 'touchmove', 'keydown', 'mousedown', 'click'].forEach((name) => {
+    body.addEventListener(name, () => { userMoved = true; }, { passive: true });
+  });
+  function holdScroll(when) {
+    if (userMoved || !dialog.open) return;
+    const before = body.scrollTop;
+    initialScroll();
+    if (Math.abs(body.scrollTop - before) > 1) {
+      console.debug('[peek] scroll corrected after', when, Math.round(before), '→', Math.round(body.scrollTop));
+    }
+  }
   body.addEventListener('htmx:afterSwap', (ev) => {
     if (ev.detail.target !== body) return;
+    userMoved = false;
     applyHeader();
-    body.scrollTop = 0;
+    initialScroll();
+    requestAnimationFrame(() => holdScroll('frame'));
+    setTimeout(() => holdScroll('1s'), 1000);
   });
-  // Новая карточка начинается сверху. Повтор после settle: однажды шторка
-  // открылась прокрученной на ~140 px, причину поймать не удалось.
   body.addEventListener('htmx:afterSettle', (ev) => {
-    if (ev.detail.target === body) body.scrollTop = 0;
+    if (ev.detail.target === body) holdScroll('settle');
   });
+  document.addEventListener('mermaid:rendered', () => holdScroll('mermaid'));
   body.addEventListener('htmx:responseError', (ev) => {
     if (ev.detail.elt !== body) return;
     showError('Сервер ответил ' + ev.detail.xhr.status + '.');
@@ -158,8 +198,10 @@
     ev.preventDefault();
     // Переход из шторки с несохранённой правкой — сначала предупреждение.
     if (dialog.open && guardBlocks()) return;
-    if (!dialog.open) link.focus();
-    open(url.pathname + url.search, true);
+    // Фокус — чтобы диалог вернул его сюда при закрытии; без прокрутки:
+    // ссылка могла быть вне экрана, и страница под шторкой уехала бы.
+    if (!dialog.open) link.focus({ preventScroll: true });
+    open(url.pathname + url.search + url.hash, true);
   });
 
   // ── Closing ──────────────────────────────────────────────────────────
@@ -247,7 +289,13 @@
   });
 
   window.addEventListener('popstate', (ev) => {
-    const st = ev.state && ev.state[STATE_KEY];
+    let st = ev.state && ev.state[STATE_KEY];
+    // Шторка с карточкой той самой страницы, что под ней, — это сама
+    // страница (запись осталась от прошлой загрузки документа).
+    if (st) {
+      const u = new URL(st.url, location.href);
+      if (u.pathname + u.search === docUrl) st = null;
+    }
     if (finishOnPop) {
       finishOnPop = false;
       finishClose();
@@ -371,8 +419,16 @@
     if (target) target.focus();
   }
 
-  // Якоря внутри шторки прокручивают шторку, а не страницу под ней: у той
-  // могут быть элементы с теми же id.
+  // Элемент по id ищется только в теле шторки: у страницы под ней могут быть
+  // элементы с теми же id (документ поверх того же документа).
+  function findInBody(rawId) {
+    let id = rawId;
+    // Битая percent-последовательность (`#100%`) — якорь как есть, а не URIError.
+    try { id = decodeURIComponent(rawId); } catch (e) { /* keep raw */ }
+    return id ? body.querySelector('[id="' + CSS.escape(id) + '"]') : null;
+  }
+
+  // Якоря внутри шторки прокручивают шторку, а не страницу под ней.
   body.addEventListener('click', (ev) => {
     if (ev.defaultPrevented) return;
     const link = ev.target.closest('a[href^="#"]');
@@ -381,11 +437,7 @@
     // добавил бы запись в историю, и Esc (history.go(-depth)) вернулся бы
     // не к списку, а на карточку.
     ev.preventDefault();
-    const raw = link.getAttribute('href').slice(1);
-    let id = raw;
-    // Битая percent-последовательность (`#100%`) — якорь как есть, а не URIError.
-    try { id = decodeURIComponent(raw); } catch (e) { /* keep raw */ }
-    const target = id && body.querySelector('[id="' + CSS.escape(id) + '"]');
+    const target = findInBody(link.getAttribute('href').slice(1));
     if (target) target.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
   });
 })();

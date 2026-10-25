@@ -5,7 +5,7 @@
   <a href="/">Projects</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
   <a href="/p/{{ project.name }}/docs">Docs</a> /
-  <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}">{{ doc.doc_key }}</a> /
+  <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}" data-no-peek>{{ doc.doc_key }}</a> /
   <span>AI rework</span>
 </nav>
 
@@ -16,7 +16,7 @@
     <span class="ds-banner-icon">⚠</span>
     <div class="ds-banner-body"><strong>AI error:</strong> {{ error }}</div>
   </div>
-  <p><a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}#comments" class="btn btn-secondary">← Back to document</a></p>
+  <p><a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}#comments" class="btn btn-secondary" data-no-peek>← Back to document</a></p>
 {% else %}
   <p class="muted-tiny">
     Каждый блок ниже — предложенная переработка секции на основе открытых комментариев.
@@ -106,7 +106,7 @@
     <div style="display:flex; gap:var(--space-2); margin-top: var(--space-3);">
       <button type="submit" class="btn btn-primary">✓ Применить выбранные</button>
       <a class="btn btn-secondary"
-         href="/p/{{ project.name }}/docs/{{ doc.doc_key }}#comments">Отмена</a>
+         href="/p/{{ project.name }}/docs/{{ doc.doc_key }}#comments" data-no-peek>Отмена</a>
     </div>
   </form>
 {% endif %}
