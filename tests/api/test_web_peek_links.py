@@ -22,6 +22,9 @@ _ANCHOR = re.compile(r"<a\b[^>]*>", re.S)
 # href карточки задачи: `/p/{{ … }}/tasks/{{ … }}"` — ровно id, без хвоста
 # `/status`, `/fields/…` и без литерала вроде `/tasks/legacy`.
 _TASK_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/\{\{[^}]+\}\}"')
+# href страницы под `/tasks/`, которая не карточка: литеральный хвост — что
+# угодно, кроме `{` (начало `{{ id }}`) и конца атрибута.
+_NON_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/[^{"]')
 
 # Шаблоны, где href пришёл из Python (`_link_href`, `_DEEPLINK_BY_KIND`)
 # и вид цели известен только строкой.
@@ -55,13 +58,21 @@ def test_every_task_detail_link_opens_in_sheet() -> None:
     assert not missing, "ссылка на карточку задачи без data-peek:\n" + "\n".join(missing)
 
 
+def test_non_detail_href_pattern() -> None:
+    """Шаблон ловит любой литеральный хвост, а не только строчную латиницу."""
+    for tail in ("legacy", "Foo", "_x", "9"):
+        assert _NON_DETAIL_HREF.search(f'href="/p/{{{{ project.name }}}}/tasks/{tail}"'), tail
+    assert not _NON_DETAIL_HREF.search('href="/p/{{ project.name }}/tasks/{{ t.task_id }}"')
+
+
 def test_non_detail_task_pages_stay_plain_links() -> None:
     """`/tasks/legacy` и прочие страницы под `/tasks/` — не карточки."""
-    wrong = []
-    for path in sorted(TEMPLATES.rglob("*.html")):
-        for tag in _ANCHOR.findall(path.read_text()):
-            if re.search(r'href="/p/\{\{[^}]+\}\}/tasks/[a-z]', tag) and "data-peek" in tag:
-                wrong.append(f"{path.relative_to(TEMPLATES)}: {' '.join(tag.split())}")
+    wrong = [
+        f"{path.relative_to(TEMPLATES)}: {' '.join(tag.split())}"
+        for path in sorted(TEMPLATES.rglob("*.html"))
+        for tag in _ANCHOR.findall(path.read_text())
+        if _NON_DETAIL_HREF.search(tag) and "data-peek" in tag
+    ]
     assert not wrong, "data-peek на ссылке не на карточку:\n" + "\n".join(wrong)
 
 

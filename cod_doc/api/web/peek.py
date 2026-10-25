@@ -8,6 +8,8 @@ URL — не прихоть: ответ-фрагмент и ответ-стра�
 
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
@@ -32,6 +34,16 @@ def peek_not_found(request: Request, *, message: str) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "_frag/peek_error.html",
-        {"message": message, "full_url": request.url.path},
+        {"message": message, "full_url": full_page_url(request)},
         status_code=_NOT_FOUND,
     )
+
+
+def full_page_url(request: Request) -> str:
+    """URL полной страницы: тот же путь и query, но без `peek`.
+
+    Прочие параметры — состояние страницы (`?raw=1` у документа): ссылка
+    «открыть полную страницу» обязана его сохранить.
+    """
+    rest = [(k, v) for k, v in request.query_params.multi_items() if k != PEEK_PARAM]
+    return request.url.path + (f"?{urlencode(rest)}" if rest else "")

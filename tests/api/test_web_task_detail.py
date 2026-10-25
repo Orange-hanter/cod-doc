@@ -794,3 +794,31 @@ def test_task_lists_mark_refresh_regions_and_peek_links(task_detail_client) -> N
     hits = re.findall(r'<a class="chain-card-hit"[^>]*>', chains, flags=re.S)
     assert len(hits) == 3
     assert all("data-peek" in h for h in hits)
+
+
+def test_completed_commit_reaches_page_and_sheet(task_detail_client) -> None:
+    """Коммит закрытия — в шапке и страницы, и шторки (контекст собран один раз)."""
+    client, entry = task_detail_client
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    with transactional(make_session_factory(engine)) as session:
+        tasks.complete(
+            session,
+            project_id=sole_project_id(session),
+            task_id="DET-001",
+            author="human:dakh",
+            commit_sha="abcdef1234567890",
+        )
+    engine.dispose()
+    for url in (f"/p/{entry.name}/tasks/DET-001", f"/p/{entry.name}/tasks/DET-001?peek=1"):
+        assert "<code>abcdef12</code>" in client.get(url).text, url
+
+
+def test_peek_404_escapes_id_and_keeps_query(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/%3Cb%3Ex?peek=1&tab=history")
+    assert r.status_code == 404
+    assert "<b>x" not in r.text
+    assert "&lt;b&gt;x" in r.text
+    # Ссылка на полную страницу сохраняет прочие параметры, но не `peek`.
+    assert "?tab=history" in r.text
+    assert "peek=1" not in r.text
