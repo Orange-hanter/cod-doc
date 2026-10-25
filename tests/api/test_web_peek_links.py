@@ -27,11 +27,13 @@ _TASK_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/\{\{[^}]+\}\}"')
 _NON_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/[^{"]')
 
 # Шаблоны, где href пришёл из Python (`_link_href`, `_DEEPLINK_BY_KIND`)
-# и вид цели известен только строкой: шаблон → выражение href.
+# и вид цели известен только строкой: шаблон → (выражение href, вызов
+# peekable с видом именно этой ссылки). В поиске вид — ключ группы `kind`
+# из `result.by_kind`; у связей вопроса и сценария — `l.to_kind`.
 _PYTHON_BUILT_LINKS = {
-    "project/search.html": "{{ h.url }}",
-    "project/question_show.html": "{{ l.href }}",
-    "project/scenario_show.html": "{{ l.href }}",
+    "project/search.html": ("{{ h.url }}", "peekable(kind)"),
+    "project/question_show.html": ("{{ l.href }}", "peekable(l.to_kind)"),
+    "project/scenario_show.html": ("{{ l.href }}", "peekable(l.to_kind)"),
 }
 
 
@@ -78,11 +80,11 @@ def test_non_detail_task_pages_stay_plain_links() -> None:
 
 def test_python_built_links_ask_peekable() -> None:
     """Каждый `<a>` с href из Python сам решает `peekable(вид)`, а не файл где-то рядом."""
-    for name, href in _PYTHON_BUILT_LINKS.items():
+    for name, (href, call) in _PYTHON_BUILT_LINKS.items():
         tags = [t for t in _ANCHOR.findall((TEMPLATES / name).read_text()) if f'href="{href}"' in t]
         assert tags, f"{name}: нет ссылки {href}"
         for tag in tags:
-            assert "peekable(" in tag and "data-peek" in tag, f"{name}: {' '.join(tag.split())}"
+            assert call + " %} data-peek" in tag, f"{name}: {' '.join(tag.split())}"
 
 
 def test_peekable_kinds() -> None:

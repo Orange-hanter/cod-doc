@@ -332,9 +332,13 @@
   // Пока шторка открыта, список под ней не трогаем; после записи
   // перечитываем помеченные области страницы целиком, с состоянием,
   // которое посчитал сервер (какие колонки канбана открыты и т.д.).
+  let refreshGen = 0;
   async function refreshPage() {
     const regions = [...document.querySelectorAll('[data-peek-refresh][id]')];
     if (!regions.length) return;
+    // Два быстрых цикла «открыл, сохранил, закрыл» дают два fetch; ответ
+    // старшего поколения, пришедший позже, не вправе затереть свежий.
+    const gen = ++refreshGen;
     // Открывший шторку элемент будет заменён свежей копией; фокус вернём на
     // её двойника. У карточки канбана id на самой ссылке, у карточки
     // цепочки — на обёртке вокруг неё.
@@ -346,11 +350,16 @@
     try {
       const r = await fetch(location.href, { credentials: 'same-origin' });
       if (!r.ok) return;
-      const fresh = new DOMParser().parseFromString(await r.text(), 'text/html');
+      const html = await r.text();
+      if (gen !== refreshGen) return;
+      const fresh = new DOMParser().parseFromString(html, 'text/html');
       regions.forEach((el) => {
         const next = fresh.getElementById(el.id);
-        if (!next) return;
-        el.replaceWith(next);
+        // Регион ищется заново по id: снятый в начале узел мог уже быть
+        // заменён другим обновлением.
+        const current = document.getElementById(el.id);
+        if (!next || !current) return;
+        current.replaceWith(next);
         htmx.process(next);
         if (window.codDocEnhance) window.codDocEnhance(next);
       });
