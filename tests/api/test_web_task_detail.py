@@ -12,6 +12,8 @@ Verifies:
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -339,7 +341,7 @@ def test_field_view_renders_markdown_card(task_detail_client) -> None:
     )
     assert r.status_code == 200
     body = r.text
-    assert 'id="task-field-description"' in body
+    assert 'data-field="description"' in body
     assert "<strong>payment_intent</strong>" in body  # rendered markdown
     assert "✎ Edit" in body  # edit affordance back
 
@@ -355,7 +357,7 @@ def test_field_patch_writes_description_and_swaps_view(task_detail_client) -> No
     assert r.status_code == 200
     body = r.text
     # Returns the view fragment with rendered new content
-    assert 'id="task-field-description"' in body
+    assert 'data-field="description"' in body
     assert "<strong>bold</strong>" in body
     assert "<li>second</li>" in body
     # Persistence: full page reload still shows the new content
@@ -374,7 +376,7 @@ def test_field_patch_works_for_acceptance(task_detail_client) -> None:
     )
     assert r.status_code == 200
     body = r.text
-    assert 'id="task-field-acceptance"' in body
+    assert 'data-field="acceptance"' in body
     assert "<code>pytest -q</code>" in body
 
 
@@ -461,7 +463,7 @@ def test_field_improve_swaps_textarea_with_suggestion(task_detail_client, monkey
     assert r.status_code == 200
     body = r.text
     # Edit fragment with new content in the textarea
-    assert 'id="task-field-description"' in body
+    assert 'data-field="description"' in body
     assert "AI-improved (make it more formal)" in body
     assert "AI suggestion ready" in body
     # Intent input keeps the user's prompt
@@ -649,3 +651,146 @@ def test_field_patch_domain_validation_message_is_kept(task_detail_client, monke
     )
     assert r.status_code >= 400
     assert "описание слишком длинное" in r.text
+
+
+# ── WUI-001: шторка (peek) и шапка задачи ───────────────────────────────
+
+
+def test_peek_returns_fragment_not_page(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001?peek=1", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    body = r.text
+    assert body.lstrip().startswith("<article")
+    assert 'class="peek-doc peek-task"' in body
+    assert 'data-peek-kind="task"' in body
+    assert 'data-peek-url="/p/demo/tasks/DET-001"' in body
+    assert "DET-001 · Set up DB schema" in body
+    assert "<strong>payment_intent</strong>" in body
+    for page_only in ("<html", 'class="topbar"', 'class="crumbs"', "<script", 'id="peek"'):
+        assert page_only not in body, page_only
+
+
+def test_peek_dependency_links_open_in_sheet(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-002?peek=1")
+    assert 'href="/p/demo/tasks/DET-001" class="dep-link" data-peek' in r.text
+    assert 'href="/p/demo/tasks/DET-003" class="dep-link" data-peek' in r.text
+
+
+def test_peek_unknown_task_is_html_404(task_detail_client) -> None:
+    """404 шторки — фрагмент со ссылкой на страницу, а не JSON FastAPI."""
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/UNKNOWN-999?peek=1")
+    assert r.status_code == 404
+    assert "peek-error" in r.text
+    assert "UNKNOWN-999" in r.text
+    assert 'href="/p/demo/tasks/UNKNOWN-999" data-no-peek' in r.text
+
+
+def test_full_page_carries_sheet_shell_and_assets(task_detail_client) -> None:
+    client, entry = task_detail_client
+    body = client.get(f"/p/{entry.name}/tasks/DET-001").text
+    assert '<dialog id="peek" class="peek"' in body
+    assert "/static/cod_doc_peek.js?v=" in body
+    assert body.count('class="task-head"') == 1
+
+
+def test_head_controls_target_head_not_themselves(task_detail_client) -> None:
+    """Регресс: select и «Mark done» без hx-target получали <tr> внутрь себя."""
+    client, entry = task_detail_client
+    body = client.get(f"/p/{entry.name}/tasks/DET-001").text
+    assert body.count('hx-target="closest .task-head"') == 2
+    assert body.count('hx-vals=\'{"view": "detail"}\'') == 2
+
+
+def test_status_detail_view_returns_head_and_trigger(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/status",
+        data={"status": "in_review", "view": "detail"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert 'class="task-head"' in r.text
+    assert "badge-lg badge-in_review" in r.text
+    assert "<tr" not in r.text
+    assert json.loads(r.headers["HX-Trigger"]) == {"cod_doc:task-changed": {"task_id": "DET-001"}}
+
+
+def test_status_without_view_still_returns_row(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/status",
+        data={"status": "in_review"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert '<tr id="task-DET-001"' in r.text
+    assert "task-head" not in r.text
+
+
+def test_complete_detail_view_returns_head(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/complete",
+        data={"view": "detail"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "badge-lg badge-done" in r.text
+    assert "Mark done" not in r.text
+    assert "cod_doc:task-changed" in r.headers["HX-Trigger"]
+
+
+def test_complete_refusal_keeps_alert_and_sends_no_trigger(task_detail_client) -> None:
+    """Отказ задачу не менял: шапка прежняя, алерт out-of-band, события нет."""
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-002/complete",
+        data={"view": "detail"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert 'class="task-head"' in r.text
+    assert 'hx-swap-oob="afterbegin:#alerts"' in r.text
+    assert "HX-Trigger" not in r.headers
+
+
+def test_field_patch_announces_task_change(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description",
+        data={"body": "new"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "cod_doc:task-changed" in r.headers["HX-Trigger"]
+
+
+def test_field_cards_have_no_ids_and_relative_targets(task_detail_client) -> None:
+    """Шторка над страницей другой задачи: id-цель попала бы в карточку страницы."""
+    client, entry = task_detail_client
+    edit = client.get(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/edit",
+        headers={"HX-Request": "true"},
+    ).text
+    page = client.get(f"/p/{entry.name}/tasks/DET-001").text
+    for body in (edit, page):
+        assert 'id="task-field-' not in body
+        assert "#task-field-" not in body
+    assert edit.count('hx-target="closest .task-field-card"') == 3
+
+
+def test_task_lists_mark_refresh_regions_and_peek_links(task_detail_client) -> None:
+    client, entry = task_detail_client
+    board = client.get(f"/p/{entry.name}/tasks").text
+    assert 'id="tasks-body" data-peek-refresh' in board
+    assert 'id="tasks-stats" data-peek-refresh' in board
+    cards = re.findall(r'<a id="card-[^"]+"[^>]*>', board, flags=re.S)
+    assert len(cards) == 3
+    assert all("data-peek" in c for c in cards)
+    chains = client.get(f"/p/{entry.name}/tasks?view=chains").text
+    hits = re.findall(r'<a class="chain-card-hit"[^>]*>', chains, flags=re.S)
+    assert len(hits) == 3
+    assert all("data-peek" in h for h in hits)

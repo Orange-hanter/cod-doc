@@ -1,0 +1,19 @@
+{# Peek sheet (WUI-001): task and document cards open over the current page.
+
+The body is filled by cod_doc_peek.js from `<canonical url>?peek=1`. Native
+<dialog> + showModal() gives Esc, focus trap, an inert page behind and the top
+layer. The sheet has its own alert slot: #alerts lives in the page, and the
+page sits under the modal. #}
+<dialog id="peek" class="peek" aria-labelledby="peek-title">
+  <div class="peek-head">
+    <span class="peek-grip" aria-hidden="true"></span>
+    <h2 id="peek-title" class="peek-title"></h2>
+    <a class="peek-full btn btn-sm btn-secondary" href="#" data-no-peek>Open full page ↗</a>
+    <button type="button" class="peek-close" aria-label="Close">✕</button>
+  </div>
+  <div class="peek-guard" role="status" hidden>
+    Unsaved edit — press Esc again to discard it.
+  </div>
+  <div class="peek-alerts"></div>
+  <div id="peek-body" class="peek-body" tabindex="-1" autofocus aria-busy="false"></div>
+</dialog>

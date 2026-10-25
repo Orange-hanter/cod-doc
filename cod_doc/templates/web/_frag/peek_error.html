@@ -1,0 +1,9 @@
+{# Peek sheet body when the task/document is gone (WUI-001). Served with 404;
+   the sheet controller lets htmx swap it in instead of leaving the sheet empty. #}
+<article class="peek-doc peek-error"
+         data-peek-kind="error"
+         data-peek-title="Не найдено"
+         data-peek-url="{{ full_url }}">
+  <p class="peek-error-msg">{{ message }}</p>
+  <p class="muted-tiny"><a href="{{ full_url }}" data-no-peek>Открыть полную страницу</a></p>
+</article>

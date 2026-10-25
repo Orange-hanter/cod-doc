@@ -10,15 +10,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
-from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.peek import is_peek, peek_not_found
+from cod_doc.api.web.task_detail import task_detail_context
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import TaskStatus as LegacyTaskStatus
-from cod_doc.domain.entities import EntityKind, QuestionLinkKind, TaskStatus
+from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import plan_service as plans
-from cod_doc.services import question_service
-from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as tasks
-from cod_doc.services import trace_service as traces
 
 router = APIRouter()
 
@@ -514,103 +512,22 @@ def task_show(
     task_id: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
 ) -> HTMLResponse:
-    """Task detail: header + description + acceptance + chains + revisions."""
+    """Task detail: header + description + acceptance + chains + revisions.
+
+    `?peek=1` (WUI-001) отдаёт то же тело фрагментом для шторки.
+    """
     proj = get_project(slug)
     session, project_db_id = db
 
     task = tasks.get(session, task_id, project_id=project_db_id)
     if task is None:
+        if is_peek(request):
+            return peek_not_found(request, message=f"Задача не найдена: {task_id}")
         raise HTTPException(404, f"Задача не найдена: {task_id}")
-    assert task.row_id is not None
 
-    forward = plans.forward_chain(session, task_id, project_id=project_db_id)
-    reverse = plans.reverse_chain(session, task_id, project_id=project_db_id)
-    history = revisions.list_for_entity(
-        session, EntityKind.TASK, task.row_id, project_id=project_db_id
-    )
-    trace = traces.list_for_task(session, task.row_id)
-
-    # Plan + section breadcrumb info.
-    plan = plans.get_for_project(session, task.plan_id, project_id=project_db_id)
-    linked_questions = question_service.linked_questions(
-        session, project_db_id, target_kind=QuestionLinkKind.TASK, target_ref=task_id
-    )
-
-    return templates.TemplateResponse(
-        request,
-        "project/task_show.html",
-        {
-            "project": {"name": proj.entry.name},
-            "linked_questions": linked_questions,
-            "task": {
-                "task_id": task.task_id,
-                "title": task.title,
-                "type": task.type.value,
-                "status": task.status.value,
-                "priority": task.priority.value,
-                "description": task.description or "",
-                "description_html": render_markdown(task.description or ""),
-                "acceptance": task.acceptance or "",
-                "acceptance_html": render_markdown(task.acceptance or ""),
-                "plan_id": task.plan_id,
-                "section_id": task.section_id,
-                "created": task.created,
-                "last_updated": task.last_updated,
-                "completed_at": task.completed_at,
-                "completed_commit": task.completed_commit,
-            },
-            "plan": (
-                {"plan_id": plan.row_id, "scope": plan.scope}
-                if plan and plan.row_id is not None
-                else None
-            ),
-            "forward": [
-                {
-                    "task_id": e.task_id,
-                    "title": e.title,
-                    "status": e.status.value,
-                    "depth": e.depth,
-                }
-                for e in forward
-            ],
-            "reverse": [
-                {
-                    "task_id": e.task_id,
-                    "title": e.title,
-                    "status": e.status.value,
-                    "depth": e.depth,
-                }
-                for e in reverse
-            ],
-            "history": [
-                {
-                    "revision_id": r.revision_id,
-                    "author": r.author,
-                    "at": r.at,
-                    "reason": r.reason or "",
-                    "diff_first_line": (r.diff or "").splitlines()[0][:240] if r.diff else "",
-                }
-                for r in reversed(history)  # newest first for the timeline
-            ],
-            "trace": [
-                {
-                    "ts": t.ts,
-                    "model": t.model,
-                    "kind": t.kind,
-                    "input_tokens": t.input_tokens,
-                    "output_tokens": t.output_tokens,
-                    "total_tokens": t.total_tokens,
-                    "duration_ms": t.duration_ms,
-                    "tool_calls": t.tool_calls or [],
-                    "error": t.error,
-                }
-                for t in trace
-            ],
-            "trace_totals": {
-                "calls": len(trace),
-                "input_tokens": sum(t.input_tokens for t in trace),
-                "output_tokens": sum(t.output_tokens for t in trace),
-                "duration_ms": sum(t.duration_ms for t in trace),
-            },
-        },
-    )
+    context = {
+        "project": {"name": proj.entry.name},
+        **task_detail_context(session, project_db_id, task),
+    }
+    template = "_frag/peek_task.html" if is_peek(request) else "project/task_show.html"
+    return templates.TemplateResponse(request, template, context)

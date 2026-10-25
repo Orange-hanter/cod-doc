@@ -124,7 +124,8 @@ def test_wide_revision_cells_are_clamped() -> None:
 
 
 def test_task_history_diff_cell_is_clamped() -> None:
-    html = (TEMPLATES / "project" / "task_show.html").read_text(encoding="utf-8")
+    # Тело карточки — общий фрагмент страницы и шторки (WUI-001).
+    html = (TEMPLATES / "_frag" / "task_detail.html").read_text(encoding="utf-8")
     assert 'class="cell-clamp"' in html
 
 

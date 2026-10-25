@@ -1,0 +1,150 @@
+/* ── Peek sheet (WUI-001) ─────────────────────────────────────────────────
+   A <dialog> pinned to the bottom of the viewport; the page stays visible
+   above it. Width matches the page content, so the task layout inside keeps
+   the breakpoints it has on its own page. */
+
+.peek {
+  margin: auto auto 0;
+  width: min(calc(var(--content-max) + 2 * var(--space-6)), 100%);
+  max-width: 100%;
+  height: 92vh;
+  height: 92dvh;
+  max-height: 100%;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.peek[open] {
+  display: flex;
+  animation: peek-in var(--motion-mid);
+}
+.peek.is-closing { animation: peek-out var(--motion-mid) forwards; }
+
+.peek::backdrop { background: rgb(0 0 0 / 0.35); }
+.peek[open]::backdrop { animation: peek-fade-in var(--motion-mid); }
+.peek.is-closing::backdrop { animation: peek-fade-out var(--motion-mid) forwards; }
+[data-theme="dark"] .peek::backdrop { background: rgb(0 0 0 / 0.55); }
+
+@keyframes peek-in       { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes peek-out      { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes peek-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes peek-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .peek[open],
+  .peek.is-closing,
+  .peek[open]::backdrop,
+  .peek.is-closing::backdrop { animation: none; }
+}
+
+/* The page behind does not scroll while the sheet is open; the controller
+   pads <html> by the scrollbar width so nothing jumps sideways. */
+html.peek-open { overflow: hidden; }
+
+.peek-head {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6) var(--space-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-soft);
+}
+.peek-grip {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+.peek-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: calc(14px * var(--text-scale, 1));
+  font-weight: 600;
+  color: var(--fg-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.peek-full { flex: none; }
+.peek-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: calc(14px * var(--text-scale, 1));
+  line-height: 1;
+}
+.peek-close:hover { color: var(--fg); background: var(--bg-alt); }
+
+.peek-guard {
+  flex: none;
+  padding: var(--space-2) var(--space-6);
+  background: var(--warning-soft-bg);
+  color: var(--warning-soft-fg);
+  border-bottom: 1px solid var(--warning-border);
+  font-size: calc(13px * var(--text-scale, 1));
+}
+.peek-guard[hidden] { display: none; }
+
+.peek-alerts { flex: none; padding: 0 var(--space-6); }
+.peek-alerts:not(:empty) { padding-top: var(--space-2); }
+
+.peek-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-6) var(--space-6);
+}
+.peek-body:focus { outline: none; }
+
+/* Loading: the old card fades so a slow answer does not read as a frozen
+   sheet; an empty body (first load) shows a line of text after a beat. */
+.peek-body[aria-busy="true"] > * { opacity: 0.45; transition: opacity var(--motion-fast); }
+.peek-body[aria-busy="true"]:empty::before {
+  content: "Загрузка…";
+  display: block;
+  padding: var(--space-6) 0;
+  color: var(--muted);
+  font-size: calc(13px * var(--text-scale, 1));
+  animation: peek-fade-in var(--motion-mid) 150ms both;
+}
+
+.peek-error-msg {
+  margin: var(--space-6) 0 var(--space-2);
+  color: var(--fg-strong);
+  font-size: calc(15px * var(--text-scale, 1));
+}
+
+@media (max-width: 640px) {
+  .peek {
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  .peek-grip { display: none; }
+  .peek-head,
+  .peek-body,
+  .peek-alerts,
+  .peek-guard { padding-left: var(--space-3); padding-right: var(--space-3); }
+}

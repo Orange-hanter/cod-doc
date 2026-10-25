@@ -89,6 +89,7 @@
                  class="chain-card prio-{{ t.priority }} status-{{ t.status }}{% if t.is_critical %} chain-card-critical{% endif %}{% if t.is_ready %} chain-card-ready{% endif %}">
               <a class="chain-card-hit"
                  href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
+                 data-peek
                  title="{{ t.task_id }} — {{ t.title }}"
                  aria-label="{{ t.task_id }} — {{ t.title }}"></a>
 

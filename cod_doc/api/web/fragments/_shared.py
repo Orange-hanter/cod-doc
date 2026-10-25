@@ -8,13 +8,17 @@ redirect with cookie-flash (form post).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import IntegrityError
 
+from cod_doc.api.web.task_detail import task_changed_header, task_head_context
 from cod_doc.api.web.templates_env import templates
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def _log_write_failure(logger: logging.Logger, what: str, task_id: str, exc: Exception) -> None:
@@ -72,10 +76,41 @@ def _render_task_row(
             "section_id": task.section_id,
         },
     )
-    if inline_alert is not None:
-        severity, message = inline_alert
-        alert_html = templates.get_template("_frag/alert.html").render(
-            severity=severity, message=message, oob=True
-        )
-        return HTMLResponse(row_html + alert_html)
-    return HTMLResponse(row_html)
+    return HTMLResponse(row_html + _render_oob_alert(inline_alert))
+
+
+def _render_oob_alert(inline_alert: tuple[str, str] | None) -> str:
+    if inline_alert is None:
+        return ""
+    severity, message = inline_alert
+    return templates.get_template("_frag/alert.html").render(
+        severity=severity, message=message, oob=True
+    )
+
+
+def _render_task_head(
+    request: Request,
+    *,
+    session: Session,
+    project_db_id: int,
+    project_name: str,
+    task: Any,
+    inline_alert: tuple[str, str] | None = None,
+) -> HTMLResponse:
+    """Шапка задачи вместо строки — ответ контролам карточки (`view=detail`).
+
+    Контролы шапки живут на странице задачи и в шторке (WUI-001); строки
+    таблицы там нет, и `<tr>` из `_render_task_row` htmx вставил бы внутрь
+    самого `<select>`. Удачная запись дополнительно шлёт `HX-Trigger`: по нему
+    шторка перечитает список под собой при закрытии. Отказ задачу не менял —
+    событие не нужно, только алерт.
+    """
+    head_html = templates.get_template("_frag/task_head.html").render(
+        request=request,
+        project={"name": project_name},
+        **task_head_context(session, project_db_id, task),
+    )
+    response = HTMLResponse(head_html + _render_oob_alert(inline_alert))
+    if inline_alert is None:
+        response.headers.update(task_changed_header(task.task_id))
+    return response

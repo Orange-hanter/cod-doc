@@ -76,7 +76,7 @@
       {% for t in linked_tasks %}
         <li>
           <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
-          <a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" class="mono">{{ t.task_id }}</a>
+          <a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" class="mono" data-peek>{{ t.task_id }}</a>
           — {{ t.title }}
         </li>
       {% endfor %}
