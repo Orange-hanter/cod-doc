@@ -9,6 +9,11 @@
 - ``adr_link_task`` — link ADR ↔ task.
 - ``adr_graph`` — full supersede DAG for visualisation.
 
+Every mutating tool takes ``author`` (default ``agent``) and passes it to the
+service: under a Bearer token ``activity_service.emit`` accepts only the
+token owner's own author, so a hard-coded value made every ADR edit fail
+with SYNC-202.
+
 Standard/full-profile surface. Agent profile reaches ADRs through
 ``agent_get(what='adr_full', ref=<adr_id>)`` once that branch is wired
 (future work).
@@ -138,6 +143,7 @@ def register(mcp: FastMCP) -> None:
         decision: str | None = None,
         alternatives: str | None = None,
         consequences: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Patch ADR fields. Only supplied (non-None) fields change.
 
@@ -163,7 +169,7 @@ def register(mcp: FastMCP) -> None:
                     decision=decision,
                     alternatives=alternatives,
                     consequences=consequences,
-                    author="agent",
+                    author=author,
                 )
                 return adr_service.adr_to_dict(session, row)
         except ADRNotFoundError as exc:
@@ -180,6 +186,7 @@ def register(mcp: FastMCP) -> None:
         alternatives: str | None = None,
         consequences: str | None = None,
         clear_decided_at: bool = False,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Re-sync an ADR body from its markdown projection (ADO-168).
 
@@ -219,7 +226,7 @@ def register(mcp: FastMCP) -> None:
                     decision=decision,
                     alternatives=alternatives,
                     consequences=consequences,
-                    author="agent",
+                    author=author,
                     clear_decided_at=clear_decided_at,
                 )
                 return adr_service.adr_to_dict(session, row)
@@ -233,6 +240,7 @@ def register(mcp: FastMCP) -> None:
         mermaid: str,
         title: str | None = None,
         position: int | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Attach a Mermaid diagram to an ADR. Auto-appends if position omitted."""
         from cod_doc.infra.db import transactional
@@ -250,7 +258,7 @@ def register(mcp: FastMCP) -> None:
                     mermaid=mermaid,
                     title=title,
                     position=position,
-                    author="agent",
+                    author=author,
                 )
                 return {
                     "adr_id": adr_id,
@@ -267,6 +275,7 @@ def register(mcp: FastMCP) -> None:
         superseding_adr_id: str,
         superseded_adr_id: str,
         reason: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Mark ``superseded_adr_id`` as replaced by ``superseding_adr_id``.
 
@@ -288,7 +297,7 @@ def register(mcp: FastMCP) -> None:
                     superseding_adr_id=superseding_adr_id,
                     superseded_adr_id=superseded_adr_id,
                     reason=reason,
-                    author="agent",
+                    author=author,
                 )
                 return {
                     "superseding": superseding_adr_id,
@@ -306,6 +315,7 @@ def register(mcp: FastMCP) -> None:
         to_adr_id: str,
         kind: str,
         reason: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Record that ``from_adr_id`` amends or depends on ``to_adr_id`` (ARG-001).
 
@@ -336,7 +346,7 @@ def register(mcp: FastMCP) -> None:
                     to_adr_id=to_adr_id,
                     kind=kind,
                     reason=reason,
-                    author="agent",
+                    author=author,
                 )
                 return {
                     "from": from_adr_id,
@@ -355,6 +365,7 @@ def register(mcp: FastMCP) -> None:
         to_adr_id: str,
         kind: str,
         reason: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Remove a relation recorded by ``adr_relate`` (ARG-001).
 
@@ -379,7 +390,7 @@ def register(mcp: FastMCP) -> None:
                     to_adr_id=to_adr_id,
                     kind=kind,
                     reason=reason,
-                    author="agent",
+                    author=author,
                 )
                 return {"from": from_adr_id, "to": to_adr_id, "kind": kind, "removed": True}
         except (ADRNotFoundError, ADRRelationNotFoundError) as exc:
@@ -417,6 +428,7 @@ def register(mcp: FastMCP) -> None:
         includes: str = "",
         excludes: str = "",
         reason: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Create an ADR topic at the end of the list (ARG-008).
 
@@ -436,7 +448,7 @@ def register(mcp: FastMCP) -> None:
                 name=name,
                 includes=includes,
                 excludes=excludes,
-                author="agent",
+                author=author,
                 reason=reason,
             )
             return adr_topic_service.topic_to_dict(topic, adr_count=0)
@@ -449,6 +461,7 @@ def register(mcp: FastMCP) -> None:
         includes: str | None = None,
         excludes: str | None = None,
         reason: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Rename an ADR topic or edit its includes/excludes. ``None`` leaves a field as is."""
         from cod_doc.infra.db import transactional
@@ -466,7 +479,7 @@ def register(mcp: FastMCP) -> None:
                     new_name=new_name,
                     includes=includes,
                     excludes=excludes,
-                    author="agent",
+                    author=author,
                     reason=reason,
                 )
                 counts = adr_topic_service.adr_counts(session, project_id)
@@ -476,7 +489,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_topic_move")
     def adr_topic_move(
-        project: str, name: str, position: int, reason: str | None = None
+        project: str, name: str, position: int, reason: str | None = None, author: str = "agent"
     ) -> dict[str, Any]:
         """Move an ADR topic to ``position`` (0-based); the others shift, no gaps."""
         from cod_doc.infra.db import transactional
@@ -492,7 +505,7 @@ def register(mcp: FastMCP) -> None:
                     project_id=project_id,
                     name=name,
                     position=position,
-                    author="agent",
+                    author=author,
                     reason=reason,
                 )
                 counts = adr_topic_service.adr_counts(session, project_id)
@@ -501,7 +514,9 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(str(exc)) from exc
 
     @mcp.tool(name="adr_topic_delete")
-    def adr_topic_delete(project: str, name: str, reason: str | None = None) -> dict[str, Any]:
+    def adr_topic_delete(
+        project: str, name: str, reason: str | None = None, author: str = "agent"
+    ) -> dict[str, Any]:
         """Delete an ADR topic. Its ADRs move to «no topic»; returns how many."""
         from cod_doc.infra.db import transactional
         from cod_doc.services import adr_topic_service
@@ -512,7 +527,7 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 moved = adr_topic_service.delete(
-                    session, project_id=project_id, name=name, author="agent", reason=reason
+                    session, project_id=project_id, name=name, author=author, reason=reason
                 )
                 return {"name": name, "deleted": True, "unshelved": moved}
         except ADRTopicNotFoundError as exc:
@@ -520,7 +535,11 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_set_topic")
     def adr_set_topic(
-        project: str, adr_id: str, topic: str | None = None, reason: str | None = None
+        project: str,
+        adr_id: str,
+        topic: str | None = None,
+        reason: str | None = None,
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Put an ADR on a topic; ``topic=None`` moves it to «no topic» (ARG-008).
 
@@ -542,7 +561,7 @@ def register(mcp: FastMCP) -> None:
                     project_id=project_id,
                     adr_id=adr_id,
                     topic=topic,
-                    author="agent",
+                    author=author,
                     reason=reason,
                 )
                 return {"adr_id": row.adr_id, "topic": adr_service.topic_name(session, row)}
@@ -551,10 +570,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_link_task")
     def adr_link_task(
-        project: str,
-        adr_id: str,
-        task_id: str,
-        relation: str = "implements",
+        project: str, adr_id: str, task_id: str, relation: str = "implements", author: str = "agent"
     ) -> dict[str, Any]:
         """Link a task to an ADR. relation: implements | invalidates | discovers | relates."""
         from cod_doc.infra.db import transactional
@@ -571,7 +587,7 @@ def register(mcp: FastMCP) -> None:
                     adr_id=adr_id,
                     task_id=task_id,
                     relation=relation,
-                    author="agent",
+                    author=author,
                 )
                 return {
                     "adr_id": adr_id,
@@ -583,9 +599,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_deprecate")
     def adr_deprecate(
-        project: str,
-        adr_id: str,
-        reason: str | None = None,
+        project: str, adr_id: str, reason: str | None = None, author: str = "agent"
     ) -> dict[str, Any]:
         """Transition an ADR (PROPOSED or ACCEPTED) to DEPRECATED.
 
@@ -605,7 +619,7 @@ def register(mcp: FastMCP) -> None:
                     project_id=project_id,
                     adr_id=adr_id,
                     reason=reason,
-                    author="agent",
+                    author=author,
                 )
                 return adr_service.adr_to_dict(session, row)
         except ADRNotFoundError as exc:
