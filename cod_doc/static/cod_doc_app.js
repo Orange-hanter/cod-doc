@@ -46,6 +46,47 @@
     });
   } catch (e) { /* matchMedia may not exist in some test envs */ }
 
+  // ── Rendering of inserted content (WUI-001) ─────────────────────────
+  // Подсветка кода и схемы шли один раз, на загрузке страницы, и всё, что
+  // вставлял htmx позже (шторка, сохранённая секция), оставалось сырым.
+  // htmx.onLoad зовёт обработчик и для body при старте, и для каждого
+  // вставленного фрагмента.
+  function highlightCode(root) {
+    if (!window.hljs) return;
+    root.querySelectorAll('pre code').forEach((el) => {
+      // Skip already-processed and explicit no-highlight blocks.
+      if (el.dataset.highlighted === 'yes') return;
+      if (el.classList.contains('language-mermaid') || el.classList.contains('nohighlight')) return;
+      try { window.hljs.highlightElement(el); } catch (e) { /* fail silently */ }
+    });
+  }
+
+  function enhance(root) {
+    if (!root || !root.querySelectorAll) return;
+    highlightCode(root);
+    if (window.codDocMermaid) window.codDocMermaid(root);
+  }
+  window.codDocEnhance = enhance;
+  if (window.htmx) {
+    window.htmx.onLoad(enhance);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => enhance(document));
+  }
+
+  // ── Error alerts from WebError ───────────────────────────────────────
+  // WebError отвечает htmx'у 4xx, алертом out-of-band и `HX-Reswap: none`
+  // (api/server.py). Но htmx по умолчанию не обрабатывает 4xx/5xx вовсе,
+  // и алерт до #alerts не доходил: ошибка сохранения пропадала молча.
+  // Разрешаем обработку именно таким ответам — основной цели `none` ничего
+  // не вставит, а out-of-band алерт ляжет.
+  document.addEventListener('htmx:beforeSwap', (ev) => {
+    const xhr = ev.detail.xhr;
+    if (!xhr || xhr.status < 400) return;
+    if (xhr.getResponseHeader('HX-Reswap') !== 'none') return;
+    ev.detail.shouldSwap = true;
+    ev.detail.isError = false;
+  });
+
   // ── Agent console ────────────────────────────────────────────────────
   // Only wires up if the page has the console container. Listens for
   // cod_doc:event events emitted by cod_doc_ws.js and renders a live

@@ -3,6 +3,7 @@
 <a id="card-{{ t.task_id }}"
    class="kanban-card prio-{{ t.priority }} status-{{ t.status }}"
    href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
+   data-peek
    title="{{ t.task_id }} — {{ t.title }}">
 
   <div class="kanban-card-title">{{ t.title }}</div>

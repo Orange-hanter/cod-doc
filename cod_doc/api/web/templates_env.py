@@ -117,6 +117,18 @@ def _fingerprint(name: str) -> str:
     return _STATIC_VERSION_CACHE[name]
 
 
+# WUI-001: виды ссылок, которые открываются в шторке. Ссылки, собранные в
+# Python (поиск, связи вопроса и сценария), несут вид цели строкой; шаблон
+# спрашивает `peekable(kind)`, а не держит свой список. «doc»/«document»
+# добавит WUI-002.
+PEEKABLE_KINDS: Final = frozenset({"task"})
+
+
+def peekable(kind: str | None) -> bool:
+    """Ссылка на объект этого вида открывается в шторке (`data-peek`)."""
+    return kind in PEEKABLE_KINDS
+
+
 def static_url(name: str) -> str:
     """Return /static/<name>?v=<fingerprint> for cache-bust on file change."""
     fp = _fingerprint(name)
@@ -142,6 +154,7 @@ templates.env.globals["task_status_choices"] = task_status_choices
 templates.env.globals["document_types"] = DOCUMENT_TYPES
 templates.env.filters["chain_done_count"] = chain_done_count
 templates.env.globals["static_url"] = static_url
+templates.env.globals["peekable"] = peekable
 # ADO-233: Mermaid вендорен (static/vendor/mermaid.min.js, UMD 11.17.2) —
 # без сети схемы раньше оставались сырым текстом. Пустое значение = локальная
 # сборка через static_url; COD_DOC_MERMAID_SRC по-прежнему переопределяет

@@ -1,7 +1,8 @@
 {# OQM-005: вопросы, ссылающиеся на эту задачу/документ (обратная навигация).
-   Variables: linked_questions (list), project.name. Пусто — блок не рендерится. #}
+   Variables: linked_questions (list), project.name. Пусто — блок не рендерится.
+   `peek` (WUI-001): в шторке без id — страница под ней несёт свой #questions. #}
 {% if linked_questions %}
-<section class="task-card" id="questions">
+<section class="task-card"{% if not peek %} id="questions"{% endif %}>
   <div class="task-card-header">
     <h2>❓ Вопросы</h2>
     <span class="count-chip">{{ linked_questions | length }}</span>

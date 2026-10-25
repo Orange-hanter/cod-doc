@@ -23,7 +23,7 @@
   {% else %}
 
     {# ── Stats strip ─────────────────────────────────────────────────────── #}
-    <header class="tasks-stats">
+    <header class="tasks-stats" id="tasks-stats" data-peek-refresh>
       <div class="tasks-stats-progress">
         <div class="tasks-stats-progress-head">
           <span class="tasks-stats-title">{{ project.name }} · Tasks</span>
@@ -124,6 +124,9 @@
     <div id="task-audit-panel"></div>
 
     {# ── Main layout: Board or Chains ────────────────────────────────────── #}
+    {# data-peek-refresh (WUI-001): после записи в шторке эта область и
+       счётчики сверху перечитываются целиком, когда шторка закрывается. #}
+    <div id="tasks-body" data-peek-refresh>
     {% if stats.total == 0 %}
       <div class="tasks-empty">
         <span class="tasks-empty-icon">📝</span>
@@ -178,6 +181,7 @@
     <p class="muted" style="margin-top:var(--space-2); font-size:calc(12px * var(--text-scale, 1));">
       {{ tasks | length }} task{% if tasks | length != 1 %}s{% endif %} shown.
     </p>
+    </div>
 
   {% endif %}
 </div>

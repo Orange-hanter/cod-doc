@@ -26,7 +26,7 @@ from cod_doc.services.sync_service.errors import SyncError
 from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
 from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
-from ._shared import _is_htmx, _log_write_failure, _render_task_row
+from ._shared import _is_htmx, _log_write_failure, _render_task_head, _render_task_row
 
 router = APIRouter()
 logger = logging.getLogger("cod_doc.api")
@@ -35,6 +35,10 @@ logger = logging.getLogger("cod_doc.api")
 # SQL и параметры запроса — схему БД пользователю показывать незачем; в лог
 # сервера уходят тип исключения и имя ограничения.
 _GENERIC_SAVE_ERROR = "Не удалось сохранить изменения."
+
+# `view=detail` шлют контролы шапки задачи (страница и шторка, WUI-001): им
+# нужна обновлённая шапка, а не строка таблицы. Без поля — прежний ответ.
+_VIEW_DETAIL = "detail"
 
 
 def _generic_save_error(exc: Exception, *, task_id: str) -> tuple[str, str]:
@@ -49,6 +53,7 @@ def task_status_update(
     task_id: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     status: str = Form(...),
+    view: str = Form(""),
 ) -> Response:
     proj = get_project(slug)
 
@@ -107,6 +112,15 @@ def task_status_update(
         updated = existing
         inline_alert = _generic_save_error(exc, task_id=task_id)
 
+    if _is_htmx(request) and view == _VIEW_DETAIL:
+        return _render_task_head(
+            request,
+            session=session,
+            project_db_id=project_db_id,
+            project_name=proj.entry.name,
+            task=updated,
+            inline_alert=inline_alert,
+        )
     if _is_htmx(request):
         return _render_task_row(
             request,
@@ -130,6 +144,7 @@ def task_complete(
     slug: str,
     task_id: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    view: str = Form(""),
 ) -> Response:
     """Mark a task done — endpoint for the Ready-block ✓ button (WEB-014).
 
@@ -176,6 +191,15 @@ def task_complete(
         updated = existing
         inline_alert = _generic_save_error(exc, task_id=task_id)
 
+    if _is_htmx(request) and view == _VIEW_DETAIL:
+        return _render_task_head(
+            request,
+            session=session,
+            project_db_id=project_db_id,
+            project_name=proj.entry.name,
+            task=updated,
+            inline_alert=inline_alert,
+        )
     if _is_htmx(request):
         return _render_task_row(
             request,

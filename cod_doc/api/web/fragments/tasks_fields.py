@@ -18,6 +18,7 @@ from cod_doc.api.web.errors import (
     ValidationWebError,
 )
 from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.task_detail import task_changed_header
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import ai_text, trace_service
 from cod_doc.services import task_service as tasks
@@ -240,7 +241,9 @@ def task_field_patch(
         raise ValidationWebError("Не удалось сохранить изменения.") from exc
 
     if _is_htmx(request):
-        return _render_task_field_view(
+        response = _render_task_field_view(
             request, project_name=proj.entry.name, task=updated, field=field
         )
+        response.headers.update(task_changed_header(task_id))
+        return response
     return RedirectResponse(url=f"/p/{proj.entry.name}/tasks/{task_id}", status_code=303)

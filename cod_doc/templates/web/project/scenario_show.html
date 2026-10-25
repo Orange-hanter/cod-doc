@@ -86,7 +86,7 @@
         <li>
           <code>{{ l.relation }}</code> →
           {% if l.href %}
-            <a href="{{ l.href }}"><code>{{ l.to_kind }}:{{ l.to_ref }}</code></a>
+            <a href="{{ l.href }}"{% if peekable(l.to_kind) %} data-peek{% endif %}><code>{{ l.to_kind }}:{{ l.to_ref }}</code></a>
           {% else %}
             <code>{{ l.to_kind }}:{{ l.to_ref }}</code>
           {% endif %}

@@ -391,7 +391,7 @@
           {% for link in task_links %}
             <li>
               <span class="muted">{{ link.relation }}</span>
-              <a class="mono" href="/p/{{ project.name }}/tasks/{{ link.task_id }}">{{ link.task_id }}</a>
+              <a class="mono" href="/p/{{ project.name }}/tasks/{{ link.task_id }}" data-peek>{{ link.task_id }}</a>
               {% if link.status %}<span class="badge badge-{{ link.status }}">{{ link.status }}</span>{% endif %}
               {% if link.title %}<div class="adr-side-sub">{{ link.title }}</div>
               {% else %}<div class="muted adr-side-sub">task not found</div>{% endif %}
@@ -420,7 +420,7 @@
           {% endfor %}
           {% for t in refs.tasks %}
             <li><span class="muted">task</span>
-              <a class="mono" href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.task_id }}</a>
+              <a class="mono" href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>{{ t.task_id }}</a>
               <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
               <div class="adr-side-sub">{{ t.title }}</div></li>
           {% endfor %}

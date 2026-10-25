@@ -48,7 +48,12 @@ def test_index_renders_project_list(web_client) -> None:
     # Проверяется разметка, а не отпечаток: прежняя схема с точкой входа
     # `app.css` считала отпечаток верно, но в браузер уходил `@import` без
     # версии, и партиал приезжал из кэша — см. test_static_cache_bust.
-    for rel in ("css/_base.css", "css/_components.css", "css/_task_detail.css"):
+    for rel in (
+        "css/_base.css",
+        "css/_components.css",
+        "css/_task_detail.css",
+        "css/_peek.css",
+    ):
         assert f'<link rel="stylesheet" href="/static/{rel}?v=' in r.text, rel
     assert "/static/app.css" not in r.text
 

@@ -14,7 +14,7 @@
      посетителя, хотя отпечаток точки входа честно менялся (ADO-144 лечил
      симптом на один слой выше, чем нужно). Здесь у каждого файла свой ?v=.
      Порядок тот же, что был в app.css: токены → компоненты → оверрайды. #}
-  {% for css in ('css/_base.css', 'css/_components.css', 'css/_task_detail.css') %}
+  {% for css in ('css/_base.css', 'css/_components.css', 'css/_task_detail.css', 'css/_peek.css') %}
     <link rel="stylesheet" href="{{ static_url(css) }}">
   {% endfor %}
   <script>
@@ -38,13 +38,19 @@
   <script src="{{ static_url('cod_doc_text.js') }}"></script>
   <script defer src="{{ static_url('htmx.min.js') }}"></script>
   <script type="module">
-    const blocks = [...document.querySelectorAll('.mermaid')];
-    if (blocks.length) {
+    // WUI-001: рендер схем — функция над корнем, а не разовый проход по
+    // странице: шторка вставляет карточки со схемами уже после загрузки, и
+    // cod_doc_app.js зовёт её на каждый вставленный фрагмент. Блок
+    // помечается до загрузки библиотеки — повторный вызов на том же корне
+    // (страница и первый htmx:load) его не возьмёт.
+    let mermaidLib = null;
+    const loadMermaid = () => mermaidLib || (mermaidLib = (async () => {
       // ADO-233: по умолчанию локальная сборка — схемы рисуются без сети.
       const src = {{ (mermaid_src or static_url(mermaid_vendor_path)) | tojson }};
-      const sources = blocks.map((b) => b.textContent);
-      const loadMermaid = async () => {
-        if (src.endsWith('.mjs')) return (await import(src)).default;
+      let m;
+      if (src.endsWith('.mjs')) {
+        m = (await import(src)).default;
+      } else {
         await new Promise((resolve, reject) => {
           const s = document.createElement('script');
           s.src = src;
@@ -52,22 +58,35 @@
           s.onerror = () => reject(new Error('cannot load ' + src));
           document.head.append(s);
         });
-        return window.mermaid;
-      };
+        m = window.mermaid;
+      }
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const isSoft = document.documentElement.getAttribute('data-palette') === 'soft';
+      // startOnLoad вешается на событие load, а оно к этому моменту уже
+      // прошло: загрузка выше асинхронная. Поэтому run() явно.
+      m.initialize({
+        startOnLoad: false,
+        theme: isDark ? 'dark' : (isSoft ? 'neutral' : 'default'),
+        securityLevel: 'strict',
+      });
+      return m;
+    })());
+    window.codDocMermaid = async (root) => {
+      const blocks = [...root.querySelectorAll('.mermaid')]
+        .filter((b) => !b.dataset.codMermaid);
+      if (!blocks.length) return;
+      blocks.forEach((b) => { b.dataset.codMermaid = '1'; });
+      // Исходники снимаются здесь, на каждый вызов: после run() текста в
+      // блоке уже нет, а запасной <pre> нужен именно этого корня.
+      const sources = blocks.map((b) => b.textContent);
       try {
         const m = await loadMermaid();
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const isSoft = document.documentElement.getAttribute('data-palette') === 'soft';
-        // startOnLoad вешается на событие load, а оно к этому моменту уже
-        // прошло: загрузка выше асинхронная. Поэтому run() явно.
-        m.initialize({
-          startOnLoad: false,
-          theme: isDark ? 'dark' : (isSoft ? 'neutral' : 'default'),
-          securityLevel: 'strict',
-        });
-        await m.run({ querySelector: '.mermaid', suppressErrors: true });
+        await m.run({ nodes: blocks, suppressErrors: true });
       } catch (e) {
         console.warn('[mermaid]', e);
+        // Отказ не кэшируется: следующий фрагмент (шторка) попробует снова,
+        // а не упадёт об отклонённый промис до перезагрузки страницы.
+        mermaidLib = null;
       }
       // Блок без SVG — библиотека не загрузилась: показываем исходник
       // читаемым <pre>, а не слитый в строку текст.
@@ -79,7 +98,8 @@
         b.replaceChildren(pre);
       });
       document.dispatchEvent(new CustomEvent('mermaid:rendered'));
-    }
+    };
+    window.codDocMermaid(document);
   </script>
 
   {# Syntax highlighting — both light and dark themes loaded; the non-matching
@@ -102,22 +122,13 @@
       });
     })();
   </script>
+  {# Подсветка вызывается из cod_doc_app.js (codDocEnhance): и для страницы,
+     и для каждого фрагмента, который вставил htmx (WUI-001). #}
   <script defer src="{{ hljs_src }}"></script>
-  <script defer>
-    document.addEventListener('DOMContentLoaded', () => {
-      if (window.hljs) {
-        document.querySelectorAll('pre code').forEach((el) => {
-          // Skip already-processed and explicit no-highlight blocks.
-          if (el.dataset.highlighted === 'yes') return;
-          if (el.classList.contains('language-mermaid') || el.classList.contains('nohighlight')) return;
-          try { window.hljs.highlightElement(el); } catch (e) { /* fail silently */ }
-        });
-      }
-    });
-  </script>
 
   <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
   <script defer src="{{ static_url('cod_doc_app.js') }}"></script>
+  <script defer src="{{ static_url('cod_doc_peek.js') }}"></script>
 </head>
 {% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
 <body{% if _slug %} data-project="{{ _slug }}"{% endif %}>
@@ -163,5 +174,6 @@
   <main class="content">
     {% block content %}{% endblock %}
   </main>
+  {% include "_frag/peek_shell.html" %}
 </body>
 </html>

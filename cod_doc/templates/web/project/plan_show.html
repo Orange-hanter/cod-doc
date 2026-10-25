@@ -68,8 +68,8 @@
             <tbody>
               {% for t in s.tasks %}
                 <tr class="status-{{ t.status }}">
-                  <td class="mono"><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.task_id }}</a></td>
-                  <td><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.title }}</a></td>
+                  <td class="mono"><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>{{ t.task_id }}</a></td>
+                  <td><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>{{ t.title }}</a></td>
                   <td>{{ t.type }}</td>
                   <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
                   <td><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
@@ -95,7 +95,7 @@
     {% for t in ready %}
     <li class="ready-row" id="task-{{ t.task_id }}">
       <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
-      <a class="ready-title" href="/p/{{ project.name }}/tasks/{{ t.task_id }}">
+      <a class="ready-title" href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>
         <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
       </a>
       <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>

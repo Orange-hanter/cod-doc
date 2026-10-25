@@ -121,7 +121,7 @@
               <div class="q-link-body">
                 <div class="q-link-target">
                   {% if l.href %}
-                    <a href="{{ l.href }}"{% if l.to_kind == "url" %} rel="noopener" target="_blank"{% endif %}><code>{{ l.to_ref }}</code></a>
+                    <a href="{{ l.href }}"{% if l.to_kind == "url" %} rel="noopener" target="_blank"{% elif peekable(l.to_kind) %} data-peek{% endif %}><code>{{ l.to_ref }}</code></a>
                   {% else %}
                     <code>{{ l.to_ref }}</code>
                   {% endif %}
