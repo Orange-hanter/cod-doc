@@ -86,7 +86,7 @@ type: rfc
 | Этап | Миграция | Объект | Изменение | Класс синхронизации |
 |---|---|---|---|---|
 | V1 | 0054 | `plan` | `+ rank TEXT NULL` | authored, `rank_column` |
-| V2 | 0055 | `task` | `+ estimate_hours REAL NULL` | authored, колонка в `_SHIPPED_BEFORE_UID["task"]` |
+| V2 | 0055 | `task` | `+ estimate_person_hours REAL NULL` | authored, колонка в `_SHIPPED_BEFORE_UID["task"]` |
 | V2 | 0056 | `milestone` | новая таблица | authored, ключ `_leased("milestone_key")` |
 | V2 | 0056 | `milestone_task` | новая таблица | authored, `deterministic_uid` |
 | V3 | 0057 | `forecast_snapshot` | новая таблица | local |
@@ -111,7 +111,7 @@ erDiagram
         text rank "V1: порядок планов в проекте"
     }
     task {
-        real estimate_hours "V2: оценка, не срок"
+        real estimate_person_hours "V2: трудозатраты, чел·ч"
     }
     milestone {
         text milestone_key "MS-NNN"
@@ -145,18 +145,24 @@ erDiagram
   ранг сохраняют; на экране дорожной карты их нет, пока не включён тумблер
   «история».
 
-#### 3.2.3. V2 — `task.estimate_hours` (миграция 0055)
+#### 3.2.3. V2 — `task.estimate_person_hours` (миграция 0055)
 
-- `ALTER TABLE task ADD COLUMN estimate_hours REAL` — на месте, по той же
-  причине: на `task` висят `dependency`, `affected_file`, `task_document`.
+- `ALTER TABLE task ADD COLUMN estimate_person_hours REAL` — на месте, по той
+  же причине: на `task` висят `dependency`, `affected_file`, `task_document`.
+- **Единица — человеко-часы (чел·ч)**: трудозатраты, а не длительность.
+  Задача на 6 чел·ч — шесть часов работы одного исполнителя; исполнитель —
+  человек или агент. Длительность из оценки не выводится: сколько
+  исполнителей возьмут задачу параллельно, модель не знает и не хранит.
+  Дни — слишком грубая сетка: при ИИ-исполнителе задача закрывается за часы.
 - Без `CHECK`: `> 0` проверяет сервис (`task_service.set_estimate`), как и
   остальные инварианты задачи. `NULL` = оценки нет — нормальное состояние
   большинства задач.
-- Единица — часы работы: при ИИ-исполнителе задача закрывается за часы, дни
-  — слишком грубая сетка. Это вес задачи в очереди, а не обязательство: из
-  оценки никакая дата не пишется.
+- Это вес задачи в очереди, а не обязательство: из оценки никакая дата не
+  пишется. В прогнозе V2 ёмкость недели — сумма чел·ч задач, закрытых за
+  неделю (оценка, а без неё — эмпирика по типу), и очередь расходует её в
+  тех же единицах.
 - Мутация пишет ревизию `op=estimate` и событие `task.estimate_changed`
-  (ADO-040); `Task.estimate_hours` в домене; колонка вносится в
+  (ADO-040); `Task.estimate_person_hours` в домене; колонка вносится в
   `_SHIPPED_BEFORE_UID["task"]` — иначе она не уезжает.
 
 #### 3.2.4. V2 — вехи (миграция 0056)
@@ -256,7 +262,7 @@ class Roadmap:       queue: Queue, forecast: Forecast   # ответ roadmap_get
 - `sequence()` и `forecast()` ничего не пишут: после вызова в сессии нет
   new/dirty объектов, число ревизий и событий не изменилось.
 - После любого flush у каждого плана непустой `rank`.
-- `plan.rank`, `task.estimate_hours`, `milestone*` уезжают в changeset
+- `plan.rank`, `task.estimate_person_hours`, `milestone*` уезжают в changeset
   (тест захвата синхронизации).
 
 ### 3.3. Очередь: `cod_doc/services/roadmap_service.py`
@@ -351,6 +357,61 @@ activity event одним вызовом (ADO-040). Счётчики профи�
 пересчитывает `scripts/regen.sh`; имя тула вписывается в строку семейства в
 `docs/mcp-integration.md`.
 
+### 3.7. Контракты
+
+Контракты пишутся до кода и тем же механизмом, которым платформа связывает
+документы с кодом (RFC 24 §8, RFC 28 §3.4). Каждая строка таблицы ниже —
+одно обязательство: `structure_obligations.export_obligations` превращает
+строку секции с ключевым словом RFC 2119 (заглавными буквами) в
+draft-обязательство (`source: cod-doc-section`,
+`docRef: proposals/36-roadmap-planner`), а вид выводит по английскому
+слову в строке (`_kind_from_statement`: `error` → `error_path`, `boundary`
+→ `boundary_value`, `invariant`/`never` → `invariant`, иначе
+`happy_path`). Поэтому колонка «Вид» — по-английски, а каждое
+обязательство умещается в одну строку.
+
+| ID | Уровень | Вид | Контракт | Claim (RFC 28) | Проверка до claim |
+|---|---|---|---|---|---|
+| C-01 | MUST | happy path | `roadmap_service.sequence(session, *, project_id, include_backlog=False) -> Queue` экспортирован с этой сигнатурой | `signature` | ROAD-003 |
+| C-02 | MUST | happy path | `roadmap_service.throughput(session, *, project_id, asof, weeks) -> tuple[ThroughputWeek, ...]` и `forecast(queue, *, sample, asof, runs, seed) -> Forecast` экспортированы с этими сигнатурами | `signature` | ROAD-004 |
+| C-03 | MUST | happy path | MCP `roadmap_get` есть в профилях `standard` и `full` и в `READER_TOOLS`; в профилях `agent` и `minimal` его нет | `value` (`mcp_tools(profile)`) | ROAD-005, `test_server_profiles.py` |
+| C-04 | MUST | happy path | `roadmap_get`, `cod-doc roadmap show --json` и `GET /api/v1/projects/{slug}/roadmap` отдают один и тот же JSON — сериализацию `Roadmap` из `services/serializers.py` — при одних `asof` и `seed` | `scenario` | ROAD-005, ROAD-006 |
+| C-05 | MUST | happy path | `plan_move` выставлен и в MCP, и в CLI | `exports` | ROAD-002, `test_plan_mutation_surface_parity.py` |
+| C-06 | MUST | error | `plan_move` без `before`/`after`, с обоими, с самим планом или с планом другого проекта — error без ревизии и события | `scenario` | ROAD-002 |
+| C-07 | MUST | error | цикл в графе проекта, в том числе через планы — `RoadmapCycleError` со списком task_id каждого цикла, частичной очереди нет | `scenario` | ROAD-003 |
+| C-08 | MUST | boundary | выборка короче `MIN_SAMPLE_WEEKS` или из одних нулей — строки без дат и предупреждение `SHORT_SAMPLE`/`ZERO_SAMPLE`, не исключение | `scenario` | ROAD-004 |
+| C-09 | MUST | boundary | неполная текущая неделя в выборку не входит: последняя неделя выборки кончается не позже начала недели `asof` | `scenario` | ROAD-004 |
+| C-10 | MUST | boundary | позиция, которую выборка не покрывает за `HORIZON_WEEKS`, получает `p50 = p85 = None` и предупреждение `BEYOND_HORIZON` | `scenario` | ROAD-004 |
+| C-11 | MUST | invariant | `sequence`, `throughput`, `forecast` и `roadmap_get` never write: ни ревизии, ни события, ни new/dirty-объекта в сессии | `invariant` | ROAD-003, ROAD-004, ROAD-005 |
+| C-12 | MUST | invariant | ни у `plan`, ни у `task`, ни у `milestone` нет колонки с плановой датой — имени с `due`, `deadline`, `target`, `planned` | `invariant` | ROAD-001, тест схемы |
+| C-13 | MUST | invariant | после flush у каждого плана непустой `rank`; новый план без явного ранга — последний в своём проекте | `invariant` | ROAD-001 |
+| C-14 | MUST | invariant | одинаковые `queue`, `sample`, `asof`, `seed` дают одинаковый `Forecast`; `p85 ≥ p50`; даты не убывают с позицией | `invariant` | ROAD-004 |
+| C-15 | MUST | invariant | блокер стоит в очереди раньше каждой задачи, которую он блокирует, даже из плана с меньшим рангом, и несёт `pulled_by` | `invariant` | ROAD-003 |
+| C-16 | MUST | invariant | `cod_doc/domain/roadmap.py` never imports `cod_doc.infra`, `cod_doc.services` и SQLAlchemy | `forbids_dependency` | ROAD-003, новый AST-тест |
+| C-17 | MUST | invariant | `cod_doc/services/roadmap_service.py` never imports `cod_doc.mcp`, `cod_doc.cli`, `cod_doc.api` | `forbids_dependency` | `test_services_layering.py` |
+| C-18 | MUST | happy path | в `cod_doc/domain/roadmap.py`: `FORECAST_WINDOW_WEEKS = 8`, `MIN_SAMPLE_WEEKS = 4`, `HORIZON_WEEKS = 26`, `FORECAST_RUNS = 1000` | `value` (`constant(path#NAME)`) | ROAD-004 |
+| C-19 | SHOULD | happy path | ни одна подпись экрана и ни один docstring не называют прогнозную дату сроком или дедлайном | `scenario` | ROAD-005, ROAD-007 |
+| C-20 | MUST | error | V2: `estimate_person_hours` ≤ 0 — error без записи; `NULL` снимает оценку | `scenario` | ROAD-009 |
+| C-21 | MUST | error | V2: привязка к вехе задачи другого проекта — error; повторная привязка — no-op без ревизии | `scenario` | ROAD-011 |
+
+Жизненный цикл контракта:
+
+1. **Сейчас** — draft-обязательство в выгрузке обязательств; строгая
+   проверка его не касается (RFC 28 §3.4: только `confirmed`).
+2. **Пока кода нет** — контракт держит тест задачи-владельца из последней
+   колонки; acceptance каждой задачи перечисляет её контракты строкой
+   «Контракты RFC 36 §3.7: C-…».
+3. **Код появился** — снимок структуры его видит, `suggest_obligation_links`
+   предлагает связь обязательства с контрактом кода, человек подтверждает
+   `confirm_obligation_link` → confirmed `doc_code_claim`; расхождение
+   дальше — находка `structure_drift`, а не молчание.
+4. **Виды `value` и `invariant`** из RFC 28 §3.4 в `CLAIM_KINDS` ещё нет
+   (`structure_protocol.py:28`): до них строки C-03, C-11…C-15, C-18 держат
+   только тесты.
+5. **Правка формулировки** меняет `contentHash` — это новое обязательство,
+   старое уходит. `C-NN` — для людей и задач, механизм их не читает: менять
+   строку — только вместе с поведением.
+
 
 ## 4. Скоуп по этапам
 
@@ -358,12 +419,12 @@ activity event одним вызовом (ADO-040). Счётчики профи�
 (очередь + прогноз), `plan_move` и `roadmap_get` на всех поверхностях, экран
 с перестановкой планов, ADO-137 на странице плана. Секции A–D плана.
 
-**V2 — длительности.** `task.estimate_hours` (необязательная оценка, мутация
-на MCP и CLI), медиана времени работы по типу из `task_metrics` после
-FLW-003, очередь с весами: задача занимает не слот, а часы, с пометкой
-`duration_source: explicit | empirical | uniform` на каждой полосе. Вехи как
-точки порядка («после этих задач фича X пригодна») — с выведенной датой, без
-целевой. Секция E плана.
+**V2 — трудозатраты.** `task.estimate_person_hours` (необязательная оценка в
+чел·ч, мутация на MCP и CLI), медиана времени работы по типу из
+`task_metrics` после FLW-003, очередь с весами: задача занимает не слот, а
+чел·ч, с пометкой `duration_source: explicit | empirical | uniform` на
+каждой полосе. Вехи как точки порядка («после этих задач фича X пригодна») —
+с выведенной датой, без целевой. Секция E плана.
 
 **V3 — дрейф прогноза.** Снимок прогноза раз в неделю и строка «прогноз по
 плану X сдвинулся на N дней с прошлой недели». Не обязательство и не
