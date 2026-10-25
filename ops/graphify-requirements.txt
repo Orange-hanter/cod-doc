@@ -2,9 +2,9 @@
 # Регенерация — не руками:
 #   echo 'graphifyy==<ver>' | UV_NO_CONFIG=1 uv pip compile --no-config --python-version 3.13 \
 #     --generate-hashes --index-url https://pypi.org/simple - -o ops/graphify-requirements.txt
-graphifyy==0.9.91 \
-    --hash=sha256:47a7ce09d912e741812523d2230c6e860a768e7fb92d7a9fad0718a3a2484118 \
-    --hash=sha256:9eb8d4bfdc197058a81d39ae8d9784f39e1f940cd6bb04c1afc88f39dabb1f0d
+graphifyy==0.9.94 \
+    --hash=sha256:08708a9b8fe9516e84e1fb23a5103da226a1e66107e3e41c72ea29fa2614a7a6 \
+    --hash=sha256:833322bb79ef720eb812dff0cb80f50b0b38f9cbbaa0446d546394a5dae75f27
     # via -r /Users/dakh/.claude/jobs/c0f5a049/tmp/req.in
 networkx==3.7 \
     --hash=sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0 \
@@ -438,15 +438,16 @@ tree-sitter-rust==0.24.2 \
     --hash=sha256:da2b86099028fd42c6cd32878b7b16b01f8aac0f7b0e98742b7fa6bc3cf09b89 \
     --hash=sha256:e033c5a93b57c88e0a835880de39fc802909ff69f57aaff6000211c196ea5190
     # via graphifyy
-tree-sitter-scala==0.26.2 \
-    --hash=sha256:0ac121c9afd813e0820c9f0e90c2d028ca90e096298cbcab2f139ba5f4a8aaaa \
-    --hash=sha256:0e68e55c50fa7e7f2866ce7ca590df8df6407dd7a85e484e9f20e974cbc6d8f2 \
-    --hash=sha256:2f6c38288c08f8c69bcbd87f4c6904287651e3d2ff4d7730d7154177e9115fda \
-    --hash=sha256:54d2e92824c7908b7e688f218dc1d65c5684c365cd7a3e8028e8860847aeabd4 \
-    --hash=sha256:679bb420771e236d6bcc60c2c7f6096f344cf07d829a7f401250735ad4f4a695 \
-    --hash=sha256:a2ba6e45827e01f11790b24cdae357db51ede59ee7ee5c8b7eccc61e9a7782ea \
-    --hash=sha256:beab6a0397d4f45cecaed715f224f444652d6bb1c5318d46c641893cd91de98d \
-    --hash=sha256:eba630fc41cee1093005883fa70e275ecb26351e3ca6471ac2f6f83779478d07
+tree-sitter-scala==0.26.3 \
+    --hash=sha256:050ee0e9336a39b1d53b0d8adb3e6b04c3e65919d5a02983099e441dd63d0f99 \
+    --hash=sha256:0a4815be510f6e86938923df4143efaa8f6a62a069329bb20107be1ea94dd5b1 \
+    --hash=sha256:55dfb401aae8904f912c51d8a59671f1807a20a82b9c2b61b6e81121bbca81d0 \
+    --hash=sha256:56bc0d7d57c04051833842e25d881361e0a92160db66f61f4ca8a8f2f90fb7b2 \
+    --hash=sha256:85c5870037e91fe7c7424141e102f02de312ce66b28025dba26b5019781656fb \
+    --hash=sha256:94bb60a76c147591f4a94be0c0bb3303e8323b355b55c0a9e1dd4fcdd38883fc \
+    --hash=sha256:a66b803409bb76ae6a03b696969594d3da64bc93af375ddafcdb7c7bcc718cc2 \
+    --hash=sha256:a7dde82ad5060201026ca788e844c430940bfa4a3ff9b28e283ed687349204f4 \
+    --hash=sha256:e08b8e81c3e529239a0123d234fdaa34f1e2f1ab67d6034924ec74190a45e5a3
     # via graphifyy
 tree-sitter-swift==0.7.4 \
     --hash=sha256:1676a8ee04442993b84c239291d5976b823d22d25b02cfc5161a1bd644b390f5 \
