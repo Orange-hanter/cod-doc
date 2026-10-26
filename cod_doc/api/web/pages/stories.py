@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db
+from cod_doc.api.web.back_nav import back_nav, natural_key
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import (
     Priority,
@@ -663,6 +664,10 @@ def story_show(
 
     acceptance = stories.list_acceptance(session, story_id, project_id=project_db_id)
     linked_tasks = stories.list_tasks(session, story_id, project_id=project_db_id)
+    story_order = sorted(
+        (s.story_id for s in stories.list_for_project(session, project_db_id)),
+        key=natural_key,
+    )
     return templates.TemplateResponse(
         request,
         "project/story_show.html",
@@ -688,6 +693,14 @@ def story_show(
             ],
             "linked_done": sum(1 for t in linked_tasks if t.status.value == "done"),
             "linked_total": len(linked_tasks),
+            "nav": back_nav(
+                request,
+                proj.entry.name,
+                tab="stories",
+                order=story_order,
+                current=story.story_id,
+                href=lambda key: f"/p/{proj.entry.name}/stories/{key}",
+            ),
         },
     )
 

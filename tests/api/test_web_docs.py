@@ -774,3 +774,14 @@ def test_doc_peek_404_escapes_key(docs_client) -> None:
     assert r.status_code == 404
     assert "<b>y" not in r.text
     assert "&lt;b&gt;y" in r.text
+
+
+def test_doc_show_back_bar_returns_to_referring_task(docs_client) -> None:
+    """ADO-149: пришли с карточки задачи — «назад» ведёт к ней."""
+    client, entry = docs_client
+    page = client.get(
+        f"/p/{entry.name}/docs/modules/M1-auth/overview",
+        headers={"Referer": f"http://testserver/p/{entry.name}/tasks/X-1"},
+    ).text
+    assert f'href="/p/{entry.name}/tasks/X-1" data-back' in page
+    assert "← X-1</a>" in page

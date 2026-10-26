@@ -1,0 +1,22 @@
+{#- ADO-149: липкая полоса под топбаром — ← к родителю, ‹ prev / next ›.
+
+Variables: `nav` — `api/web/back_nav.BackNav`. `data-back` даёт ссылке
+`history.back()`, когда предыдущая запись истории и есть родитель
+(`cod_doc_app.js`); без JS это обычная ссылка. -#}
+<nav class="back-bar" aria-label="Back and neighbours">
+  <a class="back-bar-back" href="{{ nav.back.href }}" data-back{% if nav.has_context %} title="Back to where you came from"{% endif %}>← {{ nav.back.label }}</a>
+  {%- if nav.prev or nav.next %}
+  <span class="back-bar-steps">
+    {%- if nav.prev %}
+    <a class="back-bar-step" href="{{ nav.prev.href }}" rel="prev" title="Previous: {{ nav.prev.label }}">‹ {{ nav.prev.label }}</a>
+    {%- else %}
+    <span class="back-bar-step is-off" aria-hidden="true">‹</span>
+    {%- endif %}
+    {%- if nav.next %}
+    <a class="back-bar-step" href="{{ nav.next.href }}" rel="next" title="Next: {{ nav.next.label }}">{{ nav.next.label }} ›</a>
+    {%- else %}
+    <span class="back-bar-step is-off" aria-hidden="true">›</span>
+    {%- endif %}
+  </span>
+  {%- endif %}
+</nav>

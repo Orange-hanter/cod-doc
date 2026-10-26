@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
+from cod_doc.api.web.back_nav import back_nav
 from cod_doc.api.web.peek import is_peek, peek_not_found
 from cod_doc.api.web.task_detail import task_detail_context
 from cod_doc.api.web.templates_env import templates
@@ -532,5 +533,20 @@ def task_show(
             session, project_db_id, task, repo_url=Config.project_repo_url(proj.entry.name)
         ),
     }
-    template = "_frag/peek_task.html" if is_peek(request) else "project/task_show.html"
-    return templates.TemplateResponse(request, template, context)
+    if is_peek(request):
+        return templates.TemplateResponse(request, "_frag/peek_task.html", context)
+    # ADO-149: соседи — задачи плана в порядке страницы плана.
+    plan_order = (
+        [t.task_id for t in tasks.list_for_plan(session, task.plan_id, project_id=project_db_id)]
+        if task.plan_id is not None
+        else []
+    )
+    context["nav"] = back_nav(
+        request,
+        proj.entry.name,
+        tab="tasks",
+        order=plan_order,
+        current=task.task_id,
+        href=lambda key: f"/p/{proj.entry.name}/tasks/{key}",
+    )
+    return templates.TemplateResponse(request, "project/task_show.html", context)

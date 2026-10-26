@@ -9,6 +9,7 @@
 </nav>
 
 {% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+{% include "_frag/back_bar.html" %}
 
 {% include "_frag/task_detail.html" %}
 {% endblock %}

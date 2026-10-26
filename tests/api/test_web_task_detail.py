@@ -1028,3 +1028,33 @@ def test_pr_number_unicode_digit_is_400_not_500(task_detail_client) -> None:
     r = _close_via_web(client, pr="²")
     assert r.status_code == 400
     assert "PR" in r.text
+
+
+# ── ADO-149: полоса «назад» и соседи по плану ─────────────────────────────
+
+
+def test_task_back_bar_returns_to_filtered_list(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    page = client.get(
+        "/p/demo/tasks/DET-002",
+        headers={"Referer": "http://testserver/p/demo/tasks?status=todo"},
+    ).text
+    assert 'class="back-bar"' in page
+    assert 'href="/p/demo/tasks?status=todo" data-back' in page
+    # Соседи — задачи плана; шаг несёт родителя с собой.
+    assert (
+        'href="/p/demo/tasks/DET-001?from=%2Fp%2Fdemo%2Ftasks%3Fstatus%3Dtodo" rel="prev"' in page
+    )
+    assert (
+        'href="/p/demo/tasks/DET-003?from=%2Fp%2Fdemo%2Ftasks%3Fstatus%3Dtodo" rel="next"' in page
+    )
+
+
+def test_task_back_bar_defaults_to_tasks_and_skips_peek(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert 'href="/p/demo/tasks" data-back>← Tasks</a>' in page
+    assert 'rel="prev"' not in page  # первая задача плана
+    assert 'href="/p/demo/tasks/DET-002" rel="next"' in page
+    sheet = client.get("/p/demo/tasks/DET-001?peek=1", headers={"HX-Request": "true"}).text
+    assert "back-bar" not in sheet

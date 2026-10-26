@@ -4,6 +4,7 @@
 <nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <a href="/p/{{ project.name }}/docs">Docs</a>{% for n in doc_node_chain %} / <a href="/p/{{ project.name }}/docs?group=node&amp;node={{ n.key }}">{{ n.title }}</a>{% endfor %} / <span>{{ doc.doc_key }}</span></nav>
 
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+{% include "_frag/back_bar.html" %}
 
 {% include "_frag/doc_detail.html" %}
 

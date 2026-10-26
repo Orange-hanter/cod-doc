@@ -16,6 +16,7 @@ from cod_doc.api.deps import (
     get_project_db,
     try_open_project_db,
 )
+from cod_doc.api.web.back_nav import back_nav
 from cod_doc.api.web.errors import ValidationWebError, set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.peek import is_peek, peek_not_found
@@ -1352,6 +1353,21 @@ def doc_show(
                 "last_updated": doc.last_updated,
             },
             "doc_node_chain": doc_node_chain,
+            # ADO-149: соседи — документы того же раздела дерева (или Инбокса).
+            "nav": None
+            if peek
+            else back_nav(
+                request,
+                proj.entry.name,
+                tab="docs",
+                order=[
+                    d.doc_key
+                    for d in docs.list_for_project(session, project_db_id)
+                    if d.node_id == doc.node_id
+                ],
+                current=doc.doc_key,
+                href=lambda key: f"/p/{proj.entry.name}/docs/{key}",
+            ),
             "sections": sections_nav,
             "is_raw": is_raw,
             "raw_body": raw_body,

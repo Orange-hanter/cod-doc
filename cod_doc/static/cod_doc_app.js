@@ -87,6 +87,25 @@
     ev.detail.isError = false;
   });
 
+  // ── Back to the parent (ADO-149) ─────────────────────────────────────
+  // Полоса «назад» ведёт по href (родитель из ?from / Referer, иначе индекс
+  // вкладки). Если предыдущая запись истории и есть этот родитель — идём
+  // history.back(): список возвращается с прокруткой, а его собственный
+  // «назад» не начинает вести обратно сюда.
+  document.addEventListener('click', (ev) => {
+    const link = ev.target.closest && ev.target.closest('a[data-back]');
+    if (!link || ev.defaultPrevented || ev.button !== 0) return;
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    if (history.length < 2 || (history.state && history.state.codDocPeek)) return;
+    let ref;
+    try { ref = new URL(document.referrer); } catch (e) { return; }
+    const to = new URL(link.href, location.href);
+    if (ref.origin !== location.origin) return;
+    if (ref.pathname + ref.search !== to.pathname + to.search) return;
+    ev.preventDefault();
+    history.back();
+  });
+
   // ── Agent console ────────────────────────────────────────────────────
   // Only wires up if the page has the console container. Listens for
   // cod_doc:event events emitted by cod_doc_ws.js and renders a live

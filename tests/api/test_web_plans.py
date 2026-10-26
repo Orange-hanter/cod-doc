@@ -381,3 +381,10 @@ def test_plan_show_404_for_plan_of_another_project(plans_client) -> None:
     assert r.status_code == 404
     r = client.post(f"/p/{entry.name}/plans/{foreign_id}/freeze", follow_redirects=False)
     assert r.status_code == 404
+
+
+def test_plan_show_has_back_bar(plans_client) -> None:
+    """ADO-149: полоса «назад» и на странице плана."""
+    client, entry, plan_id = plans_client
+    page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
+    assert 'href="/p/demo/plans" data-back>← Plans</a>' in page
