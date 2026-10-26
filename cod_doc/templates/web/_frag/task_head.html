@@ -21,10 +21,27 @@ and an id target would hit the page behind. #}
           ↳ {{ plan.scope }}
         </a>
       {% endif %}
+      {#- ADO-148: коммит и PR закрытия — ссылки на хостинг, когда у проекта
+          задан repo_url (`cod-doc project repo-url`); без него — текст. #}
       {% if task.completed_commit %}
-        <span class="meta-chip" title="commit">
-          ⌥ <code>{{ task.completed_commit[:8] }}</code>
-        </span>
+        {% if links.commit_url %}
+          <a class="meta-chip meta-chip-link" href="{{ links.commit_url }}"
+             target="_blank" rel="noopener" title="commit {{ task.completed_commit }}">
+            ⌥ <code>{{ task.completed_commit[:8] }}</code>
+          </a>
+        {% else %}
+          <span class="meta-chip" title="commit {{ task.completed_commit }}">
+            ⌥ <code>{{ task.completed_commit[:8] }}</code>
+          </span>
+        {% endif %}
+      {% endif %}
+      {% if links.pr %}
+        {% if links.pr_url %}
+          <a class="meta-chip meta-chip-link" href="{{ links.pr_url }}"
+             target="_blank" rel="noopener" title="PR закрытия">⇄ PR #{{ links.pr }}</a>
+        {% else %}
+          <span class="meta-chip" title="PR закрытия">⇄ PR #{{ links.pr }}</span>
+        {% endif %}
       {% endif %}
     </div>
   </div>
@@ -61,6 +78,20 @@ and an id target would hit the page behind. #}
               hx-swap="outerHTML">
         ✓ Mark done
       </button>
+      {#- ADO-148: необязательно — коммит, PR и итог закрытия. Кнопка выше
+          отправляет и эти поля: они в той же форме. #}
+      <details class="task-complete-more">
+        <summary class="muted-tiny">коммит, PR, итог</summary>
+        <div class="task-complete-fields">
+          <label class="field"><span class="muted-tiny">sha коммита</span>
+            <input type="text" name="commit_sha" placeholder="4b770e4" autocomplete="off"
+                   pattern="[0-9a-fA-F]{7,64}" spellcheck="false"></label>
+          <label class="field"><span class="muted-tiny">PR / MR</span>
+            <input type="text" name="pr" placeholder="261" inputmode="numeric" autocomplete="off"></label>
+          <label class="field field-wide"><span class="muted-tiny">Итог — что сделано</span>
+            <textarea name="summary" rows="3" placeholder="Markdown"></textarea></label>
+        </div>
+      </details>
     </form>
   {% endif %}
 </aside>

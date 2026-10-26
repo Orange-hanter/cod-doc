@@ -316,8 +316,13 @@ def register(mcp: FastMCP) -> None:
         agent_id: str,
         commit_sha: str | None = None,
         summary: str | None = None,
+        pr: int | None = None,
     ) -> dict[str, Any]:
         """Guarded done + release lock in one transaction (AGT-006).
+
+        ``summary`` — closing summary shown on the task card; ``pr`` — the
+        PR/MR number that closed the task (ADO-148), linked from the card
+        when the project has ``repo_url``.
 
         Validates blocked_by are all done, marks task done, releases
         checkout. Returns ``{ok, task_id, status, commit_sha, next_actions}``
@@ -337,6 +342,7 @@ def register(mcp: FastMCP) -> None:
                 agent_id=agent_id,
                 commit_sha=commit_sha,
                 summary=summary,
+                pr=pr,
             )
 
     @mcp.tool(name="agent_release")

@@ -13,6 +13,7 @@ from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_p
 from cod_doc.api.web.peek import is_peek, peek_not_found
 from cod_doc.api.web.task_detail import task_detail_context
 from cod_doc.api.web.templates_env import templates
+from cod_doc.config import Config
 from cod_doc.core.project import TaskStatus as LegacyTaskStatus
 from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import plan_service as plans
@@ -527,7 +528,9 @@ def task_show(
 
     context = {
         "project": {"name": proj.entry.name},
-        **task_detail_context(session, project_db_id, task),
+        **task_detail_context(
+            session, project_db_id, task, repo_url=Config.project_repo_url(proj.entry.name)
+        ),
     }
     template = "_frag/peek_task.html" if is_peek(request) else "project/task_show.html"
     return templates.TemplateResponse(request, template, context)

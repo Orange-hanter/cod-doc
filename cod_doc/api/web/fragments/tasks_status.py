@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -17,6 +18,7 @@ from cod_doc.api.web.errors import (
     _safe_back_url,
     set_flash_cookie,
 )
+from cod_doc.config import Config
 from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import checkout_service
 from cod_doc.services import task_service as tasks
@@ -39,6 +41,23 @@ _GENERIC_SAVE_ERROR = "Не удалось сохранить изменения
 # `view=detail` шлют контролы шапки задачи (страница и шторка, WUI-001): им
 # нужна обновлённая шапка, а не строка таблицы. Без поля — прежний ответ.
 _VIEW_DETAIL = "detail"
+
+# ADO-148: sha коммита закрытия — от короткого (7) до полного (40, SHA-1;
+# 64 — SHA-256), только hex. Номер PR — положительное целое.
+_SHA_RE = re.compile(r"^[0-9a-f]{7,64}$")
+
+
+def _closing_refs(commit_sha: str, pr: str) -> tuple[str | None, int | None]:
+    """sha и номер PR из формы «Mark done»; мусор — 400 с текстом, а не тихий пропуск."""
+    sha = commit_sha.strip().lower() or None
+    if sha is not None and not _SHA_RE.match(sha):
+        raise ValidationWebError(f"Не похоже на sha коммита: {commit_sha.strip()!r}")
+    raw_pr = pr.strip().lstrip("#")
+    if not raw_pr:
+        return sha, None
+    if not raw_pr.isdigit() or int(raw_pr) <= 0:
+        raise ValidationWebError(f"Номер PR — положительное число: {pr.strip()!r}")
+    return sha, int(raw_pr)
 
 
 def _generic_save_error(exc: Exception, *, task_id: str) -> tuple[str, str]:
@@ -120,6 +139,7 @@ def task_status_update(
             project_name=proj.entry.name,
             task=updated,
             inline_alert=inline_alert,
+            repo_url=Config.project_repo_url(proj.entry.name),
         )
     if _is_htmx(request):
         return _render_task_row(
@@ -145,8 +165,15 @@ def task_complete(
     task_id: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     view: str = Form(""),
+    commit_sha: str = Form(""),
+    pr: str = Form(""),
+    summary: str = Form(""),
 ) -> Response:
     """Mark a task done — endpoint for the Ready-block ✓ button (WEB-014).
+
+    ADO-148: необязательные `commit_sha`, `pr` и `summary` (итог) из формы
+    «Mark done» карточки — без них закрытие с веба оставалось без ссылки на
+    коммит и без итога. Пустые поля — как раньше.
 
     Errors get the same alert pipeline as `task_status_update`:
     - HTMX → returns the row plus an OOB alert,
@@ -159,6 +186,7 @@ def task_complete(
     if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
+    sha, pr_number = _closing_refs(commit_sha, pr)
     inline_alert: tuple[str, str] | None = None
     try:
         updated = tasks.complete(
@@ -166,7 +194,9 @@ def task_complete(
             project_id=project_db_id,
             task_id=task_id,
             author="human:web",
-            reason="web ready-block complete",
+            reason=summary.strip() or "web ready-block complete",
+            commit_sha=sha,
+            pr=pr_number,
         )
         session.commit()
     except TaskAlreadyDoneError as exc:
@@ -199,6 +229,7 @@ def task_complete(
             project_name=proj.entry.name,
             task=updated,
             inline_alert=inline_alert,
+            repo_url=Config.project_repo_url(proj.entry.name),
         )
     if _is_htmx(request):
         return _render_task_row(

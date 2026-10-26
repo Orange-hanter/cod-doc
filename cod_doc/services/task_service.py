@@ -1489,8 +1489,14 @@ def complete(
     commit_sha: str | None = None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+    pr: int | None = None,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
+
+    ADO-148: `pr` — номер PR/MR, которым задача закрыта. Пишется в diff
+    закрывающей ревизии рядом с `commit_sha` (а `reason` — итог закрытия),
+    а не в колонку задачи: ревизия уже синхронизируется, новая authored-
+    колонка открыла бы эпоху синхронизации. Читает `completion_record`.
 
     ADO-038: переход в done идёт через статус-машину (ALLOWED_TRANSITIONS).
     Прямого ребра ``todo→done`` в машине нет (proposal 08: сначала начать
@@ -1505,6 +1511,8 @@ def complete(
     """
     from cod_doc.services.task_status_machine import is_terminal, validate_transition
 
+    if pr is not None and pr <= 0:
+        raise ValueError(f"номер PR должен быть положительным: {pr}")
     model = _require_task(session, task_id, project_id=project_id)
 
     if model.status == TaskStatus.DONE.value:
@@ -1559,6 +1567,7 @@ def complete(
             "complete",
             old_status=old_status,
             commit_sha=commit_sha,
+            **({"pr": pr} if pr is not None else {}),
         ),
         reason=reason or "complete",
         expected_parent_revision_id=expected_parent_revision_id,
@@ -1575,7 +1584,7 @@ def complete(
         author,
         scope_kind="task",
         scope_id=task_id,
-        payload={"commit_sha": commit_sha, "reason": reason},
+        payload={"commit_sha": commit_sha, "reason": reason, "pr": pr},
         summary=f"Task {task_id} completed by {author}",
     )
     # CLO-031: закрытая задача замка на remote не держит — аренда своей
@@ -2365,3 +2374,66 @@ def summarize_for_project(session: Session, project_id: int) -> dict:  # type: i
         "by_status": by_status,
         "by_priority": by_priority,
     }
+
+
+# --------------------------------------------------------------------------- #
+# ADO-148: итог закрытия и затронутые файлы — для карточки done-задачи          #
+# --------------------------------------------------------------------------- #
+
+# Причины, которые ставит сама система, когда итога не дали: на карточке это
+# не «что сделано», а шум.
+_DEFAULT_COMPLETE_REASONS = frozenset({"complete", "web ready-block complete"})
+
+
+@dataclass(frozen=True)
+class CompletionRecord:
+    """Закрытие задачи по её закрывающей ревизии.
+
+    `summary` — итог (reason ревизии), если его дали; `pr` — номер PR/MR,
+    если его записали при закрытии (ADO-148, до него не записывался).
+    """
+
+    commit_sha: str | None
+    pr: int | None
+    summary: str | None
+    author: str
+    at: datetime | None
+
+
+def completion_record(
+    session: Session, *, project_id: int, task_row_id: int
+) -> CompletionRecord | None:
+    """Последнее закрытие задачи — новейшая ревизия с `op: complete`.
+
+    Задачу можно переоткрыть и закрыть снова; карточке нужен последний итог.
+    Нет закрывающей ревизии (задача не done или закрыта до ревизий) — None.
+    """
+    history = rev.list_for_entity(session, EntityKind.TASK, task_row_id, project_id=project_id)
+    for revision in reversed(history):
+        try:
+            diff = json.loads(revision.diff or "{}")
+        except ValueError:
+            continue
+        if not isinstance(diff, dict) or diff.get("op") != "complete":
+            continue
+        pr = diff.get("pr")
+        reason = (revision.reason or "").strip()
+        return CompletionRecord(
+            commit_sha=diff.get("commit_sha") or None,
+            pr=pr if isinstance(pr, int) and pr > 0 else None,
+            summary=reason if reason and reason not in _DEFAULT_COMPLETE_REASONS else None,
+            author=revision.author,
+            at=revision.at,
+        )
+    return None
+
+
+def affected_files(session: Session, task_row_id: int) -> list[str]:
+    """Пути, которые задача объявила затронутыми (`affects_files`), по алфавиту."""
+    return list(
+        session.execute(
+            select(AffectedFileModel.path)
+            .where(AffectedFileModel.task_id == task_row_id)
+            .order_by(AffectedFileModel.path)
+        ).scalars()
+    )

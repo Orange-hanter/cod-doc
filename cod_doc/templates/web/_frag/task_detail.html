@@ -6,12 +6,39 @@
 {# ── BODY (2-col): content | deps sidebar ──────────────────────────── #}
 <div class="task-layout">
   <main class="task-content">
+    {#- ADO-148: итог закрытия — отчёт «что сделано», отдельно от исходной
+        постановки (description). Источник — reason закрывающей ревизии. #}
+    {% if completion %}
+      <section class="task-card task-summary-card">
+        <header class="task-card-header">
+          <h2>Итог</h2>
+          <span class="muted-tiny">{{ completion.author }} · <span title="{{ completion.at | ts_tooltip }}">{{ completion.at | short_datetime }}</span></span>
+        </header>
+        <div class="doc-body">{{ completion.summary_html | safe }}</div>
+      </section>
+    {% endif %}
     {% with field="description", label="Description", raw=task.description, html=task.description_html %}
       {% include "_frag/task_field_view.html" %}
     {% endwith %}
     {% with field="acceptance", label="Acceptance criteria", raw=task.acceptance, html=task.acceptance_html %}
       {% include "_frag/task_field_view.html" %}
     {% endwith %}
+    {% if affected_files %}
+      <section class="task-card task-files-card">
+        <header class="task-card-header">
+          <h2>Файлы <span class="count-chip">{{ affected_files | length }}</span></h2>
+          <span class="muted-tiny">affects_files</span>
+        </header>
+        <ul class="task-files">
+          {% for f in affected_files %}
+            <li class="mono">
+              {%- if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.path }}</a>
+              {%- else %}{{ f.path }}{% endif -%}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
   </main>
 
   <aside class="task-deps">

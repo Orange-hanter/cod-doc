@@ -2825,13 +2825,14 @@ _cod-doc() {
     (cod_doc_project_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-project-$words[1]:"
       case $words[1] in
-        (add)     _cod_doc_project_add && ret=0 ;;
-        (init)    _cod_doc_project_init && ret=0 ;;
-        (list)    _cod_doc_project_list && ret=0 ;;
-        (migrate) _cod_doc_project_migrate && ret=0 ;;
-        (remove)  _cod_doc_project_remove && ret=0 ;;
-        (status)  _cod_doc_project_status && ret=0 ;;
-        (*)       _default && ret=0 ;;
+        (add)      _cod_doc_project_add && ret=0 ;;
+        (init)     _cod_doc_project_init && ret=0 ;;
+        (list)     _cod_doc_project_list && ret=0 ;;
+        (migrate)  _cod_doc_project_migrate && ret=0 ;;
+        (remove)   _cod_doc_project_remove && ret=0 ;;
+        (repo-url) _cod_doc_project_repo_url && ret=0 ;;
+        (status)   _cod_doc_project_status && ret=0 ;;
+        (*)        _default && ret=0 ;;
       esac
       ;;
   esac
@@ -2846,6 +2847,7 @@ _cod-doc() {
     'list:Список всех зарегистрированных проектов.'
     'migrate:Накатить голову миграций на БД проекта (hub из db_url или embedded).'
     'remove:Удалить проект из реестра (файлы не удаляются).'
+    'repo-url:Показать или задать веб-адрес git-репозитория проекта (ADO-148).'
     'status:Подробный статус проекта; задачи, ссылки, последний запуск.'
   )
   _describe -t cod-doc-project-commands 'cod-doc project command' cmds
@@ -2901,6 +2903,18 @@ _cod-doc() {
   _arguments -s -S \
     '(- *)--help[Show this message and exit.]' \
     '1:name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project_repo_url] )) || _cod_doc_project_repo_url() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--clear)--clear[Убрать адрес репозитория]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' \
+    '2::url' && ret=0
   return ret
 }
 
@@ -4534,7 +4548,8 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--commit)--commit=[Git commit SHA]:commit' \
     '(--author)--author=:author' \
-    '(--reason)--reason=:reason' \
+    '(--reason)--reason=[Итог закрытия — виден на карточке задачи]:reason' \
+    '(--pr)--pr=[Номер PR/MR, которым закрыта задача]:pr' \
     '(- *)--help[Show this message and exit.]' \
     '1:task-id:_cod_doc_tasks' && ret=0
   return ret

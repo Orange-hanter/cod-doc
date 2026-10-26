@@ -135,6 +135,39 @@ def project_remove(ctx: click.Context, name: str) -> None:
         sys.exit(1)
 
 
+@project.command("repo-url")
+@click.argument("name")
+@click.argument("url", required=False)
+@click.option("--clear", is_flag=True, default=False, help="Убрать адрес репозитория")
+@click.pass_context
+def project_repo_url(ctx: click.Context, name: str, url: str | None, clear: bool) -> None:
+    """Показать или задать веб-адрес git-репозитория проекта (ADO-148).
+
+    Из него карточка done-задачи строит ссылки на коммит, PR и файлы.
+    Принимает и вывод `git remote get-url origin` (`git@host:o/r.git`).
+    """
+    cfg: Config = ctx.obj["config"]
+    if url is None and not clear:
+        entry = cfg.get_project(name)
+        if not entry:
+            console.print(f"[red]Проект '{name}' не найден.[/red]")
+            sys.exit(1)
+        click.echo(entry.repo_url or "")
+        return
+    try:
+        entry = cfg.set_project_repo_url(name, None if clear else url)
+    except KeyError:
+        console.print(f"[red]Проект '{name}' не найден в реестре.[/red]")
+        sys.exit(1)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    if entry.repo_url:
+        console.print(f"[green]{name}: repo_url = {entry.repo_url}[/green]")
+    else:
+        console.print(f"[green]{name}: repo_url убран.[/green]")
+
+
 @project.command("init")
 @click.argument("name")
 @click.pass_context

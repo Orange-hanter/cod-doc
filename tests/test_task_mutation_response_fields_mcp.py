@@ -158,6 +158,33 @@ def test_complete_response_carries_relations(
     assert out["status"] == "done"
 
 
+def test_complete_records_pr_and_summary(
+    monkeypatch: pytest.MonkeyPatch, engine_with_schema: Engine
+) -> None:
+    """ADO-148: MCP task_complete передаёт pr и reason (итог) в закрывающую ревизию."""
+    factory, pid = _seed(engine_with_schema)
+    tools = _tools(monkeypatch, factory, pid)
+
+    tools["task_complete"](
+        project=PROJECT,
+        task_id="TA-003",
+        commit_sha="abc1234",
+        reason="итог закрытия",
+        pr=261,
+        author="agent:dakh/claude-code",
+    )
+
+    with transactional(factory) as session:
+        row_id = session.execute(
+            select(TaskModel.row_id).where(
+                TaskModel.project_id == pid, TaskModel.task_id == "TA-003"
+            )
+        ).scalar_one()
+        record = task_service.completion_record(session, project_id=pid, task_row_id=row_id)
+    assert record is not None
+    assert (record.commit_sha, record.pr, record.summary) == ("abc1234", 261, "итог закрытия")
+
+
 def test_update_status_response_carries_relations(
     monkeypatch: pytest.MonkeyPatch, engine_with_schema: Engine
 ) -> None:
