@@ -3459,6 +3459,8 @@ details > summary { cursor: pointer; }
 .back-bar-back {
   gap: 6px;
   min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
   padding: 0 12px 0 8px;
   color: var(--fg);
   font-weight: 500;
@@ -3549,17 +3551,6 @@ main:has(> .back-bar) .ds-sidebar,
 main:has(> .back-bar) .sections-nav {
   top: calc(var(--topbar-h) + var(--backbar-h) + var(--space-3));
 }
-.back-bar a { text-decoration: none; }
-.back-bar a:hover { text-decoration: underline; }
-.back-bar-back {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.back-bar-steps { display: flex; gap: var(--space-3); flex-shrink: 0; }
-.back-bar-step { font-family: var(--font-mono); }
-.back-bar-step.is-off { color: var(--muted); opacity: .5; }
 
 /* ARG-004: сводка над списком — счёт и ссылки-фильтры вместо чипов статусов.
    Ссылка-фильтр выглядит как подчёркнутое пунктиром число; выбранная —

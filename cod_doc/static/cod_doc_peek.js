@@ -53,8 +53,12 @@
   // Перезагрузка с открытой шторкой оставляет текущей записи её state, хотя
   // документ теперь — полная страница этой карточки. Стираем: иначе «Назад»
   // на эту запись открыл бы карточку шторкой поверх её же страницы.
+  // Стирается только ключ шторки: метку записи загрузки (cod_doc_app.js,
+  // ADO-149) он не трогает.
   if (history.state && history.state[STATE_KEY]) {
-    history.replaceState(null, '', location.href);
+    const rest = Object.assign({}, history.state);
+    delete rest[STATE_KEY];
+    history.replaceState(rest, '', location.href);
   }
 
   // ── Loading ──────────────────────────────────────────────────────────
