@@ -51,6 +51,20 @@ def _href(tag: str) -> str:
     return m.group(1) if m else ""
 
 
+_JINJA_IF_BLOCK = re.compile(r"\{%-?\s*if\b.*?\{%-?\s*endif\s*-?%\}", re.S)
+
+
+def _unconditional(tag: str) -> str:
+    """Тег без `{% if %}…{% endif %}`: что останется, есть в каждой ветке.
+
+    Ссылке на карточку, написанной в шаблоне, решение нужно безусловное:
+    `{% if x %} data-peek{% endif %}` оставляет вторую ветку без решения.
+    Условный `data-peek` законен только у ссылок, собранных в Python, —
+    там его ставит `peekable(вид)`, и их сверяет отдельный тест.
+    """
+    return _JINJA_IF_BLOCK.sub("", tag)
+
+
 # Шаблоны, где href пришёл из Python (`_link_href`, `_DEEPLINK_BY_KIND`)
 # и вид цели известен только строкой: шаблон → (выражение href, вызов
 # peekable с видом именно этой ссылки). В поиске вид — ключ группы `kind`
@@ -88,7 +102,7 @@ def test_every_task_detail_link_opens_in_sheet() -> None:
     missing = [
         _show(name, tag)
         for name, tag in _detail_anchors(_TASK_DETAIL_HREF)
-        if not _has_attr(tag, "data-peek")
+        if not _has_attr(_unconditional(tag), "data-peek")
     ]
     assert not missing, "ссылка на карточку задачи без data-peek:\n" + "\n".join(missing)
 
@@ -101,8 +115,8 @@ def test_every_doc_detail_link_decides_on_sheet() -> None:
         # Исключение — по значению href, а не по подстроке тега: `?raw=1` в
         # `hx-get` или `data-*` не освобождает ссылку на карточку от решения.
         if _RAW_VIEW not in _href(tag)
-        and not _has_attr(tag, "data-peek")
-        and not _has_attr(tag, "data-no-peek")
+        and not _has_attr(_unconditional(tag), "data-peek")
+        and not _has_attr(_unconditional(tag), "data-no-peek")
     ]
     assert not undecided, "ссылка на документ без data-peek/data-no-peek:\n" + "\n".join(undecided)
 
@@ -139,6 +153,14 @@ def test_has_attr_matches_exact_name() -> None:
     assert not _has_attr('<a href="/x" data-no-peek>', "data-peek")
     assert not _has_attr('<a href="/x" xdata-peek>', "data-peek")
     assert _has_attr('<a href="/x" data-no-peek>', "data-no-peek")
+
+
+def test_conditional_attribute_is_not_a_decision() -> None:
+    one_branch = '<a href="/p/{{ p }}/docs/{{ k }}"{% if x %} data-peek{% endif %}>'
+    assert not _has_attr(_unconditional(one_branch), "data-peek")
+    # Условный кусок href не мешает безусловному атрибуту.
+    anchored = '<a href="/p/{{ p }}/docs/{{ k }}{% if a %}#{{ a }}{% endif %}" data-peek>'
+    assert _has_attr(_unconditional(anchored), "data-peek")
 
 
 def test_raw_exemption_reads_href_only() -> None:

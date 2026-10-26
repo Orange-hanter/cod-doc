@@ -66,6 +66,7 @@
 
   function load(url) {
     hideGuard();
+    cancelHold();
     currentUrl = url;
     fullLink.href = url;
     // source = body: htmx ведёт запрос на нём, и htmx:abort отменяет
@@ -136,6 +137,13 @@
   // (кадр, settle, отрисовка схем, секунда), пока пользователь сам не тронул
   // прокрутку; исправление пишется в консоль — чтобы поймать причину.
   let userMoved = false;
+  // Отложенная проверка принадлежит одной карточке: новая карточка или
+  // закрытие её отменяют, иначе таймер от A сбросил бы прокрутку B.
+  let holdTimer = null;
+  function cancelHold() {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
   ['wheel', 'touchmove', 'keydown', 'mousedown', 'click'].forEach((name) => {
     body.addEventListener(name, () => { userMoved = true; }, { passive: true });
   });
@@ -153,7 +161,8 @@
     applyHeader();
     initialScroll();
     requestAnimationFrame(() => holdScroll('frame'));
-    setTimeout(() => holdScroll('1s'), 1000);
+    cancelHold();
+    holdTimer = setTimeout(() => holdScroll('1s'), 1000);
   });
   body.addEventListener('htmx:afterSettle', (ev) => {
     if (ev.detail.target === body) holdScroll('settle');
@@ -242,6 +251,7 @@
 
   function finishClose() {
     dialog.classList.remove('is-closing');
+    cancelHold();
     htmx.trigger(body, 'htmx:abort');
     body.replaceChildren();
     titleEl.textContent = '';
