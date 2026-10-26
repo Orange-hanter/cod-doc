@@ -219,3 +219,17 @@ def test_scan_under_5s_on_synthetic_thousand_files(
     elapsed = time.monotonic() - start
     assert result["files"] == 1000
     assert elapsed < 5.0, f"scan took {elapsed:.2f}s, must be <5s for 1000 files"
+
+
+def test_indexed_paths_spans_chunks(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """ADO-142: набор путей режется на чанки, ответ — по всем."""
+    monkeypatch.setattr(repo_index_service, "_IN_CHUNK", 2)
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        for path in ("a.py", "c.py", "e.py"):
+            session.add(RepoFileModel(project_id=pid, path=path, sha1="0" * 40))
+        session.flush()
+        asked = {"a.py", "b.py", "c.py", "d.py", "e.py"}
+        assert repo_index_service.indexed_paths(session, pid, asked) == {"a.py", "c.py", "e.py"}
+        assert repo_index_service.indexed_paths(session, pid, set()) == set()

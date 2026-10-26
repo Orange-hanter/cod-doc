@@ -1048,7 +1048,9 @@ def test_task_description_links_entities_and_issues(task_detail_client) -> None:
         assert 'href="/p/demo/tasks/DET-002" data-peek>DET-002</a>' in html
         assert 'href="https://github.com/o/r/issues/1"' in html
         assert 'href="https://github.com/o/r/blob/HEAD/README.md"' in html
-        assert "/tasks/DET-404" not in html
+        # Ни ссылки на несуществующую задачу, ни на выдуманный файл — в любом виде.
+        assert "DET-404</a>" not in html
+        assert 'DET-404"' not in html
         assert "x.py</a>" not in html
 
 
