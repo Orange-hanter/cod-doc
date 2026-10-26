@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
-from cod_doc.api.web.back_nav import back_nav
+from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.peek import is_peek, peek_not_found
 from cod_doc.api.web.task_detail import task_detail_context
 from cod_doc.api.web.templates_env import templates
@@ -548,5 +548,6 @@ def task_show(
         order=plan_order,
         current=task.task_id,
         href=lambda key: f"/p/{proj.entry.name}/tasks/{key}",
+        entity_label=entity_labels(session, project_db_id),
     )
     return templates.TemplateResponse(request, "project/task_show.html", context)

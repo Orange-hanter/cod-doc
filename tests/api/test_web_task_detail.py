@@ -1058,3 +1058,26 @@ def test_task_back_bar_defaults_to_tasks_and_skips_peek(task_detail_client) -> N
     assert 'href="/p/demo/tasks/DET-002" rel="next"' in page
     sheet = client.get("/p/demo/tasks/DET-001?peek=1", headers={"HX-Request": "true"}).text
     assert "back-bar" not in sheet
+
+
+def test_task_back_to_plan_page_is_labelled_with_scope(task_detail_client) -> None:
+    """ADO-149: родитель — страница плана; подпись — его scope, а не row_id."""
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import PlanModel
+
+    client, entry = task_detail_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            plan_id = session.execute(
+                select(PlanModel.row_id).where(PlanModel.scope == "payments")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    page = client.get(
+        "/p/demo/tasks/DET-001",
+        headers={"Referer": f"http://testserver/p/demo/plans/{plan_id}"},
+    ).text
+    assert f'href="/p/demo/plans/{plan_id}" data-back' in page
+    assert ">← payments</a>" in page

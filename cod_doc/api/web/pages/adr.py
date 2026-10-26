@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
-from cod_doc.api.web.back_nav import back_nav, natural_key
+from cod_doc.api.web.back_nav import back_nav, entity_labels, natural_key
 from cod_doc.api.web.markdown import (
     autolink_adr_refs,
     lead_paragraph,
@@ -933,6 +933,7 @@ def adr_show(
                 ),
                 current=adr_id,
                 href=lambda key: f"/p/{proj.entry.name}/adr/{key}",
+                entity_label=entity_labels(session, project_id),
             ),
         },
     )

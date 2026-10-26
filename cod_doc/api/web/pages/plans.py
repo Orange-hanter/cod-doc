@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
-from cod_doc.api.web.back_nav import back_nav
+from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import plan_service as plans
@@ -149,6 +149,7 @@ def plan_show(
                 order=list(plan_scopes),
                 current=str(plan_id),
                 href=lambda key: f"/p/{proj.entry.name}/plans/{key}",
+                entity_label=entity_labels(session, project_db_id),
                 label=plan_scopes.__getitem__,
             ),
         },

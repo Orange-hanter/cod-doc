@@ -21,18 +21,23 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlencode, urlsplit
 
 from cod_doc.api.web.errors import same_site_path
+from cod_doc.services import plan_service
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from fastapi import Request
+    from sqlalchemy.orm import Session
 
 FROM_PARAM = "from"
+# (вкладка, ключ из адреса) → подпись или None.
+EntityLabel = Callable[[str, str], str | None]
 
 # Подписи вкладок — те же, что в `_layout/project_tabs.html`.
 _TAB_LABELS = {
@@ -71,14 +76,16 @@ class BackNav:
     next: NavLink | None = None
 
 
-def _label(slug: str, path: str, query: str) -> str:
+def _label(slug: str, path: str, query: str, entity_label: EntityLabel | None = None) -> str:
     rest = path.removeprefix(f"/p/{slug}").strip("/")
     if not rest:
         return slug
     tab, _, tail = rest.partition("/")
     if tail:
         # Сущность: ключ — последний сегмент (`docs/a/b` → `a/b` целиком).
-        return tail if tab == "docs" else tail.rsplit("/", 1)[-1]
+        key = tail if tab == "docs" else tail.rsplit("/", 1)[-1]
+        named = entity_label(tab, key) if entity_label is not None else None
+        return named or key
     label = _TAB_LABELS.get(tab, tab.replace("-", " ").capitalize())
     return f"{label} (filtered)" if query else label
 
@@ -97,10 +104,26 @@ def _source(request: Request, slug: str) -> str | None:
     path = unquote(urlsplit(found).path)
     if path != f"/p/{slug}" and not path.startswith(f"/p/{slug}/"):
         return None
+    # `/p/<slug>/../other` проходит префикс, но браузер свернёт его в чужой
+    # проект: сегменты `.` и `..` не принимаем вовсе.
+    if any(seg in {".", ".."} for seg in path.split("/")):
+        return None
     # Сама себя: перезагрузка, правка поля с редиректом обратно.
     if path == unquote(request.url.path):
         return None
     return found
+
+
+def entity_labels(session: Session, project_id: int) -> EntityLabel:
+    """Подписи родителей из БД: план в адресе — row_id, человеку нужен scope."""
+
+    def label(tab: str, key: str) -> str | None:
+        if tab != "plans" or not key.isdigit():
+            return None
+        plan = plan_service.get_for_project(session, int(key), project_id=project_id)
+        return plan.scope if plan is not None else None
+
+    return label
 
 
 def natural_key(key: str) -> tuple[tuple[int, str], ...]:
@@ -139,15 +162,20 @@ def back_nav(
     current: str | None = None,
     href: Callable[[str], str] | None = None,
     label: Callable[[str], str] | None = None,
+    entity_label: EntityLabel | None = None,
 ) -> BackNav:
-    """Полоса страницы сущности вкладки `tab`; соседи — по `order`, если дан."""
+    """Полоса страницы сущности вкладки `tab`; соседи — по `order`, если дан.
+
+    `entity_label(tab, key)` подписывает родителя-сущность, чей ключ в
+    адресе не читается человеком (план: `plans/7` → его scope).
+    """
     default = f"/p/{slug}/{tab}"
     source = _source(request, slug)
     if source is None:
         back = NavLink(default, _TAB_LABELS.get(tab, tab))
     else:
         parts = urlsplit(source)
-        back = NavLink(source, _label(slug, unquote(parts.path), parts.query))
+        back = NavLink(source, _label(slug, unquote(parts.path), parts.query, entity_label))
     has_context = back.href != default
     prev = nxt = None
     if order and current is not None and href is not None:

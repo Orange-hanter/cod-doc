@@ -81,7 +81,17 @@ def test_from_wins_over_referer() -> None:
 
 
 @pytest.mark.parametrize(
-    "from_", ["//evil.example/p/demo", "https://evil.example/p/demo/tasks", "/p/other", "x"]
+    "from_",
+    [
+        "//evil.example/p/demo",
+        "https://evil.example/p/demo/tasks",
+        "/p/other",
+        "x",
+        # Префикс проходит, но браузер свернёт `..` в чужой проект.
+        "/p/demo/../other/tasks",
+        "/p/demo/%2e%2e/other/tasks",
+        "/p/demo/./tasks",
+    ],
 )
 def test_from_must_be_a_path_of_this_project(from_: str) -> None:
     nav = back_nav(
@@ -143,3 +153,24 @@ def test_back_bar_renders_nothing_without_nav() -> None:
     tpl = templates.get_template("_frag/back_bar.html")
     assert tpl.render(nav=None).strip() == ""
     assert 'class="back-bar"' in tpl.render(nav=back_nav(_request(), "demo", tab="tasks"))
+
+
+def test_entity_label_names_a_parent_with_an_opaque_key() -> None:
+    def labels(tab: str, key: str) -> str | None:
+        return "payments" if (tab, key) == ("plans", "7") else None
+
+    nav = back_nav(
+        _request(referer="http://testserver/p/demo/plans/7"),
+        "demo",
+        tab="tasks",
+        entity_label=labels,
+    )
+    assert (nav.back.href, nav.back.label) == ("/p/demo/plans/7", "payments")
+    # Неизвестное резолверу — по-прежнему ключ из адреса.
+    other = back_nav(
+        _request(referer="http://testserver/p/demo/plans/8"),
+        "demo",
+        tab="tasks",
+        entity_label=labels,
+    )
+    assert other.back.label == "8"

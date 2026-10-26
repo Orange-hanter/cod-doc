@@ -16,7 +16,7 @@ from cod_doc.api.deps import (
     get_project_db,
     try_open_project_db,
 )
-from cod_doc.api.web.back_nav import back_nav
+from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.errors import ValidationWebError, set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.peek import is_peek, peek_not_found
@@ -1367,6 +1367,7 @@ def doc_show(
                 ],
                 current=doc.doc_key,
                 href=lambda key: f"/p/{proj.entry.name}/docs/{key}",
+                entity_label=entity_labels(session, project_db_id),
             ),
             "sections": sections_nav,
             "is_raw": is_raw,
