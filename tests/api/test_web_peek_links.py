@@ -73,6 +73,8 @@ _PYTHON_BUILT_LINKS = {
     "project/search.html": ("{{ h.url }}", "peekable(kind)"),
     "project/question_show.html": ("{{ l.href }}", "peekable(l.to_kind)"),
     "project/scenario_show.html": ("{{ l.href }}", "peekable(l.to_kind)"),
+    # ADO-124: сущность ревизии — вид из EntityKind (task/document/section).
+    "project/revisions.html": ("{{ e.href }}", "peekable(e.kind)"),
 }
 
 

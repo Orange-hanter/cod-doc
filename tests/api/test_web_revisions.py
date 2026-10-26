@@ -252,3 +252,122 @@ def test_revisions_page_escapes_diff_preview(revisions_client) -> None:
     page = client.get("/p/demo/revisions").text
     assert "<script>alert(1)</script>" not in page
     assert "&lt;script&gt;alert(1)&lt;/script&gt;Хранение" in page
+
+
+# ── ADO-124: сущность ревизии — публичный ключ и ссылка, не row_id ───────
+
+
+def _write_raw_revision(entry, kind: EntityKind, entity_id: int) -> None:  # type: ignore[no-untyped-def]
+    """Ревизия на произвольный row_id — как в журнале после удаления сущности."""
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import ProjectModel
+    from cod_doc.services import revision_service
+
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            pid = session.execute(
+                select(ProjectModel.row_id).where(ProjectModel.slug == "demo")
+            ).scalar_one()
+            revision_service.write(
+                session,
+                project_id=pid,
+                entity_kind=kind,
+                entity_id=entity_id,
+                author="human:test",
+                diff="{}",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_revision_links_task_by_public_id_into_sheet(revisions_client) -> None:
+    client, entry, task_row_id = revisions_client
+    page = client.get(f"/p/{entry.name}/revisions?entity_kind=task").text
+    assert 'href="/p/demo/tasks/REV-001" data-peek' in page
+    assert ">task REV-001</a>" in page
+    # row_id остаётся в подсказке: фильтр ?entity_id= работает по нему.
+    assert f"(task#{task_row_id})" in page
+    # Ссылки на внутренний row_id нет — /tasks/<row_id> был бы 404.
+    assert f'href="/p/demo/tasks/{task_row_id}"' not in page
+
+
+def test_revision_links_document_section_story_adr(revisions_client) -> None:
+    from cod_doc.domain.entities import (
+        DocumentStatus,
+        DocumentType,
+        Sensitivity,
+        UserStoryStatus,
+    )
+    from cod_doc.services import adr_service, story_service
+    from cod_doc.services import doc_service as docs
+
+    client, entry, _ = revisions_client
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            pid = sole_project_id(session)
+            doc = docs.create(
+                session,
+                project_id=pid,
+                doc_key="modules/rev/spec",
+                type=DocumentType.MODULE_SPEC,
+                status=DocumentStatus.ACTIVE,
+                title="Rev spec",
+                author="human:dakh",
+                owner="human:dakh",
+                sensitivity=Sensitivity.INTERNAL,
+                preamble="p",
+            )
+            docs.add_section(
+                session,
+                project_id=pid,
+                document_id=doc.row_id,
+                anchor="api",
+                heading="API",
+                level=2,
+                position=0,
+                body="b",
+                author="human:dakh",
+            )
+            story_service.create(
+                session,
+                project_id=pid,
+                story_id="US-901",
+                persona="dev",
+                narrative="As a dev I want links",
+                priority=Priority.MEDIUM,
+                author="human:dakh",
+                status=UserStoryStatus.DRAFT,
+            )
+            adr_service.create(
+                session, project_id=pid, title="Links in log", author="human:dakh", adr_id="ADR-901"
+            )
+    finally:
+        engine.dispose()
+
+    page = client.get(f"/p/{entry.name}/revisions").text
+    assert 'href="/p/demo/docs/modules/rev/spec" data-peek' in page
+    assert 'href="/p/demo/docs/modules/rev/spec#api" data-peek' in page
+    assert ">section modules/rev/spec#api</a>" in page
+    # У истории и ADR нет шторки — обычная ссылка на страницу.
+    assert 'href="/p/demo/stories/US-901" title=' in page
+    assert 'href="/p/demo/adr/ADR-901" title=' in page
+
+
+def test_revision_of_missing_entity_is_plain_text(revisions_client) -> None:
+    client, entry, _ = revisions_client
+    _write_raw_revision(entry, EntityKind.TASK, 999_999)
+    page = client.get(f"/p/{entry.name}/revisions?entity_kind=task&entity_id=999999").text
+    assert '<span class="muted" title="сущность не найдена — удалена">task#999999</span>' in page
+    assert "/tasks/999999" not in page
+
+
+def test_revision_of_kind_without_page_stays_plain(revisions_client) -> None:
+    """task_doc, link и прочие без своей страницы — `kind#id` без ссылки и без «удалена»."""
+    client, entry, _ = revisions_client
+    _write_raw_revision(entry, EntityKind.LINK, 4242)
+    page = client.get(f"/p/{entry.name}/revisions?entity_kind=link").text
+    assert "link#4242" in page
+    assert "не найдена" not in page

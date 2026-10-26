@@ -100,7 +100,9 @@
         pre.textContent = sources[i];
         b.replaceChildren(pre);
       });
-      document.dispatchEvent(new CustomEvent('mermaid:rendered'));
+      // detail.root — чей рендер закончился: шторка (WUI-003) реагирует
+      // только на схемы в своём теле, а не на схемы страницы под ней.
+      document.dispatchEvent(new CustomEvent('mermaid:rendered', { detail: { root } }));
     };
     window.codDocMermaid(document);
   </script>

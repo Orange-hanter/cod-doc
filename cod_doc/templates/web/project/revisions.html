@@ -54,7 +54,18 @@
     {% for r in revisions %}
     <tr>
       <td class="mono">{{ r.revision_id }}</td>
-      <td class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</td>
+      {#- ADO-124: публичный ключ сущности и ссылка на неё; задача и документ
+          открываются шторкой. Удалённая — текст без ссылки. #}
+      {%- set e = r.entity %}
+      <td class="mono">
+        {%- if e.href -%}
+          <a href="{{ e.href }}"{% if peekable(e.kind) %} data-peek{% endif %} title="{{ e.title }}">{{ e.label }}</a>
+        {%- elif e.missing -%}
+          <span class="muted" title="сущность не найдена — удалена">{{ e.label }}</span>
+        {%- else -%}
+          {{ e.label }}
+        {%- endif -%}
+      </td>
       <td>{{ r.author }}</td>
       <td class="muted rev-col-when" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
       <td><span class="cell-clamp-prose" title="{{ r.reason }}">{{ r.reason }}</span></td>
