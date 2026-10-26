@@ -37,6 +37,7 @@ from cod_doc.domain.roadmap import (
     Forecast,
     ForecastRow,
     ForecastWarning,
+    HistoryBar,
     PlanBar,
     PlanForecast,
     Queue,
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-__all__ = ["RoadmapCycleError", "build", "forecast", "sequence", "throughput"]
+__all__ = ["RoadmapCycleError", "build", "forecast", "history", "sequence", "throughput"]
 
 _DAYS_PER_WEEK: Final = 7
 _P50: Final = 0.5
@@ -454,6 +455,64 @@ def forecast(
         runs=runs,
         seed=seed,
     )
+
+
+def history(
+    session: Session,
+    *,
+    project_id: int,
+    asof: date,
+    since: date | None = None,
+    plan_id: int | None = None,
+) -> tuple[HistoryBar, ...]:
+    """Факт для тумблера «история» (RFC 36 §3.5, ADO-137): слой «факт», без прогноза.
+
+    Закрытые (``done``) задачи — от ``created`` до ``completed_at``; задачи в
+    работе (``in_progress``/``in_review``) — от ``created`` до ``asof``.
+    ``since`` отсекает задачи, закрытые раньше; у ``todo`` дат факта нет, и
+    фиктивных им не ставим. Порядок — по началу, затем ``task_id``.
+    """
+    stmt = (
+        select(
+            TaskModel.task_id,
+            TaskModel.title,
+            TaskModel.status,
+            TaskModel.created,
+            TaskModel.completed_at,
+            PlanModel.scope,
+            PlanSectionModel.letter,
+        )
+        .join(PlanModel, PlanModel.row_id == TaskModel.plan_id)
+        .join(PlanSectionModel, PlanSectionModel.row_id == TaskModel.section_id)
+        .where(TaskModel.project_id == project_id)
+    )
+    if plan_id is not None:
+        stmt = stmt.where(TaskModel.plan_id == plan_id)
+    bars: list[HistoryBar] = []
+    for task_id, title, raw_status, created, completed_at, scope, letter in session.execute(
+        stmt
+    ).all():
+        status = canonical_task_status(raw_status)
+        if status == TaskStatus.DONE.value and completed_at is not None:
+            end = _as_date(completed_at)
+        elif status in _WORKING:
+            end = asof
+        else:
+            continue
+        if since is not None and end < since:
+            continue
+        bars.append(
+            HistoryBar(
+                task_id=task_id,
+                title=title,
+                plan_scope=scope,
+                section_letter=letter,
+                status=TaskStatus(status),
+                start=min(_as_date(created), end),
+                end=end,
+            )
+        )
+    return tuple(sorted(bars, key=lambda b: (b.start, b.task_id)))
 
 
 def build(

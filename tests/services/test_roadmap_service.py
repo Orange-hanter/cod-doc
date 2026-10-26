@@ -32,6 +32,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     ActivityEventModel,
     DependencyModel,
+    PlanModel,
     PlanSectionModel,
     ProjectModel,
     RevisionModel,
@@ -497,3 +498,48 @@ def test_empty_queue_has_no_rows() -> None:
     result = roadmap_service.forecast(Queue(rows=(), plans=()), sample=_sample(*[5] * 8), asof=ASOF)
     assert result.rows == ()
     assert result.warnings == ()
+
+
+def test_history_is_facts_only(sf: sessionmaker[Session]) -> None:
+    """ADO-137: факт — закрытые и в работе; todo без дат; закрытое до ``since`` — вне."""
+    with transactional(sf) as s:
+        seed = _Seed(s)
+        seed.plan("p1", "A")
+        seed.plan("p2", "A")
+        seed.task(
+            "OLD",
+            "p1",
+            "A",
+            status="done",
+            created=datetime(2026, 8, 1, tzinfo=UTC),
+            completed_at=datetime(2026, 8, 5, tzinfo=UTC),
+        )
+        seed.task(
+            "NEW",
+            "p1",
+            "A",
+            status="done",
+            created=datetime(2026, 10, 1, tzinfo=UTC),
+            completed_at=datetime(2026, 10, 20, tzinfo=UTC),
+        )
+        seed.task(
+            "WIP", "p1", "A", status="in_progress", created=datetime(2026, 10, 25, tzinfo=UTC)
+        )
+        seed.task("TODO", "p1", "A")
+        seed.task(
+            "OTHER",
+            "p2",
+            "A",
+            status="done",
+            created=datetime(2026, 10, 2, tzinfo=UTC),
+            completed_at=datetime(2026, 10, 3, tzinfo=UTC),
+        )
+        plan_id = s.scalar(select(PlanModel.row_id).where(PlanModel.scope == "p1"))
+        bars = roadmap_service.history(
+            s, project_id=seed.project_id, asof=ASOF, since=date(2026, 9, 1), plan_id=plan_id
+        )
+
+    assert [(b.task_id, b.start, b.end) for b in bars] == [
+        ("NEW", date(2026, 10, 1), date(2026, 10, 20)),
+        ("WIP", date(2026, 10, 25), ASOF),
+    ]

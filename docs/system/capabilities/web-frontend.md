@@ -121,6 +121,8 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `GET /p/{slug}/plans` | Список планов проекта с прогрессом | `plan_service.list_for_project` + `recalc` | ✅ | WEB-004 |
 | `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ✅ | WEB-004 |
 | `POST /p/{slug}/plans/{plan_id}/freeze` | Snapshot текущего плана в EXECUTION_LOG документ | `plan_service.freeze_projection` | ✅ | COD-052 |
+| `GET /p/{slug}/roadmap` | Дорожная карта: очередь всего проекта по планам (ранг) и прогноз p50/p85 по пропускной способности — не сроки; тумблеры `history` (факт) и `backlog` | `roadmap_service.build/history` | ✅ | ROAD-007 |
+| `POST /p/{slug}/roadmap/plans/{scope}/move` | HTMX: план выше/ниже соседа на дорожной карте, ответ — перерисованное тело экрана | `plan_service.move_plan` | ✅ | ROAD-008 |
 | **Задачи — список и detail**  | | | |
 | `GET /p/{slug}/tasks` | Список задач (kanban board / chains, фильтр plan/status) | `task_service.list_for_project` + `plan_service` | ✅ | WEB-010 |
 | `GET /p/{slug}/tasks/{task_id}` | Деталь задачи (header + chains + history + trace) | `task_service.get` + `plan_service.forward/reverse_chain` + `revision_service` + `trace_service` | ✅ | WEB-070 |

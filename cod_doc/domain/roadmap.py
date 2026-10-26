@@ -113,6 +113,19 @@ class Forecast:
 
 
 @dataclass(frozen=True, slots=True)
+class HistoryBar:
+    """Факт (ADO-137): задача от ``created`` до ``completed_at``; в работе — до ``asof``."""
+
+    task_id: str
+    title: str
+    plan_scope: str
+    section_letter: str
+    status: TaskStatus
+    start: date
+    end: date
+
+
+@dataclass(frozen=True, slots=True)
 class Roadmap:
     """Ответ ``roadmap_get``: очередь и прогноз по ней."""
 

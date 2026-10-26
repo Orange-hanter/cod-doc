@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,8 +12,10 @@ from sqlalchemy.orm import Session
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.roadmap_chart import Chart, sections_chart
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import plan_service as plans
+from cod_doc.services import roadmap_service
 from cod_doc.services import task_service as tasks
 
 router = APIRouter()
@@ -56,6 +59,37 @@ def plans_list(request: Request, slug: str) -> HTMLResponse:
             "db_available": db_available,
         },
     )
+
+
+def _timeline(
+    session: Session,
+    project_id: int,
+    plan_id: int,
+    *,
+    plan_scope: str,
+    sections: list[tuple[str, str]],
+    slug: str,
+) -> dict[str, Any]:
+    """ADO-137: Гант плана — секции × время, факт и прогноз (RFC 36 §3.5).
+
+    Факт — ``created → completed_at``, в работе — до сегодня; открытым задачам
+    — прогноз очереди всего проекта. Цикл в графе — только факт и пояснение.
+    """
+    asof = datetime.now(UTC).date()
+    try:
+        built = roadmap_service.build(session, project_id=project_id, asof=asof)
+        cycle = None
+    except roadmap_service.RoadmapCycleError as exc:
+        built, cycle = None, str(exc)
+    chart: Chart = sections_chart(
+        built,
+        plan_scope=plan_scope,
+        sections=sections,
+        history=roadmap_service.history(session, project_id=project_id, asof=asof, plan_id=plan_id),
+        asof=asof,
+        task_href=lambda task_id: f"/p/{slug}/tasks/{task_id}",
+    )
+    return {"chart": chart, "cycle": cycle}
 
 
 @router.get("/p/{slug}/plans/{plan_id}", response_class=HTMLResponse)
@@ -141,6 +175,14 @@ def plan_show(
                 for t in ready_tasks
             ],
             "exported": exported,
+            "timeline": _timeline(
+                session,
+                project_db_id,
+                plan_id,
+                plan_scope=plan_dom.scope,
+                sections=[(s.letter, s.title) for s in progress.sections],
+                slug=proj.entry.name,
+            ),
             "dependency_graph_html": render_markdown(exported.get("dependency_graph", "")),
             "nav": back_nav(
                 request,
