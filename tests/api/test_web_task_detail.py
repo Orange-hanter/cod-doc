@@ -1028,3 +1028,36 @@ def test_pr_number_unicode_digit_is_400_not_500(task_detail_client) -> None:
     r = _close_via_web(client, pr="²")
     assert r.status_code == 400
     assert "PR" in r.text
+
+
+# ── ADO-142: живые ссылки в описании и acceptance ─────────────────────────
+
+
+def test_task_description_links_entities_and_issues(task_detail_client) -> None:
+    client, entry = task_detail_client
+    _set_repo_url("https://github.com/o/r")
+    (entry.root / "README.md").write_text("# demo\n", encoding="utf-8")
+    text = "После DET-002 (#1) правим README.md; DET-404 и nope/x.py — текст"
+    # Ответ инлайн-правки уже со ссылками — тот же резолвер, что у страницы.
+    r = client.post(
+        "/p/demo/tasks/DET-001/fields/description",
+        data={"body": text},
+        headers={"HX-Request": "true"},
+    )
+    for html in (r.text, client.get("/p/demo/tasks/DET-001").text):
+        assert 'href="/p/demo/tasks/DET-002" data-peek>DET-002</a>' in html
+        assert 'href="https://github.com/o/r/issues/1"' in html
+        assert 'href="https://github.com/o/r/blob/HEAD/README.md"' in html
+        # Ни ссылки на несуществующую задачу, ни на выдуманный файл — в любом виде.
+        assert "DET-404</a>" not in html
+        assert 'DET-404"' not in html
+        assert "x.py</a>" not in html
+
+
+def test_task_acceptance_without_repo_url_links_only_entities(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    _set_repo_url(None)
+    client.post("/p/demo/tasks/DET-001/fields/acceptance", data={"body": "DET-003 и #5"})
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert 'href="/p/demo/tasks/DET-003" data-peek>DET-003</a>' in page
+    assert "/issues/5" not in page

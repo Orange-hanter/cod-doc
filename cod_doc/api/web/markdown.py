@@ -220,6 +220,12 @@ def _render_inline(text: str) -> str:
     return _LINK.sub(_link, text)
 
 
+def render_inline(text: str) -> str:
+    """Одна строка прозы (критерий истории) — экранирование и инлайн-разметка
+    без абзаца: `<p>` внутри `<li>` критерия был бы лишним отступом (ADO-142)."""
+    return _render_inline(text)
+
+
 def _split_pipe_row(line: str) -> list[str]:
     """Split a GFM table row on `|`, ignoring leading/trailing pipe."""
     s = line.strip()

@@ -147,3 +147,38 @@ def resolve(
         for ref in RESOLVERS[kind](session, project_id, ids):
             found[(ref.kind, ref.row_id)] = ref
     return found
+
+
+def existing_public_ids(
+    session: Session,
+    project_id: int,
+    candidates: Iterable[str],
+) -> dict[str, EntityKind]:
+    """Какие из упомянутых в тексте ключей — живые задачи, истории, ADR (ADO-142).
+
+    Проза ссылается на сущности по публичному ключу (`ADO-012`, `US-004`,
+    `ADR-007`). Ссылкой становится только существующая в этом проекте
+    запись: битая ссылка хуже текста. Один запрос на вид, а не на упоминание.
+
+    Ключ, который есть у сущностей разных видов (префикс задач совпал с
+    префиксом историй), в ответ не попадает: какую из них имел в виду
+    автор, по тексту не понять, а ссылка не туда хуже текста.
+    """
+    ids = {c for c in candidates if c}
+    if not ids:
+        return {}
+    found: dict[str, EntityKind] = {}
+    ambiguous: set[str] = set()
+    for kind, column, model_project in (
+        (EntityKind.TASK, TaskModel.task_id, TaskModel.project_id),
+        (EntityKind.STORY, UserStoryModel.story_id, UserStoryModel.project_id),
+        (EntityKind.ADR, ADRModel.adr_id, ADRModel.project_id),
+    ):
+        rows = session.execute(
+            select(column).where(model_project == project_id, column.in_(ids))
+        ).scalars()
+        for public_id in rows:
+            if public_id in found:
+                ambiguous.add(public_id)
+            found.setdefault(public_id, kind)
+    return {key: kind for key, kind in found.items() if key not in ambiguous}
