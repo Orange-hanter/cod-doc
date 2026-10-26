@@ -72,22 +72,29 @@ class BackNav:
     back: NavLink
     # Пришли не из индекса вкладки: со списка с фильтрами или с другой сущности.
     has_context: bool = False
+    # Родитель — список вкладки с query: подпись получает метку «filtered».
+    filtered: bool = False
     prev: NavLink | None = None
     next: NavLink | None = None
+    # Место страницы среди соседей: «3 / 12»; None — страницы в порядке нет.
+    position: int | None = None
+    total: int = 0
 
 
-def _label(slug: str, path: str, query: str, entity_label: EntityLabel | None = None) -> str:
+def _label(
+    slug: str, path: str, query: str, entity_label: EntityLabel | None = None
+) -> tuple[str, bool]:
+    """Подпись родителя и признак «список вкладки с фильтрами»."""
     rest = path.removeprefix(f"/p/{slug}").strip("/")
     if not rest:
-        return slug
+        return slug, False
     tab, _, tail = rest.partition("/")
     if tail:
         # Сущность: ключ — последний сегмент (`docs/a/b` → `a/b` целиком).
         key = tail if tab == "docs" else tail.rsplit("/", 1)[-1]
         named = entity_label(tab, key) if entity_label is not None else None
-        return named or key
-    label = _TAB_LABELS.get(tab, tab.replace("-", " ").capitalize())
-    return f"{label} (filtered)" if query else label
+        return named or key, False
+    return _TAB_LABELS.get(tab, tab.replace("-", " ").capitalize()), bool(query)
 
 
 def _source(request: Request, slug: str) -> str | None:
@@ -171,13 +178,18 @@ def back_nav(
     """
     default = f"/p/{slug}/{tab}"
     source = _source(request, slug)
+    filtered = False
     if source is None:
         back = NavLink(default, _TAB_LABELS.get(tab, tab))
     else:
         parts = urlsplit(source)
-        back = NavLink(source, _label(slug, unquote(parts.path), parts.query, entity_label))
+        text, filtered = _label(slug, unquote(parts.path), parts.query, entity_label)
+        back = NavLink(source, text)
     has_context = back.href != default
     prev = nxt = None
+    position = None
+    if current is not None and current in order:
+        position = list(order).index(current) + 1
     if order and current is not None and href is not None:
         to_key = href
 
@@ -188,4 +200,12 @@ def back_nav(
             return f"{target}?{urlencode({FROM_PARAM: back.href})}" if has_context else target
 
         prev, nxt = neighbors(order, current, step, label)
-    return BackNav(back=back, has_context=has_context, prev=prev, next=nxt)
+    return BackNav(
+        back=back,
+        has_context=has_context,
+        filtered=filtered,
+        prev=prev,
+        next=nxt,
+        position=position,
+        total=len(order),
+    )

@@ -485,7 +485,8 @@ def test_adr_show_back_bar_with_neighbours(adr_client) -> None:
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr/ADR-001")
     assert 'class="back-bar"' in r.text
-    assert f'href="/p/{entry.name}/adr" data-back>← ADRs</a>' in r.text
+    assert f'href="/p/{entry.name}/adr" data-back' in r.text
+    assert 'class="back-bar-label">ADRs</span>' in r.text
     assert f'href="/p/{entry.name}/adr/ADR-002" rel="next"' in r.text
     assert "adr-back" not in r.text
 

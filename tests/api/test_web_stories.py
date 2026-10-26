@@ -494,6 +494,8 @@ def test_story_back_bar_neighbours(stories_client) -> None:
     engine.dispose()
 
     page = client.get(f"/p/{entry.name}/stories/US-002").text
-    assert 'href="/p/demo/stories" data-back>← Stories</a>' in page
+    assert 'href="/p/demo/stories" data-back' in page
+    assert 'class="back-bar-label">Stories</span>' in page
+    assert 'class="back-bar-pos" title="2 of 3"' in page
     assert 'href="/p/demo/stories/US-001" rel="prev"' in page
     assert 'href="/p/demo/stories/US-010" rel="next"' in page

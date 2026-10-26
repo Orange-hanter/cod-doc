@@ -784,4 +784,4 @@ def test_doc_show_back_bar_returns_to_referring_task(docs_client) -> None:
         headers={"Referer": f"http://testserver/p/{entry.name}/tasks/X-1"},
     ).text
     assert f'href="/p/{entry.name}/tasks/X-1" data-back' in page
-    assert "← X-1</a>" in page
+    assert 'class="back-bar-label">X-1</span>' in page

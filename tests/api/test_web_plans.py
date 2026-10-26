@@ -387,7 +387,8 @@ def test_plan_show_has_back_bar(plans_client) -> None:
     """ADO-149: полоса «назад» и на странице плана."""
     client, entry, plan_id = plans_client
     page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
-    assert 'href="/p/demo/plans" data-back>← Plans</a>' in page
+    assert 'href="/p/demo/plans" data-back' in page
+    assert 'class="back-bar-label">Plans</span>' in page
 
 
 def test_plan_neighbours_link_by_row_id_and_show_scope(plans_client) -> None:
@@ -407,6 +408,5 @@ def test_plan_neighbours_link_by_row_id_and_show_scope(plans_client) -> None:
     finally:
         engine.dispose()
     page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
-    assert (
-        f'href="/p/demo/plans/{other_id}" rel="next" title="Next: zz-later">zz-later ›</a>' in page
-    )
+    assert f'href="/p/demo/plans/{other_id}" rel="next" title="Next: zz-later"' in page
+    assert '<span class="back-bar-key">zz-later</span>' in page

@@ -46,7 +46,7 @@ def test_referer_list_with_filters_is_kept() -> None:
         tab="tasks",
     )
     assert nav.back.href == "/p/demo/tasks?status=todo&plan=web-ui"
-    assert nav.back.label == "Tasks (filtered)"
+    assert (nav.back.label, nav.filtered) == ("Tasks", True)
     assert nav.has_context
 
 
@@ -185,3 +185,16 @@ def test_self_referer_with_literal_percent_in_key_is_ignored() -> None:
         tab="docs",
     )
     assert nav.back.href == "/p/demo/docs"
+
+
+def test_position_among_neighbours() -> None:
+    nav = back_nav(
+        _request(), "demo", tab="tasks", order=["T-1", "T-2", "T-3"], current="T-2", href=_href
+    )
+    assert (nav.position, nav.total) == (2, 3)
+    assert back_nav(_request(), "demo", tab="tasks", order=["T-1"], current="T-9").position is None
+    # Родитель — сущность, а не список: метки «filtered» нет даже с query.
+    entity = back_nav(
+        _request(referer="http://testserver/p/demo/stories/US-004?x=1"), "demo", tab="tasks"
+    )
+    assert entity.filtered is False

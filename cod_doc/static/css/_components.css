@@ -3425,23 +3425,123 @@ details > summary { cursor: pointer; }
   font-size: calc(13px * var(--text-scale, 1));
 }
 
-/* ADO-149: полоса страницы сущности — ← к родителю слева, ‹ prev / next ›
-   справа; липнет под топбаром, как .adr-back до неё. */
+/* ADO-149: полоса страницы сущности — ← к родителю слева, ‹ prev · N / M ·
+   next › справа; липнет под топбаром, как .adr-back до неё. Обе части —
+   пилюли на фоне карточки: на подложке страницы они читаются кнопками, а не
+   голым текстом. Фон самой полосы — фон страницы, чтобы контент под ней не
+   просвечивал при прокрутке. */
 .back-bar {
   position: sticky;
   top: var(--topbar-h);
   z-index: 2;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   box-sizing: border-box;
   min-height: var(--backbar-h);
   margin: 0 0 var(--space-3);
-  padding: var(--space-1) 0;
+  padding: 5px 0;
   background: var(--bg-inset);
-  border-bottom: 1px solid var(--border-soft);
-  font-size: calc(13px * var(--text-scale, 1));
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: 1;
+}
+.back-bar-back,
+.back-bar-steps {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+.back-bar-back {
+  gap: 6px;
+  min-width: 0;
+  padding: 0 12px 0 8px;
+  color: var(--fg);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+}
+.back-bar-back:hover {
+  background: var(--bg-alt);
+  border-color: var(--border-strong);
+  color: var(--accent);
+  text-decoration: none;
+}
+.back-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.back-bar-tag {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-fg);
+  font-size: calc(10px * var(--text-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.back-bar-icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--motion-fast);
+}
+.back-bar-back:hover .back-bar-icon,
+.back-bar-step[rel="prev"]:hover .back-bar-icon { transform: translateX(-2px); }
+.back-bar-step[rel="next"]:hover .back-bar-icon { transform: translateX(2px); }
+
+/* Соседи — одна сегментированная пилюля: ‹ ключ │ 3 / 12 │ ключ ›. */
+.back-bar-steps { flex: none; overflow: hidden; }
+.back-bar-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 10px;
+  color: var(--fg);
+  text-decoration: none;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+a.back-bar-step:hover { background: var(--bg-alt); color: var(--accent); text-decoration: none; }
+.back-bar-step.is-off { color: var(--muted); opacity: 0.45; cursor: default; }
+.back-bar-key {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.back-bar-pos {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 10px;
+  border-inline: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.back-bar-sep { margin: 0 3px; opacity: 0.6; }
+.back-bar-back:focus-visible,
+.back-bar-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.back-bar-back:focus-visible { outline-offset: 1px; }
+@media (max-width: 640px) {
+  /* Узко: ключи соседей и метка фильтра уступают место подписи родителя. */
+  .back-bar-key, .back-bar-tag { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .back-bar-icon { transition: none; }
+  .back-bar-back:hover .back-bar-icon,
+  .back-bar-step:hover .back-bar-icon { transform: none; }
 }
 /* Липкие колонки страницы встают под полосу, а не уходят под неё. Шторка
    (вне main) держит свои: там полосы нет. */

@@ -1041,6 +1041,7 @@ def test_task_back_bar_returns_to_filtered_list(task_detail_client) -> None:
     ).text
     assert 'class="back-bar"' in page
     assert 'href="/p/demo/tasks?status=todo" data-back' in page
+    assert '<span class="back-bar-tag">filtered</span>' in page
     # Соседи — задачи плана; шаг несёт родителя с собой.
     assert (
         'href="/p/demo/tasks/DET-001?from=%2Fp%2Fdemo%2Ftasks%3Fstatus%3Dtodo" rel="prev"' in page
@@ -1053,7 +1054,11 @@ def test_task_back_bar_returns_to_filtered_list(task_detail_client) -> None:
 def test_task_back_bar_defaults_to_tasks_and_skips_peek(task_detail_client) -> None:
     client, _entry = task_detail_client
     page = client.get("/p/demo/tasks/DET-001").text
-    assert 'href="/p/demo/tasks" data-back>← Tasks</a>' in page
+    assert 'href="/p/demo/tasks" data-back' in page
+    assert 'class="back-bar-label">Tasks</span>' in page
+    # Первая задача плана: «назад» по соседям выключен, место — 1 из 3.
+    assert 'aria-disabled="true" title="First"' in page
+    assert 'title="1 of 3"' in page
     assert 'rel="prev"' not in page  # первая задача плана
     assert 'href="/p/demo/tasks/DET-002" rel="next"' in page
     sheet = client.get("/p/demo/tasks/DET-001?peek=1", headers={"HX-Request": "true"}).text
@@ -1080,4 +1085,4 @@ def test_task_back_to_plan_page_is_labelled_with_scope(task_detail_client) -> No
         headers={"Referer": f"http://testserver/p/demo/plans/{plan_id}"},
     ).text
     assert f'href="/p/demo/plans/{plan_id}" data-back' in page
-    assert ">← payments</a>" in page
+    assert 'class="back-bar-label">payments</span>' in page
