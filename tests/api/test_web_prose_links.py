@@ -110,3 +110,24 @@ def test_on_disk_checks_files_under_root_only(tmp_path: Path) -> None:
     found = _on_disk(root, {"README.md", "./src/a.py", "src", "../secret.md", "nope.md"})
     assert found == {"README.md", "./src/a.py"}
     assert _on_disk(None, {"README.md"}) == set()
+
+
+def test_url_keeps_balanced_closing_paren() -> None:
+    html = _links().apply("<p>(см. https://en.wikipedia.org/wiki/Foo_(bar)).</p>")
+    assert 'href="https://en.wikipedia.org/wiki/Foo_(bar)"' in html
+    assert "</a>)." in html
+
+
+def test_entity_of_unlinked_kind_stays_text() -> None:
+    # Вид без страницы в `_ENTITY_PATHS` — текст, а не KeyError и 500.
+    links = _links(entities={"DOC-001": EntityKind.DOCUMENT})
+    assert links.apply("<p>DOC-001</p>") == "<p>DOC-001</p>"
+
+
+def test_on_disk_checks_a_bounded_number_of_paths(tmp_path: Path) -> None:
+    from cod_doc.api.web import prose_links
+
+    for i in range(prose_links._DISK_CHECK_LIMIT + 5):
+        (tmp_path / f"f{i:03}.md").write_text("x", encoding="utf-8")
+    paths = {f"f{i:03}.md" for i in range(prose_links._DISK_CHECK_LIMIT + 5)}
+    assert len(_on_disk(tmp_path, paths)) == prose_links._DISK_CHECK_LIMIT

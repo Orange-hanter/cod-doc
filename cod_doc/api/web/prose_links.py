@@ -55,6 +55,8 @@ _PATH_ONLY = re.compile(_PATH)
 _TAG = re.compile(r"(<[^>]*>)")
 _SKIP_OPEN = re.compile(r"^<(a|code|pre)\b", re.IGNORECASE)
 _SKIP_CLOSE = re.compile(r"^</(a|code|pre)\s*>", re.IGNORECASE)
+# Потолок файловых проверок на одну карточку: stat идёт в обработчике запроса.
+_DISK_CHECK_LIMIT = 32
 # Хвостовая пунктуация предложения к адресу не относится.
 _URL_TRAIL = ".,;:!?)"
 
@@ -78,15 +80,20 @@ def collect(texts: Iterable[str | None]) -> tuple[set[str], set[str]]:
 
 
 def _on_disk(root: Path | None, paths: set[str]) -> set[str]:
-    """Пути, которые есть файлами под корнем проекта (без выхода за корень)."""
-    if root is None:
+    """Пути, которые есть файлами под корнем проекта (без выхода за корень).
+
+    Зовётся на каждом рендере карточки и только для путей, которых нет в
+    индексе репозитория; больше `_DISK_CHECK_LIMIT` штук не проверяется —
+    остальные остаются текстом.
+    """
+    if root is None or not paths:
         return set()
     try:
         base = root.resolve()
     except OSError:
         return set()
     found = set()
-    for rel in paths:
+    for rel in sorted(paths)[:_DISK_CHECK_LIMIT]:
         try:
             target = (base / rel.removeprefix("./")).resolve()
             if target.is_relative_to(base) and target.is_file():
@@ -153,6 +160,9 @@ class ProseLinks:
 
     def _url(self, raw: str) -> str:
         url = raw.rstrip(_URL_TRAIL)
+        # `)` — часть адреса, пока в нём есть парная `(`: `wiki/Foo_(bar)`.
+        while url.count("(") > url.count(")") and raw[len(url) :].startswith(")"):
+            url += ")"
         tail = raw[len(url) :]
         return f'<a href="{url}" target="_blank" rel="noopener">{url}</a>{tail}'
 
@@ -166,9 +176,10 @@ class ProseLinks:
 
     def _entity(self, key: str) -> str:
         kind = self.entities.get(key)
-        if kind is None:
+        section = _ENTITY_PATHS.get(kind) if kind is not None else None
+        if kind is None or section is None:
             return key
-        href = f"/p/{self.slug}/{_ENTITY_PATHS[kind]}/{key}"
+        href = f"/p/{self.slug}/{section}/{key}"
         # Задача открывается шторкой (WUI-001); история и ADR — страницей.
         peek = " data-peek" if kind is EntityKind.TASK else ""
         return f'<a class="ref-link ref-{kind.value}" href="{href}"{peek}>{key}</a>'
