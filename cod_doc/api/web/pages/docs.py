@@ -1360,11 +1360,7 @@ def doc_show(
                 request,
                 proj.entry.name,
                 tab="docs",
-                order=[
-                    d.doc_key
-                    for d in docs.list_for_project(session, project_db_id)
-                    if d.node_id == doc.node_id
-                ],
+                order=doc_tree.doc_keys_in_node(session, project_db_id, doc.node_id),
                 current=doc.doc_key,
                 href=lambda key: f"/p/{proj.entry.name}/docs/{key}",
                 entity_label=entity_labels(session, project_db_id),

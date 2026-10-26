@@ -91,6 +91,21 @@ def list_nodes(session: Session, project_id: int) -> list[DocNode]:
     return DocNodeRepository(session).list_for_project(project_id)
 
 
+def doc_keys_in_node(session: Session, project_id: int, node_id: int | None) -> list[str]:
+    """Ключи документов раздела по алфавиту; `node_id=None` — Инбокс.
+
+    Соседи документа на его странице (ADO-149): только ключи одного раздела,
+    а не весь корпус проекта.
+    """
+    where = DocumentModel.node_id.is_(None) if node_id is None else DocumentModel.node_id == node_id
+    stmt = (
+        select(DocumentModel.doc_key)
+        .where(DocumentModel.project_id == project_id, where)
+        .order_by(DocumentModel.doc_key)
+    )
+    return list(session.execute(stmt).scalars())
+
+
 def get_node(session: Session, project_id: int, node_key: str) -> DocNode | None:
     return DocNodeRepository(session).get_by_key(project_id, node_key)
 
