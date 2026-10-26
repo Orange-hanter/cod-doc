@@ -56,6 +56,8 @@ _PATH_ONLY = re.compile(_PATH)
 _TAG = re.compile(r"(<[^>]*>)")
 _SKIP_OPEN = re.compile(r"^<(a|code|pre)\b", re.IGNORECASE)
 _SKIP_CLOSE = re.compile(r"^</(a|code|pre)\s*>", re.IGNORECASE)
+# Потолок кандидатов каждого вида на одну карточку (ключи, пути).
+_CANDIDATE_LIMIT = 200
 # Потолок файловых проверок на одну карточку: stat идёт в обработчике запроса.
 _DISK_CHECK_LIMIT = 32
 # Кэш ответов диска: (корень, путь) → (момент проверки, есть ли файл).
@@ -98,7 +100,11 @@ def _is_file(base: Path, rel: str) -> bool:
     except OSError:
         exists = False
     if len(_disk_cache) >= _DISK_CACHE_MAX:
-        _disk_cache.clear()
+        # Сначала протухшее; сброс целиком — только если кэш полон свежим.
+        for stale in [k for k, (at, _) in _disk_cache.items() if now - at >= _DISK_TTL_S]:
+            del _disk_cache[stale]
+        if len(_disk_cache) >= _DISK_CACHE_MAX:
+            _disk_cache.clear()
     _disk_cache[key] = (now, exists)
     return exists
 
@@ -143,6 +149,10 @@ class ProseLinks:
     ) -> ProseLinks:
         """Проверить кандидатов из `texts`: один запрос на вид сущности."""
         ids, paths = collect(texts)
+        # Проза — произвольный текст: потолок кандидатов держит размер IN (...)
+        # в запросах ниже, лишнее остаётся текстом.
+        ids = set(sorted(ids)[:_CANDIDATE_LIMIT])
+        paths = set(sorted(paths)[:_CANDIDATE_LIMIT])
         entities = entity_ref_service.existing_public_ids(session, project_id, ids)
         known = repo_index_service.indexed_paths(session, project_id, paths) if paths else set()
         known |= _on_disk(root, paths - known)

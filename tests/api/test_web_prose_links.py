@@ -146,3 +146,38 @@ def test_on_disk_answer_is_cached_for_a_short_while(tmp_path: Path, monkeypatch)
     assert _on_disk(tmp_path, {"late.md"}) == set()
     clock[0] += prose_links._DISK_TTL_S
     assert _on_disk(tmp_path, {"late.md"}) == {"late.md"}
+
+
+def test_full_disk_cache_drops_stale_entries_first(tmp_path: Path, monkeypatch) -> None:
+    from cod_doc.api.web import prose_links
+
+    clock = [0.0]
+    monkeypatch.setattr(prose_links, "_now", lambda: clock[0])
+    monkeypatch.setattr(prose_links, "_DISK_CACHE_MAX", 2)
+    monkeypatch.setattr(prose_links, "_disk_cache", {})
+    prose_links._is_file(tmp_path, "old.md")
+    clock[0] += prose_links._DISK_TTL_S
+    prose_links._is_file(tmp_path, "fresh.md")
+    prose_links._is_file(tmp_path, "new.md")
+    # Вытеснена протухшая запись, свежая осталась.
+    assert set(prose_links._disk_cache) == {(str(tmp_path), "fresh.md"), (str(tmp_path), "new.md")}
+
+
+def test_candidates_are_capped_before_queries(monkeypatch) -> None:
+    from cod_doc.api.web import prose_links
+
+    seen: dict[str, int] = {}
+
+    def fake_ids(_session, _project_id, ids):  # type: ignore[no-untyped-def]
+        seen["ids"] = len(set(ids))
+        return {}
+
+    def fake_paths(_session, _project_id, paths):  # type: ignore[no-untyped-def]
+        seen["paths"] = len(paths)
+        return set()
+
+    monkeypatch.setattr(prose_links.entity_ref_service, "existing_public_ids", fake_ids)
+    monkeypatch.setattr(prose_links.repo_index_service, "indexed_paths", fake_paths)
+    many = " ".join(f"ADO-{i} src/f{i}.py" for i in range(prose_links._CANDIDATE_LIMIT + 50))
+    ProseLinks.build(None, 1, slug="demo", repo_url=REPO, root=None, texts=[many])  # type: ignore[arg-type]
+    assert seen == {"ids": prose_links._CANDIDATE_LIMIT, "paths": prose_links._CANDIDATE_LIMIT}
