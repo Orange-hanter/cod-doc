@@ -47,6 +47,9 @@ _VIEW_DETAIL = "detail"
 _SHA_RE = re.compile(r"^[0-9a-f]{7,64}$")
 
 
+_PR_RE = re.compile(r"[0-9]{1,9}")
+
+
 def _closing_refs(commit_sha: str, pr: str) -> tuple[str | None, int | None]:
     """sha и номер PR из формы «Mark done»; мусор — 400 с текстом, а не тихий пропуск."""
     sha = commit_sha.strip().lower() or None
@@ -56,7 +59,9 @@ def _closing_refs(commit_sha: str, pr: str) -> tuple[str | None, int | None]:
     raw_pr = pr.strip().lstrip("#").strip()
     if not raw_pr:
         return sha, None
-    if not raw_pr.isdigit() or int(raw_pr) <= 0:
+    # Только ASCII-цифры: `isdigit()` пропускает «²», на котором `int()`
+    # падает 500-й вместо внятного 400.
+    if not _PR_RE.fullmatch(raw_pr) or int(raw_pr) <= 0:
         raise ValidationWebError(f"Номер PR — положительное число: {pr.strip()!r}")
     return sha, int(raw_pr)
 

@@ -44,7 +44,19 @@ def test_normalize_repo_url(raw: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "bad", ["github.com/o/r", "ftp://host/o/r", "https://github.com", "not a url"]
+    "bad",
+    [
+        "github.com/o/r",
+        "ftp://host/o/r",
+        "https://github.com",
+        "not a url",
+        # Адрес идёт в href карточки: только http(s) и алфавит имён репозиториев.
+        "javascript:alert(1)//x/y",
+        'https://github.com/o/r)"x',
+        "https://github.com/o/<r>",
+        # У scp-формы `#` — часть пути: отказ, а не молча потерянный хвост.
+        "git@github.com:o/r#x",
+    ],
 )
 def test_normalize_repo_url_rejects(bad: str) -> None:
     with pytest.raises(ValueError, match="не веб-адрес"):

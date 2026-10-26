@@ -62,6 +62,7 @@ def _raw_config() -> dict[str, Any] | None:
 
 
 _SCP_GIT_URL = re.compile(r"^git@(?P<host>[^:/]+):(?P<path>.+)$")
+_REPO_WEB_URL = re.compile(r"^https?://[A-Za-z0-9.-]+(?::[0-9]+)?/[\w.~-]+(?:/[\w.~-]+)*$")
 
 
 def normalize_repo_url(url: str) -> str:
@@ -75,14 +76,20 @@ def normalize_repo_url(url: str) -> str:
     scp = _SCP_GIT_URL.match(value)
     if scp:
         value = f"https://{scp['host']}/{scp['path']}"
-    # Query и фрагмент (`?tab=readme`, `#readme`) к адресу репозитория не
-    # относятся: склеенный с ними `/commit/<sha>` ушёл бы в строку запроса.
-    value = re.split(r"[?#]", value, maxsplit=1)[0].rstrip("/")
+    else:
+        # Query и фрагмент веб-адреса (`?tab=readme`, `#readme`) к репозиторию
+        # не относятся: склеенный с ними `/commit/<sha>` ушёл бы в строку
+        # запроса. У scp-формы git `#`/`?` — часть пути, её не режем: такой
+        # путь просто не пройдёт проверку ниже, а не потеряет хвост молча.
+        value = re.split(r"[?#]", value, maxsplit=1)[0]
+    value = value.rstrip("/")
     head, _, last = value.rpartition("/")
     # `.git` — суффикс клона, но не всё имя: `o/.git` остаётся как есть.
     if last.endswith(".git") and last != ".git":
         value = f"{head}/{last.removesuffix('.git')}"
-    if not re.match(r"^https?://[^/\s?#]+/[^\s?#]+$", value):
+    # Путь — из алфавита имён репозиториев и групп: адрес попадает в href
+    # карточки, и `"`, `<`, `)` в нём делать нечего.
+    if not _REPO_WEB_URL.match(value):
         raise ValueError(f"не веб-адрес репозитория: {url!r} (ожидается https://host/owner/repo)")
     return value
 

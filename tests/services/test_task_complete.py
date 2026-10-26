@@ -310,6 +310,8 @@ def test_complete_without_pr_keeps_diff_shape(engine_with_schema) -> None:  # ty
             rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)[-1].diff
         )
         assert "pr" not in diff
+        # Форма diff до ADO-148 целиком: итог живёт в reason, а не в diff.
+        assert set(diff) == {"op", "old_status", "commit_sha"}
         record = tasks.completion_record(session, project_id=p, task_row_id=task.row_id)  # type: ignore[arg-type]
         assert record is not None
         assert record.pr is None
@@ -333,7 +335,7 @@ def test_completion_record_takes_latest_close(engine_with_schema) -> None:  # ty
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
         tasks.complete(
-            session, project_id=p, task_id=task.task_id, author="human:dakh", reason="первый", pr=1
+            session, project_id=p, task_id=task.task_id, author="human:dakh", reason="первый", pr=7
         )
         tasks.update_status(
             session,
@@ -348,6 +350,7 @@ def test_completion_record_takes_latest_close(engine_with_schema) -> None:  # ty
         )
         record = tasks.completion_record(session, project_id=p, task_row_id=task.row_id)  # type: ignore[arg-type]
         assert record is not None
+        # Второе закрытие с меньшим номером PR: выбор по max(pr) дал бы «первый».
         assert (record.summary, record.pr) == ("второй", 2)
 
 
@@ -386,5 +389,10 @@ def test_agent_complete_bad_pr_is_ok_false(engine_with_schema) -> None:  # type:
         out = agent_service.complete(
             session, project_id=p, task_id=task.task_id, agent_id="agent:x", pr=-1
         )
+        # Отказ — до любой записи: checkout-нога todo→in_progress не сделана.
+        status = session.execute(
+            select(TaskModel.status).where(TaskModel.task_id == task.task_id)
+        ).scalar_one()
     assert out["ok"] is False
     assert out["code"] == "invalid"
+    assert status == "todo"

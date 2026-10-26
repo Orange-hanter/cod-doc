@@ -1020,3 +1020,11 @@ def test_gitlab_links() -> None:
     assert commit_url(base, "4b770e4") == f"{base}/-/commit/4b770e4"
     assert pr_url(base, 9) == f"{base}/-/merge_requests/9"
     assert file_url(base, "4b770e4", "a.py") == f"{base}/-/blob/4b770e4/a.py"
+
+
+def test_pr_number_unicode_digit_is_400_not_500(task_detail_client) -> None:
+    """`"²".isdigit()` истинно, а `int("²")` падает: нужен внятный 400."""
+    client, _entry = task_detail_client
+    r = _close_via_web(client, pr="²")
+    assert r.status_code == 400
+    assert "PR" in r.text
