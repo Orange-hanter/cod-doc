@@ -131,3 +131,18 @@ def test_on_disk_checks_a_bounded_number_of_paths(tmp_path: Path) -> None:
         (tmp_path / f"f{i:03}.md").write_text("x", encoding="utf-8")
     paths = {f"f{i:03}.md" for i in range(prose_links._DISK_CHECK_LIMIT + 5)}
     assert len(_on_disk(tmp_path, paths)) == prose_links._DISK_CHECK_LIMIT
+
+
+def test_on_disk_answer_is_cached_for_a_short_while(tmp_path: Path, monkeypatch) -> None:
+    from cod_doc.api.web import prose_links
+
+    clock = [1000.0]
+    monkeypatch.setattr(prose_links, "_now", lambda: clock[0])
+    monkeypatch.setattr(prose_links, "_disk_cache", {})
+    target = tmp_path / "late.md"
+    assert _on_disk(tmp_path, {"late.md"}) == set()
+    target.write_text("x", encoding="utf-8")
+    # В пределах TTL — прежний ответ, диск не трогается.
+    assert _on_disk(tmp_path, {"late.md"}) == set()
+    clock[0] += prose_links._DISK_TTL_S
+    assert _on_disk(tmp_path, {"late.md"}) == {"late.md"}

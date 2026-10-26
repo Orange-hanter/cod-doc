@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,11 @@ _SKIP_OPEN = re.compile(r"^<(a|code|pre)\b", re.IGNORECASE)
 _SKIP_CLOSE = re.compile(r"^</(a|code|pre)\s*>", re.IGNORECASE)
 # Потолок файловых проверок на одну карточку: stat идёт в обработчике запроса.
 _DISK_CHECK_LIMIT = 32
+# Кэш ответов диска: (корень, путь) → (момент проверки, есть ли файл).
+_DISK_TTL_S = 30.0
+_DISK_CACHE_MAX = 4096
+_disk_cache: dict[tuple[str, str], tuple[float, bool]] = {}
+_now = time.monotonic
 # Хвостовая пунктуация предложения к адресу не относится.
 _URL_TRAIL = ".,;:!?)"
 
@@ -79,12 +85,32 @@ def collect(texts: Iterable[str | None]) -> tuple[set[str], set[str]]:
     return ids, paths
 
 
+def _is_file(base: Path, rel: str) -> bool:
+    """Файл ли `rel` под `base`, без выхода за корень; ответ живёт `_DISK_TTL_S`."""
+    key = (str(base), rel)
+    now = _now()
+    hit = _disk_cache.get(key)
+    if hit is not None and now - hit[0] < _DISK_TTL_S:
+        return hit[1]
+    try:
+        target = (base / rel.removeprefix("./")).resolve()
+        exists = target.is_relative_to(base) and target.is_file()
+    except OSError:
+        exists = False
+    if len(_disk_cache) >= _DISK_CACHE_MAX:
+        _disk_cache.clear()
+    _disk_cache[key] = (now, exists)
+    return exists
+
+
 def _on_disk(root: Path | None, paths: set[str]) -> set[str]:
     """Пути, которые есть файлами под корнем проекта (без выхода за корень).
 
     Зовётся на каждом рендере карточки и только для путей, которых нет в
     индексе репозитория; больше `_DISK_CHECK_LIMIT` штук не проверяется —
-    остальные остаются текстом.
+    остальные остаются текстом. Ответ по пути кэшируется на `_DISK_TTL_S`:
+    повторный рендер той же карточки (htmx-фрагмент поля, перезагрузка) не
+    ходит на диск, а новый файл подхватывается через полминуты.
     """
     if root is None or not paths:
         return set()
@@ -92,15 +118,7 @@ def _on_disk(root: Path | None, paths: set[str]) -> set[str]:
         base = root.resolve()
     except OSError:
         return set()
-    found = set()
-    for rel in sorted(paths)[:_DISK_CHECK_LIMIT]:
-        try:
-            target = (base / rel.removeprefix("./")).resolve()
-            if target.is_relative_to(base) and target.is_file():
-                found.add(rel)
-        except OSError:
-            continue
-    return found
+    return {rel for rel in sorted(paths)[:_DISK_CHECK_LIMIT] if _is_file(base, rel)}
 
 
 @dataclass(frozen=True)

@@ -509,3 +509,48 @@ def test_story_criteria_link_existing_targets_only(stories_client) -> None:
     assert "invented.ts</a>" not in body
     assert 'href="/p/demo/stories/US-001">US-001</a>' in body
     assert "/stories/US-404" not in body
+
+
+def test_key_shared_by_task_and_story_stays_text(stories_client) -> None:
+    """ADO-142: ключ есть и у задачи, и у истории — какую имели в виду, не понять."""
+    from sqlalchemy import select
+
+    from cod_doc.domain.entities import TaskType
+    from cod_doc.infra.models import PlanSectionModel
+    from cod_doc.services import task_service
+
+    client, entry, project_db_id, plan_id = stories_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            section_id = session.execute(
+                select(PlanSectionModel.row_id).where(PlanSectionModel.plan_id == plan_id)
+            ).scalar_one()
+            task = task_service.create(
+                session,
+                project_id=project_db_id,
+                plan_id=plan_id,
+                section_id=section_id,
+                title="Same key as the story",
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="human:test",
+                id_prefix="US",
+            )
+            assert task.task_id == "US-001"
+            story_service.create(
+                session,
+                project_id=project_db_id,
+                story_id="US-001",
+                persona="dev",
+                narrative="collision",
+                priority=Priority.LOW,
+                author="human:test",
+                acceptance=["см. US-001"],
+            )
+    finally:
+        engine.dispose()
+
+    body = client.get(f"/p/{entry.name}/stories/US-001").text
+    assert "см. US-001" in body
+    assert ">US-001</a>" not in body
