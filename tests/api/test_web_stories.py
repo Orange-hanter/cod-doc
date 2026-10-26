@@ -499,3 +499,85 @@ def test_story_back_bar_neighbours(stories_client) -> None:
     assert 'class="back-bar-pos" title="2 of 3"' in page
     assert 'href="/p/demo/stories/US-001" rel="prev"' in page
     assert 'href="/p/demo/stories/US-010" rel="next"' in page
+
+
+# ── ADO-142: живые ссылки в критериях приёмки ─────────────────────────
+
+
+def test_story_criteria_link_existing_targets_only(stories_client) -> None:
+    client, entry, project_db_id, _ = stories_client
+    Config.load().set_project_repo_url("demo", "https://github.com/o/r")
+    (entry.root / "README.md").write_text("# demo\n", encoding="utf-8")
+
+    db_path = entry.cod_doc_dir / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        story_service.create(
+            session,
+            project_id=project_db_id,
+            story_id="US-001",
+            persona="developer",
+            narrative="I want links",
+            priority=Priority.HIGH,
+            author="human:test",
+            acceptance=[
+                "Смёржено в #1, описано в README.md",
+                "Правка в server/invented.ts, см. US-001 и US-404",
+            ],
+        )
+    engine.dispose()
+
+    body = client.get(f"/p/{entry.name}/stories/US-001").text
+    assert 'href="https://github.com/o/r/issues/1"' in body
+    assert 'href="https://github.com/o/r/blob/HEAD/README.md"' in body
+    # Несуществующие файл и история — текст, а не битая ссылка.
+    assert "server/invented.ts" in body
+    assert "invented.ts</a>" not in body
+    assert 'href="/p/demo/stories/US-001">US-001</a>' in body
+    assert "/stories/US-404" not in body
+
+
+def test_key_shared_by_task_and_story_stays_text(stories_client) -> None:
+    """ADO-142: ключ есть и у задачи, и у истории — какую имели в виду, не понять."""
+    from sqlalchemy import select
+
+    from cod_doc.domain.entities import TaskType
+    from cod_doc.infra.models import PlanSectionModel
+    from cod_doc.services import task_service
+
+    client, entry, project_db_id, plan_id = stories_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            section_id = session.execute(
+                select(PlanSectionModel.row_id).where(PlanSectionModel.plan_id == plan_id)
+            ).scalar_one()
+            task = task_service.create(
+                session,
+                project_id=project_db_id,
+                plan_id=plan_id,
+                section_id=section_id,
+                title="Same key as the story",
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="human:test",
+                id_prefix="US",
+            )
+            assert task.task_id == "US-001"
+            story_service.create(
+                session,
+                project_id=project_db_id,
+                story_id="US-001",
+                persona="dev",
+                narrative="collision",
+                priority=Priority.LOW,
+                author="human:test",
+                acceptance=["см. US-001"],
+            )
+    finally:
+        engine.dispose()
+
+    body = client.get(f"/p/{entry.name}/stories/US-001").text
+    assert "см. US-001" in body
+    assert ">US-001</a>" not in body

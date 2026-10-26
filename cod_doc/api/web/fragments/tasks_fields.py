@@ -18,8 +18,10 @@ from cod_doc.api.web.errors import (
     ValidationWebError,
 )
 from cod_doc.api.web.markdown import render_markdown
-from cod_doc.api.web.task_detail import task_changed_header
+from cod_doc.api.web.task_detail import prose_links, task_changed_header
 from cod_doc.api.web.templates_env import templates
+from cod_doc.config import Config
+from cod_doc.core.project import Project
 from cod_doc.services import ai_text, trace_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.ai_text import AIBackendError
@@ -39,18 +41,34 @@ _TASK_FIELDS: dict[str, tuple[str, str, Callable[..., Any]]] = {
 
 
 def _render_task_field_view(
-    request: Request, *, project_name: str, task: Any, field: str
+    request: Request,
+    *,
+    project: Project,
+    session: Session,
+    project_db_id: int,
+    task: Any,
+    field: str,
 ) -> HTMLResponse:
     attr, label, _svc = _TASK_FIELDS[field]
     raw = getattr(task, attr) or ""
+    # ADO-142: та же проза, что на карточке, — со ссылками; иначе после
+    # сохранения поля они пропадали бы до перезагрузки страницы.
+    prose = prose_links(
+        session,
+        project_db_id,
+        slug=project.entry.name,
+        repo_url=Config.project_repo_url(project.entry.name),
+        root=project.entry.root,
+        texts=(raw,),
+    )
     html = templates.get_template("_frag/task_field_view.html").render(
         request=request,
-        project={"name": project_name},
+        project={"name": project.entry.name},
         task={"task_id": task.task_id},
         field=field,
         label=label,
         raw=raw,
-        html=render_markdown(raw),
+        html=prose(render_markdown(raw)),
     )
     return HTMLResponse(html)
 
@@ -125,7 +143,14 @@ def task_field_view_fragment(
     task = tasks.get(session, task_id, project_id=project_db_id)
     if task is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
-    return _render_task_field_view(request, project_name=proj.entry.name, task=task, field=field)
+    return _render_task_field_view(
+        request,
+        project=proj,
+        session=session,
+        project_db_id=project_db_id,
+        task=task,
+        field=field,
+    )
 
 
 @router.post(
@@ -242,7 +267,12 @@ def task_field_patch(
 
     if _is_htmx(request):
         response = _render_task_field_view(
-            request, project_name=proj.entry.name, task=updated, field=field
+            request,
+            project=proj,
+            session=session,
+            project_db_id=project_db_id,
+            task=updated,
+            field=field,
         )
         response.headers.update(task_changed_header(task_id))
         return response

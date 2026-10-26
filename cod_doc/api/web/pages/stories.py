@@ -17,7 +17,10 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db
 from cod_doc.api.web.back_nav import back_nav, entity_labels, natural_key
+from cod_doc.api.web.markdown import render_inline
+from cod_doc.api.web.prose_links import ProseLinks
 from cod_doc.api.web.templates_env import templates
+from cod_doc.config import Config
 from cod_doc.domain.entities import (
     Priority,
     StoryLinkKind,
@@ -668,6 +671,16 @@ def story_show(
         (s.story_id for s in stories.list_for_project(session, project_db_id)),
         key=natural_key,
     )
+    # ADO-142: в критериях живые указатели (`#257`, пути к файлам, ключи
+    # задач) — ссылки, если цель существует; иначе текст.
+    prose = ProseLinks.build(
+        session,
+        project_db_id,
+        slug=proj.entry.name,
+        repo_url=Config.project_repo_url(proj.entry.name),
+        root=proj.entry.root,
+        texts=(a.criterion for a in acceptance),
+    )
     return templates.TemplateResponse(
         request,
         "project/story_show.html",
@@ -681,7 +694,13 @@ def story_show(
                 "priority": story.priority.value,
             },
             "acceptance": [
-                {"position": a.position, "criterion": a.criterion, "met": a.met} for a in acceptance
+                {
+                    "position": a.position,
+                    "criterion": a.criterion,
+                    "criterion_html": prose.apply(render_inline(a.criterion)),
+                    "met": a.met,
+                }
+                for a in acceptance
             ],
             "linked_tasks": [
                 {

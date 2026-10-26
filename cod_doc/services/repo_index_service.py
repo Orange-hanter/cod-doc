@@ -309,6 +309,29 @@ def list_files(
     return list(session.execute(stmt).scalars())
 
 
+# Размер одного IN (...) в indexed_paths.
+_IN_CHUNK = 500
+
+
+def indexed_paths(session: Session, project_id: int, paths: set[str]) -> set[str]:
+    """Какие из путей есть в индексе репозитория проекта (ADO-142).
+
+    Проза упоминает файлы (`server/dataQuality.ts`); ссылкой путь становится,
+    только если файл существует. На узле каталог проекта — снапшот без кода,
+    поэтому индекс (`scan_project`) — второй источник рядом с диском.
+    """
+    found: set[str] = set()
+    # Чанки держат число параметров запроса под лимитом SQLite при любом наборе.
+    ordered = sorted(paths)
+    for start in range(0, len(ordered), _IN_CHUNK):
+        chunk = ordered[start : start + _IN_CHUNK]
+        stmt = select(RepoFileModel.path).where(
+            RepoFileModel.project_id == project_id, RepoFileModel.path.in_(chunk)
+        )
+        found.update(session.execute(stmt).scalars())
+    return found
+
+
 def find_symbol(
     session: Session,
     project_id: int,
