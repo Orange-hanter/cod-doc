@@ -204,7 +204,8 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 
 > **Status (2026-05-02, post WEB-040):** правило восстановлено. `cod_doc/api/web/`
 > импортирует только `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.config`,
-> `cod_doc.core`, `cod_doc.domain.entities`, `cod_doc.logging_config`. AST-тест
+> `cod_doc.core`, `cod_doc.domain.entities`, `cod_doc.domain.roadmap` (RFC 36),
+> `cod_doc.logging_config`. AST-тест
 > [tests/api/test_web_layer_imports.py](../../../tests/api/test_web_layer_imports.py)
 > блокирует регрессию.
 

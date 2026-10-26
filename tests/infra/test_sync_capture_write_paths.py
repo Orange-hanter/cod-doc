@@ -810,6 +810,16 @@ def _(w: World) -> Expect:
     return [("plan", w.later(PlanModel, scope="p2"))]
 
 
+@case("plan_service.move_plan")
+def _(w: World) -> Expect:
+    plan_service.create_plan(w.session, project_id=w.pid, scope="p3", principle=None, author=AUTHOR)
+    w.commit()
+    plan_service.move_plan(
+        w.session, project_id=w.pid, plan_scope="w-plan", after="p3", author=AUTHOR
+    )
+    return [("plan", w.now(PlanModel, scope="w-plan"))]
+
+
 @case("plan_service.create_section")
 def _(w: World) -> Expect:
     plan_service.create_section(

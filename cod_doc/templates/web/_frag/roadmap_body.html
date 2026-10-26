@@ -32,7 +32,7 @@ asof, weeks, history, backlog. -#}
           {%- for r in payload.queue.rows %}
           <tr data-task="{{ r.task_id }}">
             <td class="num">{{ r.position }}</td>
-            <td><a href="/p/{{ project.name }}/tasks/{{ r.task_id }}" class="mono">{{ r.task_id }}</a> {{ r.title }}</td>
+            <td><a href="/p/{{ project.name }}/tasks/{{ r.task_id }}" class="mono" data-peek>{{ r.task_id }}</a> {{ r.title }}</td>
             <td class="mono">{{ r.plan_scope }}</td>
             <td class="mono">{{ r.section_letter }}</td>
             <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>

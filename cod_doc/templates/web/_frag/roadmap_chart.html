@@ -49,7 +49,7 @@ Variables:
       {%- for r in g.rows %}
       <div class="rm-row rm-task-row">
         <div class="rm-label">
-          <a href="{{ r.href }}" class="rm-task-link">{{ r.label }}</a>
+          <a href="{{ r.href }}" class="rm-task-link" data-peek>{{ r.label }}</a>
           {%- if r.marks %} <span class="rm-marks" title="{{ r.marks_title }}">{{ r.marks }}</span>{% endif %}
           <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
         </div>

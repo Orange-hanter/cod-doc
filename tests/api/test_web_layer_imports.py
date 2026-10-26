@@ -2,7 +2,7 @@
 
 Rule (capabilities/web-frontend.md §7): `cod_doc/api/web/*.py` may import
 from `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.config`, and
-`cod_doc.domain.entities` (enums + dataclasses), but NOT from
+`cod_doc.domain.entities` / `cod_doc.domain.roadmap` (enums + dataclasses), but NOT from
 `cod_doc.infra.*` or ORM models.
 
 This is enforced as a cheap structural test rather than a global ruff
@@ -24,6 +24,7 @@ ALLOWED_PREFIXES = (
     "cod_doc.config",
     "cod_doc.core",  # Project class is used by index page
     "cod_doc.domain.entities",
+    "cod_doc.domain.roadmap",  # RFC 36: frozen dataclasses дорожной карты, как entities
     "cod_doc.logging_config",
 )
 BANNED_PREFIXES = ("cod_doc.infra",)
