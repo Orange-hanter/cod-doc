@@ -167,7 +167,12 @@
   body.addEventListener('htmx:afterSettle', (ev) => {
     if (ev.detail.target === body) holdScroll('settle');
   });
-  document.addEventListener('mermaid:rendered', () => holdScroll('mermaid'));
+  // Только схемы самой шторки: перерисовка на странице под ней не должна
+  // возвращать шторку к началу (WUI-003).
+  document.addEventListener('mermaid:rendered', (ev) => {
+    const root = ev.detail && ev.detail.root;
+    if (root && (root === body || body.contains(root))) holdScroll('mermaid');
+  });
   body.addEventListener('htmx:responseError', (ev) => {
     if (ev.detail.elt !== body) return;
     showError('Сервер ответил ' + ev.detail.xhr.status + '.');

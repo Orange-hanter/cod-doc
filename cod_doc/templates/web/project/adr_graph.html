@@ -74,7 +74,12 @@
            ослабить — диаграммы ADR пишут пользователи. Переход навешиваем
            сами на готовый SVG: id узла — `…-flowchart-ADR_012-<n>`. #}
         <script>
-          document.addEventListener('mermaid:rendered', () => {
+          document.addEventListener('mermaid:rendered', (ev) => {
+            // Только рендер, в который попал граф: схема документа в шторке
+            // (WUI-003) иначе повторно навешивала бы переходы на узлы.
+            const root = ev.detail && ev.detail.root;
+            const canvas = document.querySelector('.adr-graph-canvas');
+            if (root && canvas && !root.contains(canvas)) return;
             const base = {{ ("/p/" ~ project.name ~ "/adr/") | tojson }};
             document.querySelectorAll('.adr-graph-canvas svg g.node').forEach((g) => {
               const m = /flowchart-(ADR_\d+)-\d+$/.exec(g.id);
