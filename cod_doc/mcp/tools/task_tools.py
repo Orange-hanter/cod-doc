@@ -1364,9 +1364,13 @@ def register(mcp: FastMCP) -> None:
         author: str = "mcp",
         reason: str | None = None,
         dry_run: bool = False,
+        pr: int | None = None,
     ) -> dict[str, Any]:
         """Mark a task done. Validates all blocking dependencies are done first.
         Raises if the task is already done or any blocker is not yet complete.
+
+        ``reason`` is the closing summary shown on the task card; ``pr`` is the
+        PR/MR number that closed the task (ADO-148).
 
         ``dry_run=True`` (PCA-944) validates the transition (blockers etc.)
         and returns the would-be result but rolls back the transaction.
@@ -1396,6 +1400,7 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     commit_sha=commit_sha,
                     reason=reason,
+                    pr=pr,
                 )
                 activity_service.emit(
                     session,

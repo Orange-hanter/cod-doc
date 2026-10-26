@@ -260,3 +260,45 @@
 .task-history { margin-top: var(--space-1); }
 .task-history table.grid { font-size: calc(12px * var(--text-scale, 1)); }
 .task-history table.grid td { padding: 6px 12px; }
+
+/* ── ADO-148: done card — summary, files, Mark done extras ──────────── */
+.task-summary-card { border-left: 4px solid var(--success-border); }
+.task-files { list-style: none; margin: 0; padding: 0; }
+.task-files li {
+  padding: 3px 0;
+  font-size: calc(12px * var(--text-scale, 1));
+  overflow-wrap: anywhere;
+}
+.task-files li + li { border-top: 1px solid var(--border-soft); }
+.task-complete-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.task-complete-more > summary { cursor: pointer; }
+/* Открытые поля — отдельной строкой под кнопкой, а не в той же строке:
+   иначе ряд действий растягивается и «Set status» уезжает в середину. */
+.task-complete-more[open] { flex-basis: 100%; }
+.task-actions:has(.task-complete-more[open]) { align-items: flex-start; }
+.task-complete-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 8rem);
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+.task-complete-fields .field { display: grid; gap: 2px; }
+.task-complete-fields .field-wide { grid-column: 1 / -1; }
+.task-complete-fields input,
+.task-complete-fields textarea {
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+}
+@media (max-width: 640px) {
+  .task-complete-fields { grid-template-columns: minmax(0, 1fr); }
+}

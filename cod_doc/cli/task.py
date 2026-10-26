@@ -898,7 +898,14 @@ def task_move_plan(
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--commit", default=None, help="Git commit SHA")
 @click.option("--author", default="cli", show_default=True)
-@click.option("--reason", default=None)
+@click.option("--reason", default=None, help="Итог закрытия — виден на карточке задачи")
+@click.option(
+    "--pr",
+    # IntRange: `--pr 0` — ошибка click с текстом, а не ValueError сервиса трейсбеком.
+    type=click.IntRange(min=1),
+    default=None,
+    help="Номер PR/MR, которым закрыта задача",
+)
 @click.pass_context
 def task_complete(
     ctx: click.Context,
@@ -907,6 +914,7 @@ def task_complete(
     commit: str | None,
     author: str,
     reason: str | None,
+    pr: int | None,
 ) -> None:
     """Complete a task (validates blocking deps are done first)."""
     from cod_doc.infra.db import transactional
@@ -929,6 +937,7 @@ def task_complete(
                 author=author,
                 commit_sha=commit,
                 reason=reason,
+                pr=pr,
             )
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")

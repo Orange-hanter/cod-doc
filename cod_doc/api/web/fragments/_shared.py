@@ -96,6 +96,7 @@ def _render_task_head(
     project_name: str,
     task: Any,
     inline_alert: tuple[str, str] | None = None,
+    repo_url: str | None = None,
 ) -> HTMLResponse:
     """Шапка задачи вместо строки — ответ контролам карточки (`view=detail`).
 
@@ -108,7 +109,7 @@ def _render_task_head(
     head_html = templates.get_template("_frag/task_head.html").render(
         request=request,
         project={"name": project_name},
-        **task_head_context(session, project_db_id, task),
+        **task_head_context(session, project_db_id, task, repo_url=repo_url),
     )
     response = HTMLResponse(head_html + _render_oob_alert(inline_alert))
     if inline_alert is None:

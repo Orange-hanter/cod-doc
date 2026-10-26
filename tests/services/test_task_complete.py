@@ -268,3 +268,131 @@ def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_statu
         ops = [json.loads(r.diff)["op"] for r in history]
         # create → status(todo→in-progress, checkout-нога) → complete
         assert ops == ["create", "status", "complete"]
+
+
+# ── ADO-148: PR и итог закрытия — в закрывающей ревизии ─────────────────
+
+
+def test_complete_records_pr_and_summary_in_closing_revision(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        tasks.complete(
+            session,
+            project_id=p,
+            task_id=task.task_id,
+            author="human:dakh",
+            commit_sha="4b770e4",
+            reason="Сделано: ссылки на коммит и PR",
+            pr=261,
+        )
+        diff = json.loads(
+            rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)[-1].diff
+        )
+        assert diff["pr"] == 261
+        record = tasks.completion_record(session, project_id=p, task_row_id=task.row_id)  # type: ignore[arg-type]
+        assert record is not None
+        assert record.commit_sha == "4b770e4"
+        assert record.pr == 261
+        assert record.summary == "Сделано: ссылки на коммит и PR"
+        assert record.author == "human:dakh"
+
+
+def test_complete_without_pr_keeps_diff_shape(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Без PR в diff нет ключа `pr`: ревизии до ADO-148 и после читаются одинаково."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        tasks.complete(session, project_id=p, task_id=task.task_id, author="human:dakh")
+        diff = json.loads(
+            rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)[-1].diff
+        )
+        assert "pr" not in diff
+        # Форма diff до ADO-148 целиком: итог живёт в reason, а не в diff.
+        assert set(diff) == {"op", "old_status", "commit_sha"}
+        record = tasks.completion_record(session, project_id=p, task_row_id=task.row_id)  # type: ignore[arg-type]
+        assert record is not None
+        assert record.pr is None
+        # Системный reason по умолчанию — не итог.
+        assert record.summary is None
+
+
+def test_complete_rejects_non_positive_pr(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory, commit=False) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        with pytest.raises(ValueError, match="PR"):
+            tasks.complete(session, project_id=p, task_id=task.task_id, author="human:dakh", pr=0)
+
+
+def test_completion_record_takes_latest_close(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Переоткрытая и снова закрытая задача показывает последний итог."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        tasks.complete(
+            session, project_id=p, task_id=task.task_id, author="human:dakh", reason="первый", pr=7
+        )
+        tasks.update_status(
+            session,
+            project_id=p,
+            task_id=task.task_id,
+            new_status=TaskStatus.IN_REVIEW,
+            author="human:dakh",
+            strict=False,
+        )
+        tasks.complete(
+            session, project_id=p, task_id=task.task_id, author="human:dakh", reason="второй", pr=2
+        )
+        record = tasks.completion_record(session, project_id=p, task_row_id=task.row_id)  # type: ignore[arg-type]
+        assert record is not None
+        # Второе закрытие с меньшим номером PR: выбор по max(pr) дал бы «первый».
+        assert (record.summary, record.pr) == ("второй", 2)
+
+
+def test_completion_record_none_for_open_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        assert tasks.completion_record(session, project_id=p, task_row_id=task.row_id) is None  # type: ignore[arg-type]
+
+
+def test_affected_files_sorted(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s, affected_files=["src/b.py", "docs/a.md"])
+        assert tasks.affected_files(session, task.row_id) == ["docs/a.md", "src/b.py"]  # type: ignore[arg-type]
+
+
+def test_complete_missing_task_with_bad_pr_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Сначала поиск задачи: вызывающие ждут TaskNotFoundError, а не ошибку PR."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory, commit=False) as session:
+        p, _pl, _s = _seed_plan(session)
+        with pytest.raises(tasks.TaskNotFoundError):
+            tasks.complete(session, project_id=p, task_id="NOPE-1", author="human:dakh", pr=0)
+
+
+def test_agent_complete_bad_pr_is_ok_false(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services import agent_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory, commit=False) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        out = agent_service.complete(
+            session, project_id=p, task_id=task.task_id, agent_id="agent:x", pr=-1
+        )
+        # Отказ — до любой записи: checkout-нога todo→in_progress не сделана.
+        status = session.execute(
+            select(TaskModel.status).where(TaskModel.task_id == task.task_id)
+        ).scalar_one()
+    assert out["ok"] is False
+    assert out["code"] == "invalid"
+    assert status == "todo"

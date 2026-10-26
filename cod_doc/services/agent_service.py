@@ -544,14 +544,23 @@ def complete(
     agent_id: str,
     commit_sha: str | None = None,
     summary: str | None = None,
+    pr: int | None = None,
 ) -> dict[str, Any]:
-    """AGT-006: validate blockers, mark done, release lock in one transaction."""
+    """AGT-006: validate blockers, mark done, release lock in one transaction.
+
+    ADO-148: `pr` — номер PR/MR закрытия, ложится в закрывающую ревизию.
+    """
     from cod_doc.services import activity_service, checkout_service, task_service
     from cod_doc.services.task_service import (
         TaskAlreadyDoneError,
         TaskBlockedError,
         TaskNotFoundError,
     )
+
+    # Неверный номер PR — тот же ответ {ok: false}, что у прочих отказов, а
+    # не ValueError из сервиса как необработанное исключение тула.
+    if pr is not None and pr <= 0:
+        return {"ok": False, "hint": f"PR number must be positive: {pr}", "code": "invalid"}
 
     try:
         t = task_service.complete(
@@ -561,6 +570,7 @@ def complete(
             author=agent_id,
             commit_sha=commit_sha,
             reason=summary,
+            pr=pr,
         )
     except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}

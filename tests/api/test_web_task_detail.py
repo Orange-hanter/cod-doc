@@ -868,3 +868,163 @@ def test_full_page_url_keeps_encoded_slash() -> None:
 def test_full_page_url_without_raw_path_reencodes() -> None:
     req = _request("/p/x/tasks/A?B", None, b"peek=1")
     assert full_page_url(req) == "/p/x/tasks/A%3FB"
+
+
+# ── ADO-148: done-карточка — коммит, PR, итог, файлы ─────────────────────
+
+
+def _set_repo_url(url: str | None) -> None:
+    from cod_doc.config import Config
+
+    Config.load().set_project_repo_url("demo", url)
+
+
+def _close_via_web(client, **fields: str):  # type: ignore[no-untyped-def]
+    return client.post(
+        "/p/demo/tasks/DET-001/complete",
+        data={"view": "detail", **fields},
+        headers={"HX-Request": "true"},
+    )
+
+
+def test_done_card_links_commit_pr_and_shows_summary(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    _set_repo_url("git@github.com:o/r.git")
+    r = _close_via_web(client, commit_sha="4B770E4abc", pr="#261", summary="Сделано **всё**")
+    assert r.status_code == 200
+    # Шапка из ответа /complete уже со ссылками.
+    assert 'href="https://github.com/o/r/commit/4b770e4abc"' in r.text
+    assert 'href="https://github.com/o/r/pull/261"' in r.text
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert 'href="https://github.com/o/r/commit/4b770e4abc"' in page
+    assert ">⇄ PR #261</a>" in page
+    assert 'class="task-card task-summary-card"' in page
+    assert "Сделано <strong>всё</strong>" in page
+
+
+def test_done_card_without_repo_url_has_no_dead_links(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    _set_repo_url(None)
+    _close_via_web(client, commit_sha="4b770e4", pr="7")
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert "/commit/" not in page
+    assert "/pull/" not in page
+    # Карточка без оболочки шторки: её «Open full page» заполняет JS.
+    card = page.split('<dialog id="peek"')[0]
+    assert 'href="#"' not in card
+    # Данные не теряются: sha и номер PR видны текстом.
+    assert "<code>4b770e4</code>" in page
+    assert "⇄ PR #7</span>" in page
+
+
+def test_done_card_without_pr_shows_no_pr_chip(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    _set_repo_url("https://github.com/o/r")
+    _close_via_web(client, commit_sha="4b770e4")
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert 'href="https://github.com/o/r/commit/4b770e4"' in page
+    assert "PR #" not in page
+    # Без итога — системный reason не выдаётся за «что сделано».
+    assert "task-summary-card" not in page
+
+
+def test_mark_done_rejects_garbage_sha(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    r = _close_via_web(client, commit_sha="not-a-sha")
+    assert r.status_code == 400
+    assert "sha" in r.text
+    assert "badge-lg badge-done" not in client.get("/p/demo/tasks/DET-001").text
+
+
+def test_mark_done_form_has_optional_fields(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    page = client.get("/p/demo/tasks/DET-001").text
+    for name in ('name="commit_sha"', 'name="pr"', 'name="summary"'):
+        assert name in page, name
+
+
+def test_done_card_lists_affected_files_at_closing_sha(task_detail_client) -> None:
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import AffectedFileModel, TaskModel
+
+    client, entry = task_detail_client
+    _set_repo_url("https://github.com/o/r")
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            row_id = session.execute(
+                select(TaskModel.row_id).where(TaskModel.task_id == "DET-001")
+            ).scalar_one()
+            session.add(AffectedFileModel(task_id=row_id, path="docs/a.md"))
+            session.add(AffectedFileModel(task_id=row_id, path="cod_doc/b.py"))
+    finally:
+        engine.dispose()
+    _close_via_web(client, commit_sha="4b770e4")
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert 'class="task-card task-files-card"' in page
+    assert 'href="https://github.com/o/r/blob/4b770e4/docs/a.md"' in page
+    # Порядок — по пути.
+    assert page.index(">cod_doc/b.py<") < page.index(">docs/a.md<")
+
+
+def test_pr_number_with_space_after_hash_is_accepted(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    _set_repo_url("https://github.com/o/r")
+    r = _close_via_web(client, pr="# 12")
+    assert r.status_code == 200
+    assert 'href="https://github.com/o/r/pull/12"' in r.text
+
+
+# ── ADO-148: ссылки на хостинг — только безопасные и рабочие ──────────────
+
+
+def test_file_url_drops_dot_segments_and_encodes() -> None:
+    from cod_doc.api.web.task_detail import file_url
+
+    base = "https://github.com/o/r"
+    assert file_url(base, "4b770e4", "docs/a.md") == f"{base}/blob/4b770e4/docs/a.md"
+    # `..` увёл бы ссылку за /blob/ после нормализации в браузере.
+    assert file_url(base, "4b770e4", "../../settings/x") == f"{base}/blob/4b770e4/settings/x"
+    # `#` и `?` не обрезают путь, пробел кодируется.
+    assert file_url(base, None, "a b/c#d?e.md") == f"{base}/blob/HEAD/a%20b/c%23d%3Fe.md"
+    assert file_url(base, "4b770e4", "../..") is None
+
+
+def test_commit_and_pr_urls_reject_garbage() -> None:
+    from cod_doc.api.web.task_detail import commit_url, pr_url
+
+    base = "https://github.com/o/r"
+    assert commit_url(base, "ABC1234") == f"{base}/commit/abc1234"
+    # sha из MCP/CLI — любая строка: не hex — ссылки нет.
+    assert commit_url(base, "abc/../../x") is None
+    assert commit_url(base, "a b") is None
+    assert pr_url(base, -5) is None
+    assert pr_url(base, 0) is None
+
+
+def test_links_survive_hand_edited_repo_url() -> None:
+    """Реестр правят руками: адрес без схемы — нет ссылок, а не 500."""
+    from cod_doc.api.web.task_detail import commit_url, file_url, pr_url
+
+    for bad in ("github.com/o/r", "o/r", "https://gitlab.com"):
+        assert commit_url(bad, "4b770e4") is None, bad
+        assert pr_url(bad, 3) is None, bad
+        assert file_url(bad, "4b770e4", "a.py") is None, bad
+
+
+def test_gitlab_links() -> None:
+    from cod_doc.api.web.task_detail import commit_url, file_url, pr_url
+
+    base = "https://gitlab.example.com/g/sub/r"
+    assert commit_url(base, "4b770e4") == f"{base}/-/commit/4b770e4"
+    assert pr_url(base, 9) == f"{base}/-/merge_requests/9"
+    assert file_url(base, "4b770e4", "a.py") == f"{base}/-/blob/4b770e4/a.py"
+
+
+def test_pr_number_unicode_digit_is_400_not_500(task_detail_client) -> None:
+    """`"²".isdigit()` истинно, а `int("²")` падает: нужен внятный 400."""
+    client, _entry = task_detail_client
+    r = _close_via_web(client, pr="²")
+    assert r.status_code == 400
+    assert "PR" in r.text

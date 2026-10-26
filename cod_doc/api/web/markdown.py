@@ -188,6 +188,28 @@ def _review_marker(body: str) -> str | None:
 _REVIEW_MARKER = "\x00@REVIEW\x00"
 
 
+#: Схемы, которые может нести ссылка из markdown. Экранирование не спасает
+#: от `[x](javascript:…)`: кавычек там нет, а сам href исполняется по клику.
+#: Тексты задач и документов пишут люди и агенты, читают все участники
+#: проекта — `javascript:`, `data:`, `vbscript:` и прочие становятся текстом.
+_SAFE_LINK_SCHEMES = frozenset({"http", "https", "mailto"})
+_URL_SCHEME = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
+#: Браузер срезает ведущие управляющие символы URL: `\x01javascript:` — тоже
+#: javascript. Такой href не пропускаем вовсе.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _link(m: re.Match[str]) -> str:
+    """`[label](url)` → ссылка, если схема безопасна; иначе — только текст."""
+    label, url = m.group(1), m.group(2)
+    if _CONTROL_CHARS.search(url):
+        return label
+    scheme = _URL_SCHEME.match(url)
+    if scheme and scheme.group(1).lower() not in _SAFE_LINK_SCHEMES:
+        return label
+    return f'<a href="{url}">{label}</a>'
+
+
 def _render_inline(text: str) -> str:
     """Escape and apply inline markdown to a single line / paragraph."""
     text = html_escape(text)
@@ -195,7 +217,7 @@ def _render_inline(text: str) -> str:
     text = _INLINE_CODE.sub(_shield_inline_code, text)
     text = _BOLD.sub(r"<strong>\1</strong>", text)
     text = _ITALIC.sub(r"<em>\1</em>", text)
-    return _LINK.sub(r'<a href="\2">\1</a>', text)
+    return _LINK.sub(_link, text)
 
 
 def _split_pipe_row(line: str) -> list[str]:

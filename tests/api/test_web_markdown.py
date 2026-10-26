@@ -90,6 +90,40 @@ def test_link_with_inline_bold_inside_text() -> None:
     assert '<a href="u"><strong>bold link</strong></a>' in out
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "javascript:alert(1)",
+        "JaVaScRiPt:alert(1)",
+        "data:text/html;base64,PHNjcmlwdD4=",
+        "vbscript:msgbox(1)",
+        "\x01javascript:alert(1)",
+    ],
+)
+def test_link_with_unsafe_scheme_is_text(url: str) -> None:
+    """Экранирование не закрывает `javascript:` в href: такая ссылка — только текст."""
+    out = render_markdown(f"[click]({url})")
+    assert "<a " not in out
+    assert "click" in out
+    assert "javascript:" not in out.lower()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/x",
+        "http://example.com/x",
+        "mailto:a@b.c",
+        "other-doc-key",
+        "../a/b.md",
+        "#section",
+        "/p/demo/tasks/T-1",
+    ],
+)
+def test_link_with_safe_target_stays_link(url: str) -> None:
+    assert f'<a href="{url}">x</a>' in render_markdown(f"[x]({url})")
+
+
 def test_bullet_list() -> None:
     out = render_markdown("- one\n- two\n- three")
     assert "<ul>" in out and "</ul>" in out
@@ -657,3 +691,9 @@ def test_lead_paragraph_skips_headings_and_lists() -> None:
         "Первый <strong>абзац</strong>\nвторая строка"
     )
     assert lead_paragraph("") == ""
+
+
+def test_link_with_leading_space_in_url_is_not_a_link() -> None:
+    """Браузер срезал бы ведущий пробел URL; шаблон ссылки пробел в URL не пускает вовсе."""
+    out = render_markdown("[x]( javascript:alert(1))")
+    assert "<a " not in out

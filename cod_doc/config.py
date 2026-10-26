@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,39 @@ def _raw_config() -> dict[str, Any] | None:
     return data
 
 
+_SCP_GIT_URL = re.compile(r"^git@(?P<host>[^:/]+):(?P<path>.+)$")
+_REPO_WEB_URL = re.compile(r"^https?://[A-Za-z0-9.-]+(?::[0-9]+)?/[\w.~-]+(?:/[\w.~-]+)*$")
+
+
+def normalize_repo_url(url: str) -> str:
+    """Веб-адрес репозитория из того, что выдаёт `git remote get-url` (ADO-148).
+
+    `git@github.com:o/r.git` и `https://github.com/o/r.git/` → `https://github.com/o/r`:
+    ссылки карточки клеят к нему `/commit/<sha>`, хвост `.git` их сломал бы.
+    Не http(s) и не scp-форма git — ``ValueError``.
+    """
+    value = url.strip()
+    scp = _SCP_GIT_URL.match(value)
+    if scp:
+        value = f"https://{scp['host']}/{scp['path']}"
+    else:
+        # Query и фрагмент веб-адреса (`?tab=readme`, `#readme`) к репозиторию
+        # не относятся: склеенный с ними `/commit/<sha>` ушёл бы в строку
+        # запроса. У scp-формы git `#`/`?` — часть пути, её не режем: такой
+        # путь просто не пройдёт проверку ниже, а не потеряет хвост молча.
+        value = re.split(r"[?#]", value, maxsplit=1)[0]
+    value = value.rstrip("/")
+    head, _, last = value.rpartition("/")
+    # `.git` — суффикс клона, но не всё имя: `o/.git` остаётся как есть.
+    if last.endswith(".git") and last != ".git":
+        value = f"{head}/{last.removesuffix('.git')}"
+    # Путь — из алфавита имён репозиториев и групп: адрес попадает в href
+    # карточки, и `"`, `<`, `)` в нём делать нечего.
+    if not _REPO_WEB_URL.match(value):
+        raise ValueError(f"не веб-адрес репозитория: {url!r} (ожидается https://host/owner/repo)")
+    return value
+
+
 class ProjectMovedError(RuntimeError):
     """Проект переехал на другой узел (``moved_to``): локальной БД больше не открывать.
 
@@ -103,6 +137,12 @@ class ProjectEntry(BaseSettings):
     #: обходы реестра (``update``, рутины, веб, куратор) его пропускают: правки
     #: в отставшую копию молча разошлись бы с узлом.
     moved_to: str | None = None
+    #: ADO-148: веб-адрес git-репозитория проекта (GitHub/GitLab) —
+    #: `https://github.com/<owner>/<repo>`. Из него карточка done-задачи строит
+    #: ссылки на коммит закрытия, PR и файлы. В реестре, а не из `git remote`:
+    #: на узле (Гермес) каталог проекта — снапшот, а не клон. Задаёт
+    #: `cod-doc project repo-url`.
+    repo_url: str | None = None
 
     @property
     def root(self) -> Path:
@@ -310,6 +350,21 @@ class Config(BaseSettings):
         return cls() if data is None else cls(**data)
 
     @staticmethod
+    def project_repo_url(name: str) -> str | None:
+        """``repo_url`` проекта прямо из ``config.yaml`` (ADO-148).
+
+        Веб-сервер держит конфиг, прочитанный на старте, а `cod-doc project
+        repo-url` пишет файл, пока сервер работает (на узле — из того же
+        контейнера). Чтение из кэша разбора (mtime, size) видит правку без
+        рестарта и стоит одного ``stat``.
+        """
+        for project in (_raw_config() or {}).get("projects") or []:
+            if isinstance(project, dict) and project.get("name") == name:
+                value = project.get("repo_url")
+                return value if isinstance(value, str) and value else None
+        return None
+
+    @staticmethod
     def has_project_remotes(name: str) -> bool:
         """У проекта в ``config.yaml`` есть ``remotes`` (RFC 29 §10.12).
 
@@ -378,6 +433,20 @@ class Config(BaseSettings):
         for project in self.projects:
             if project.get("name") == name:
                 project["daemon_enabled"] = enabled
+                self.save()
+                return ProjectEntry(**project)
+        raise KeyError(name)
+
+    def set_project_repo_url(self, name: str, url: str | None) -> ProjectEntry:
+        """Записать ``repo_url`` проекта (ADO-148); ``None`` — убрать.
+
+        Адрес нормализуется (`normalize_repo_url`); проекта нет в
+        ``config.yaml`` — ``KeyError``, адрес не веб-репозиторий — ``ValueError``.
+        """
+        value = normalize_repo_url(url) if url else None
+        for project in self.projects:
+            if project.get("name") == name:
+                project["repo_url"] = value
                 self.save()
                 return ProjectEntry(**project)
         raise KeyError(name)
