@@ -21,6 +21,7 @@ Graph API (COD-021 — per [user-stories-graph.md §6]):
 
 Write API (ADO-201, RFC 26 §3.1 — ``sections.py``):
 - `create_plan` — new plan; scope is unique per DB.
+- `move_plan` — reorder plans of a project (``plan.rank``, RFC 36).
 - `create_section` — new plan section; validated by `build_section`.
 - `update_section` — change title/slug/doc_id; idempotent, `adopt=True`.
 - `move_section` — reorder sections into a dense 0..n-1.
@@ -73,6 +74,7 @@ from .sections import (
     create_plan,
     create_section,
     delete_section,
+    move_plan,
     move_section,
     update_section,
 )
@@ -107,6 +109,7 @@ __all__ = [
     "list_for_project",
     "list_plans_summary",
     "list_sections",
+    "move_plan",
     "move_section",
     "plan_scopes",
     "progress_for_project",

@@ -30,6 +30,7 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
             created=model.created,
             last_updated=model.last_updated,
             id_prefix=model.id_prefix,
+            rank=model.rank,
         )
 
     def _to_model(self, entity: Plan) -> PlanModel:

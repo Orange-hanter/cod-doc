@@ -21,6 +21,7 @@ from sqlalchemy import select, text
 from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.domain.entities import Priority, TaskType
+from cod_doc.infra import sync_epochs
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import task_service
@@ -265,7 +266,7 @@ def test_status_without_remote_is_local_only(
     assert isinstance(st, dict)
     assert st["remote"] is None
     assert st["verify"] is None
-    assert st["epoch_local"] == "0050_sync_rank"
+    assert st["epoch_local"] == sync_epochs.epoch_of(sync_epochs.code_head())
     assert _json("sync", "log", "-p", SLUG) == []
 
 

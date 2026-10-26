@@ -61,6 +61,8 @@ MIGRATIONS: Mapping[str, bool] = MappingProxyType(
         "0052_sync_conflict_opened_hlc": False,
         # actor, api_token, project_member — local-таблицы хранилища доступа (CLO-034).
         "0053_sync_access": False,
+        # plan.rank — уезжающая колонка: порядок планов проекта (RFC 36, ROAD-001).
+        "0054_plan_rank": True,
     }
 )
 

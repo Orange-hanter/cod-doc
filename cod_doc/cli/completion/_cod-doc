@@ -2522,6 +2522,7 @@ _cod-doc() {
         (forward)       _cod_doc_plan_forward && ret=0 ;;
         (freeze)        _cod_doc_plan_freeze && ret=0 ;;
         (list)          _cod_doc_plan_list && ret=0 ;;
+        (move)          _cod_doc_plan_move && ret=0 ;;
         (progress)      _cod_doc_plan_progress && ret=0 ;;
         (ready)         _cod_doc_plan_ready && ret=0 ;;
         (reverse)       _cod_doc_plan_reverse && ret=0 ;;
@@ -2544,6 +2545,7 @@ _cod-doc() {
     'forward:Forward chain; prerequisites of TASK_ID (must complete BEFORE it).'
     'freeze:Snapshot a plan'\''s current projection into an immutable frozen docum…'
     'list:Все планы проекта; scope, статус, done/total, остаток и principle.'
+    'move:Переставить план SCOPE перед/после другого плана проекта.'
     'progress:Прогресс плана PLAN_SCOPE по секциям или всех планов проекта (--all…'
     'ready:List tasks ready to work on (all blocking deps done).'
     'reverse:Reverse chain; tasks unblocked when TASK_ID completes.'
@@ -2639,6 +2641,22 @@ _cod-doc() {
     '(--status)--status=[Фильтр по статусу плана; empty, pending, in-progress (или in_progre…]:status' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_move] )) || _cod_doc_plan_move() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--before)--before=[Поставить перед планом с этим scope]:before' \
+    '(--after)--after=[Поставить после плана с этим scope]:after' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина для ревизии]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scope' && ret=0
   return ret
 }
 

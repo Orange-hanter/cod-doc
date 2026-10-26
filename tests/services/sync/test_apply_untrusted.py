@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
 from cod_doc.infra import sync_capture as cap
+from cod_doc.infra import sync_epochs
 from cod_doc.infra.db import transactional
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, HybridClock, clock_for, self_replica, wall_ms
 from cod_doc.infra.models import (
@@ -108,8 +109,10 @@ def _forge(
         "parents": [head.sha],
         "replica": replica,
         "actor": r.AUTHOR,
-        "epoch": "0050_sync_rank",
-        "schema_head": "0050_sync_rank",
+        # Текущая эпоха кода, а не литерал: новая эпоха иначе роняла бы все
+        # подделки на SYNC-105 раньше проверки, ради которой они собраны.
+        "epoch": sync_epochs.epoch_of(sync_epochs.code_head()),
+        "schema_head": sync_epochs.code_head(),
         "hlc_max": hlc_max or max(op["hlc"] for op in full),
         "digest": "0" * 64,
         "ops": sorted(full, key=lambda op: (op["hlc"], op["op_id"])),

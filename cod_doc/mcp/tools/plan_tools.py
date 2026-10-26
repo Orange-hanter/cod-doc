@@ -459,6 +459,42 @@ def register(mcp: FastMCP) -> None:
                 "order": [{"letter": s.letter, "position": s.position} for s in ordered],
             }
 
+    @mcp.tool(name="plan_move")
+    def plan_move(
+        project: str,
+        plan_scope: str,
+        before: str | None = None,
+        after: str | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Move a plan in the project queue through ``plan_service.move_plan`` (RFC 36).
+
+        Plan order (``plan.rank``) is the order of ``plan_list`` and of the
+        roadmap. Pass exactly one of ``before`` / ``after`` — the scope of
+        another plan of the same project; otherwise ``ValueError``. Only the
+        moved plan gets a new rank; a revision and a ``plan.moved`` event are
+        written, nothing when the plan is already in place.
+
+        Returns ``{scope, order: [scope, ...]}`` in the new order.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import plan_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            ordered = plan_service.move_plan(
+                session,
+                project_id=project_id,
+                plan_scope=plan_scope,
+                author=author,
+                before=before,
+                after=after,
+                reason=reason,
+            )
+            return {"scope": plan_scope, "order": [p.scope for p in ordered]}
+
     @mcp.tool(name="plan_section_delete")
     def plan_section_delete(
         project: str,

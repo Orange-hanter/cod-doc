@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
-class PlanModel(SyncUidMixin, Base):
+class PlanModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "plan"
     # STO-018: scope уникален в пределах проекта, а не всей БД (миграция 0047).
     __table_args__ = (UniqueConstraint("project_id", "scope", name="uq_plan_project_scope"),)

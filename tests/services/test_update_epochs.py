@@ -5,8 +5,10 @@ SCN-095: «Реплика с тремя неупакованными опера�
 завершается сообщением „3 незапушенные операции — сначала cod-doc push“;
 схема реплики остаётся прежней, операции на месте.»
 
-Миграция настоящая: БД стоит на ``0052``, а реестр ``sync_epochs`` подменён
-так, что голова цепочки (``0053``) открывает эпоху. Фаза B идёт через
+Миграция настоящая: БД стоит на ревизии перед головой цепочки, а реестр
+``sync_epochs`` подменён так, что голова открывает эпоху (или нет — для
+обратного случая). Пары ревизий выводятся из цепочки, а не пишутся литералами:
+новая миграция иначе роняла бы эти тесты, ничего не меняя в поведении. Фаза B идёт через
 ``run_post_swap`` без свапа (``--skip-install``) — тот же код, что исполняет
 новый бинарь после relay.
 """
@@ -34,19 +36,30 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 SLUG = "demo"
-OLD = "0052_sync_conflict_opened_hlc"
-NEW = "0053_sync_access"
+_ORDER = sync_epochs.revision_order()
+NEW = sync_epochs.code_head()
+OLD = next(rev for rev, i in _ORDER.items() if i == _ORDER[NEW] - 1)
+
+
+def _registry(*, head_opens: bool) -> MappingProxyType[str, bool]:
+    """Реестр, где голова открывает эпоху (или нет), а ревизия перед ней — нет."""
+    after_baseline = sorted(
+        (rev for rev, i in _ORDER.items() if i > _ORDER[sync_epochs.SYNC_BASELINE]),
+        key=_ORDER.__getitem__,
+    )
+    registry = {rev: rev == "0050_sync_rank" for rev in after_baseline}
+    registry[NEW] = head_opens
+    return MappingProxyType(registry)
 
 
 @pytest.fixture
 def head_opens_an_epoch(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sync_epochs,
-        "MIGRATIONS",
-        MappingProxyType(
-            {"0050_sync_rank": True, "0051_sync_conflict": False, OLD: False, NEW: True}
-        ),
-    )
+    monkeypatch.setattr(sync_epochs, "MIGRATIONS", _registry(head_opens=True))
+
+
+@pytest.fixture
+def head_opens_no_epoch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sync_epochs, "MIGRATIONS", _registry(head_opens=False))
 
 
 def _replica(tmp_path: Path, *, pending: int, remote: bool) -> tuple[Config, Path]:
@@ -140,8 +153,9 @@ def test_update_with_everything_pushed_migrates(tmp_path: Path) -> None:
     assert _schema_and_ops(db) == (NEW, 0)
 
 
+@pytest.mark.usefixtures("head_opens_no_epoch")
 def test_migration_that_opens_no_epoch_is_not_held(tmp_path: Path) -> None:
-    """Реестр как есть: 0053 эпоху не открывает — незапушенное миграции не мешает."""
+    """Голова эпоху не открывает — незапушенное миграции не мешает."""
     cfg, db = _replica(tmp_path, pending=3, remote=True)
     [result] = _update(cfg).migrate
     assert result.ok, result.error

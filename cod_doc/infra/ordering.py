@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 #: Родитель порядка у каждой таблицы с ``RankMixin`` (RFC 29 §3.2).
 PARENTS: dict[str, tuple[str, ...]] = {
     "section": ("document_id",),
+    "plan": ("project_id",),
     "plan_section": ("plan_id",),
     "doc_node": ("project_id",),
     "scenario": ("project_id", "group_key"),

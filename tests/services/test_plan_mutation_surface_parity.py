@@ -44,6 +44,7 @@ SPEC = ServiceSpec(
     known_mutations=frozenset(
         {
             "create_plan",
+            "move_plan",
             "create_section",
             "update_section",
             "move_section",
@@ -119,6 +120,7 @@ def test_discovered_mutations_exact() -> None:
     """
     assert _surface_parity.discovered_mutations(SPEC) == {
         "create_plan",
+        "move_plan",
         "create_section",
         "update_section",
         "move_section",
