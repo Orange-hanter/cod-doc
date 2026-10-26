@@ -388,3 +388,25 @@ def test_plan_show_has_back_bar(plans_client) -> None:
     client, entry, plan_id = plans_client
     page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
     assert 'href="/p/demo/plans" data-back>← Plans</a>' in page
+
+
+def test_plan_neighbours_link_by_row_id_and_show_scope(plans_client) -> None:
+    """ADO-149: шаг к соседнему плану — по row_id, подпись — его scope."""
+    client, entry, plan_id = plans_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            now = datetime.now(UTC)
+            other = PlanRepository(session).add(
+                Plan(project_id=sole_project_id(session), scope="zz-later", principle="x")
+            )
+            other.created = now
+            other.last_updated = now
+            session.flush()
+            other_id = other.row_id
+    finally:
+        engine.dispose()
+    page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
+    assert (
+        f'href="/p/demo/plans/{other_id}" rel="next" title="Next: zz-later">zz-later ›</a>' in page
+    )

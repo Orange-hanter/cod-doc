@@ -74,8 +74,9 @@ def plan_show(
         raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
 
     progress = plans.recalc(session, plan_id, project_id=project_db_id)
-    # ADO-149: соседи — планы в порядке списка планов.
-    plan_ids = {p.scope: p.row_id for p in plans.list_for_project(session, project_db_id)}
+    # ADO-149: соседи — планы в порядке списка планов. Ключ — row_id, а не
+    # scope: адрес страницы плана — row_id, scope лишь подпись.
+    plan_scopes = {str(p.row_id): p.scope for p in plans.list_for_project(session, project_db_id)}
     ready_tasks = plans.ready(session, plan_id, limit=PLAN_READY_LIMIT, project_id=project_db_id)
     exported = plans.export(session, plan_id, project_id=project_db_id)
 
@@ -145,9 +146,10 @@ def plan_show(
                 request,
                 proj.entry.name,
                 tab="plans",
-                order=list(plan_ids),
-                current=plan_dom.scope,
-                href=lambda scope: f"/p/{proj.entry.name}/plans/{plan_ids[scope]}",
+                order=list(plan_scopes),
+                current=str(plan_id),
+                href=lambda key: f"/p/{proj.entry.name}/plans/{key}",
+                label=plan_scopes.__getitem__,
             ),
         },
     )

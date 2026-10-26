@@ -101,6 +101,8 @@
     try { ref = new URL(document.referrer); } catch (e) { return; }
     const to = new URL(link.href, location.href);
     if (ref.origin !== location.origin) return;
+    // Запись истории не помнит якорь ссылки: с `#…` — обычный переход.
+    if (to.hash) return;
     if (ref.pathname + ref.search !== to.pathname + to.search) return;
     ev.preventDefault();
     history.back();

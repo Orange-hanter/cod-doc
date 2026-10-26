@@ -111,15 +111,22 @@ def natural_key(key: str) -> tuple[tuple[int, str], ...]:
 
 
 def neighbors(
-    keys: Sequence[str], current: str, href: Callable[[str], str]
+    keys: Sequence[str],
+    current: str,
+    href: Callable[[str], str],
+    label: Callable[[str], str] | None = None,
 ) -> tuple[NavLink | None, NavLink | None]:
-    """Соседи `current` в упорядоченном `keys`; нет его там — нет соседей."""
+    """Соседи `current` в упорядоченном `keys`; нет его там — нет соседей.
+
+    Подпись — сам ключ, если `label` не дан (план: ключ — row_id, подпись — scope).
+    """
     try:
         i = list(keys).index(current)
     except ValueError:
         return None, None
-    prev = NavLink(href(keys[i - 1]), keys[i - 1]) if i > 0 else None
-    nxt = NavLink(href(keys[i + 1]), keys[i + 1]) if i + 1 < len(keys) else None
+    name = label or (lambda key: key)
+    prev = NavLink(href(keys[i - 1]), name(keys[i - 1])) if i > 0 else None
+    nxt = NavLink(href(keys[i + 1]), name(keys[i + 1])) if i + 1 < len(keys) else None
     return prev, nxt
 
 
@@ -131,6 +138,7 @@ def back_nav(
     order: Sequence[str] = (),
     current: str | None = None,
     href: Callable[[str], str] | None = None,
+    label: Callable[[str], str] | None = None,
 ) -> BackNav:
     """Полоса страницы сущности вкладки `tab`; соседи — по `order`, если дан."""
     default = f"/p/{slug}/{tab}"
@@ -151,5 +159,5 @@ def back_nav(
             target = to_key(key)
             return f"{target}?{urlencode({FROM_PARAM: back.href})}" if has_context else target
 
-        prev, nxt = neighbors(order, current, step)
+        prev, nxt = neighbors(order, current, step, label)
     return BackNav(back=back, has_context=has_context, prev=prev, next=nxt)

@@ -128,3 +128,18 @@ def test_steps_carry_the_parent_along() -> None:
 
 def test_natural_key_orders_numbers_as_numbers() -> None:
     assert sorted(["US-10", "US-2", "US-1"], key=natural_key) == ["US-1", "US-2", "US-10"]
+
+
+def test_neighbour_label_can_differ_from_key() -> None:
+    names = {"1": "payments", "2": "web-ui"}
+    prev, _ = neighbors(["1", "2"], "2", lambda k: f"/p/demo/plans/{k}", names.__getitem__)
+    assert prev is not None
+    assert (prev.href, prev.label) == ("/p/demo/plans/1", "payments")
+
+
+def test_back_bar_renders_nothing_without_nav() -> None:
+    from cod_doc.api.web.templates_env import templates
+
+    tpl = templates.get_template("_frag/back_bar.html")
+    assert tpl.render(nav=None).strip() == ""
+    assert 'class="back-bar"' in tpl.render(nav=back_nav(_request(), "demo", tab="tasks"))
