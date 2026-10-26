@@ -55,7 +55,8 @@
            ссылаются сценарии связью `criterion` — `<STORY-ID>#<position>`. #}
         <li id="crit-{{ a.position }}">
           {% if a.met %}<span class="badge badge-done">met</span>{% endif %}
-          {{ a.criterion }}
+          {#- ADO-142: инлайн-разметка и проверенные ссылки (prose_links). #}
+          {{ a.criterion_html | safe }}
         </li>
       {% endfor %}
     </ul>

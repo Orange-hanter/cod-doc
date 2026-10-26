@@ -472,3 +472,40 @@ def test_import_master_save_rejects_empty_master(stories_client) -> None:
         data={"master_md": "  "},
     )
     assert r.status_code == 400
+
+
+# ── ADO-142: живые ссылки в критериях приёмки ─────────────────────────
+
+
+def test_story_criteria_link_existing_targets_only(stories_client) -> None:
+    client, entry, project_db_id, _ = stories_client
+    Config.load().set_project_repo_url("demo", "https://github.com/o/r")
+    (entry.root / "README.md").write_text("# demo\n", encoding="utf-8")
+
+    db_path = entry.cod_doc_dir / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        story_service.create(
+            session,
+            project_id=project_db_id,
+            story_id="US-001",
+            persona="developer",
+            narrative="I want links",
+            priority=Priority.HIGH,
+            author="human:test",
+            acceptance=[
+                "Смёржено в #1, описано в README.md",
+                "Правка в server/invented.ts, см. US-001 и US-404",
+            ],
+        )
+    engine.dispose()
+
+    body = client.get(f"/p/{entry.name}/stories/US-001").text
+    assert 'href="https://github.com/o/r/issues/1"' in body
+    assert 'href="https://github.com/o/r/blob/HEAD/README.md"' in body
+    # Несуществующие файл и история — текст, а не битая ссылка.
+    assert "server/invented.ts" in body
+    assert "invented.ts</a>" not in body
+    assert 'href="/p/demo/stories/US-001">US-001</a>' in body
+    assert "/stories/US-404" not in body

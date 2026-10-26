@@ -529,7 +529,12 @@ def task_show(
     context = {
         "project": {"name": proj.entry.name},
         **task_detail_context(
-            session, project_db_id, task, repo_url=Config.project_repo_url(proj.entry.name)
+            session,
+            project_db_id,
+            task,
+            repo_url=Config.project_repo_url(proj.entry.name),
+            slug=proj.entry.name,
+            project_root=proj.entry.root,
         ),
     }
     template = "_frag/peek_task.html" if is_peek(request) else "project/task_show.html"

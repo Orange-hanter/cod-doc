@@ -309,6 +309,21 @@ def list_files(
     return list(session.execute(stmt).scalars())
 
 
+def indexed_paths(session: Session, project_id: int, paths: set[str]) -> set[str]:
+    """Какие из путей есть в индексе репозитория проекта (ADO-142).
+
+    Проза упоминает файлы (`server/dataQuality.ts`); ссылкой путь становится,
+    только если файл существует. На узле каталог проекта — снапшот без кода,
+    поэтому индекс (`scan_project`) — второй источник рядом с диском.
+    """
+    if not paths:
+        return set()
+    stmt = select(RepoFileModel.path).where(
+        RepoFileModel.project_id == project_id, RepoFileModel.path.in_(paths)
+    )
+    return set(session.execute(stmt).scalars())
+
+
 def find_symbol(
     session: Session,
     project_id: int,
