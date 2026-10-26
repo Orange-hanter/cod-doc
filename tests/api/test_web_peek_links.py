@@ -35,6 +35,17 @@ _HREF_VALUE = re.compile(r'href="([^"]*)"')
 _RAW_VIEW = "?raw=1"
 
 
+def _has_attr(tag: str, name: str) -> bool:
+    """Атрибут `name` именно этим именем: `data-peek-off` — не `data-peek`.
+
+    `\b` здесь не годится: дефис для него граница слова, и `\bdata-peek\b`
+    совпал бы с `data-peek-off`. Слева — не буква и не дефис, справа —
+    пробел, `=`, `/`, конец тега или `{` (в исходнике шаблона за атрибутом
+    сразу идёт `{% endif %}`).
+    """
+    return re.search(rf"(?<![\w-]){re.escape(name)}(?=[\s=/>{{])", tag) is not None
+
+
 def _href(tag: str) -> str:
     m = _HREF_VALUE.search(tag)
     return m.group(1) if m else ""
@@ -77,7 +88,7 @@ def test_every_task_detail_link_opens_in_sheet() -> None:
     missing = [
         _show(name, tag)
         for name, tag in _detail_anchors(_TASK_DETAIL_HREF)
-        if "data-peek" not in tag
+        if not _has_attr(tag, "data-peek")
     ]
     assert not missing, "ссылка на карточку задачи без data-peek:\n" + "\n".join(missing)
 
@@ -89,7 +100,9 @@ def test_every_doc_detail_link_decides_on_sheet() -> None:
         for name, tag in _detail_anchors(_DOC_DETAIL_HREF)
         # Исключение — по значению href, а не по подстроке тега: `?raw=1` в
         # `hx-get` или `data-*` не освобождает ссылку на карточку от решения.
-        if _RAW_VIEW not in _href(tag) and "data-peek" not in tag and "data-no-peek" not in tag
+        if _RAW_VIEW not in _href(tag)
+        and not _has_attr(tag, "data-peek")
+        and not _has_attr(tag, "data-no-peek")
     ]
     assert not undecided, "ссылка на документ без data-peek/data-no-peek:\n" + "\n".join(undecided)
 
@@ -117,6 +130,17 @@ def test_non_detail_href_pattern() -> None:
         assert not _NON_DETAIL_HREF.search(f'href="/p/{{{{ project.name }}}}/{card}"'), card
 
 
+def test_has_attr_matches_exact_name() -> None:
+    assert _has_attr('<a href="/x" data-peek>', "data-peek")
+    assert _has_attr('<a data-peek href="/x">', "data-peek")
+    assert _has_attr('<a href="/x"\n   data-peek\n   title="t">', "data-peek")
+    assert _has_attr('<a href="/x"{% if k %} data-peek{% endif %}>', "data-peek")
+    assert not _has_attr('<a href="/x" data-peek-off>', "data-peek")
+    assert not _has_attr('<a href="/x" data-no-peek>', "data-peek")
+    assert not _has_attr('<a href="/x" xdata-peek>', "data-peek")
+    assert _has_attr('<a href="/x" data-no-peek>', "data-no-peek")
+
+
 def test_raw_exemption_reads_href_only() -> None:
     assert (
         _href('<a hx-get="/x?raw=1" href="/p/{{ p }}/docs/{{ k }}">') == "/p/{{ p }}/docs/{{ k }}"
@@ -140,7 +164,7 @@ def test_non_detail_pages_stay_plain_links() -> None:
     wrong = [
         _show(name, tag)
         for name, tag in _anchors()
-        if _NON_DETAIL_HREF.search(tag) and re.search(r"\bdata-peek\b", tag)
+        if _NON_DETAIL_HREF.search(tag) and _has_attr(tag, "data-peek")
     ]
     assert not wrong, "data-peek на ссылке не на карточку:\n" + "\n".join(wrong)
 
@@ -154,7 +178,7 @@ def test_python_built_links_ask_peekable() -> None:
         for tag in tags:
             # Порознь, а не одной подстрокой: порядок атрибутов в теге свободный.
             assert call in tag, _show(name, tag)
-            assert re.search(r"\bdata-peek\b", tag), _show(name, tag)
+            assert _has_attr(tag, "data-peek"), _show(name, tag)
 
 
 def test_peekable_kinds() -> None:
