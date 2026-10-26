@@ -109,7 +109,7 @@ def _source(request: Request, slug: str) -> str | None:
     if any(seg in {".", ".."} for seg in path.split("/")):
         return None
     # Сама себя: перезагрузка, правка поля с редиректом обратно.
-    if path == unquote(request.url.path):
+    if path == request.url.path:  # Starlette уже декодировал путь запроса
         return None
     return found
 

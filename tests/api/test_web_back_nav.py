@@ -174,3 +174,14 @@ def test_entity_label_names_a_parent_with_an_opaque_key() -> None:
         entity_label=labels,
     )
     assert other.back.label == "8"
+
+
+def test_self_referer_with_literal_percent_in_key_is_ignored() -> None:
+    # Ключ документа `a%41`: путь запроса уже декодирован, повторный unquote
+    # превратил бы его в `aA`, и страница стала бы родителем сама себе.
+    nav = back_nav(
+        _request(referer="http://testserver/p/demo/docs/a%2541", path="/p/demo/docs/a%41"),
+        "demo",
+        tab="docs",
+    )
+    assert nav.back.href == "/p/demo/docs"
