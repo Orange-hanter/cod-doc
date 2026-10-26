@@ -3,13 +3,16 @@
 `id="section-{anchor}"` is the HTMX swap target; `id="{anchor}"` on the inner
 container preserves the sidebar `#anchor` scroll behaviour.
 
-`peek` (WUI-002): read-only in the sheet — no edit/comment buttons, no bubbles.
+`peek` (WUI-002): read-only in the sheet — no edit/comment buttons, no bubbles,
+and ids get a `peek-` prefix: the sheet can sit over the page of the same
+document, and two `id="api"` in one DOM would make `#api` ambiguous.
 
 `data-anchor` is consumed by the comments JS in doc_show.html — it lets the
 "add comment" floating button know which section the user has selected text in.
 #}
-<section id="section-{{ s.anchor }}" class="doc-section" data-anchor="{{ s.anchor }}">
-  <a id="{{ s.anchor }}" class="section-anchor"></a>
+{%- set idp = 'peek-' if peek else '' %}
+<section id="{{ idp }}section-{{ s.anchor }}" class="doc-section" data-anchor="{{ s.anchor }}">
+  <a id="{{ idp }}{{ s.anchor }}" class="section-anchor"></a>
   <h{{ s.level }}>
     {{ s.heading }}
     {% if not peek %}

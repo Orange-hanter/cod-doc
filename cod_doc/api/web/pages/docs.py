@@ -1245,6 +1245,10 @@ def doc_show(
         {"anchor": s.anchor, "heading": s.heading, "level": s.level} for s in sections_db
     ]
 
+    # Сырой вид — режим полной страницы, шторка всегда отрисованная: ссылки
+    # с `?raw=1` намеренно без data-peek (стережёт test_web_peek_links), так
+    # что из интерфейса `?peek=1&raw=1` не приходит; пришедший руками `raw`
+    # игнорируется, а не ломает фрагмент.
     is_raw = bool(raw) and not peek
     raw_body: str | None = None
     preamble_html: str | None = None

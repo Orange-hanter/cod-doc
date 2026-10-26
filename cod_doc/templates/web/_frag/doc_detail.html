@@ -85,7 +85,8 @@
       <ul>
         {% for s in sections %}
         <li class="toc-lvl-{{ s.level }}">
-          <a href="#{{ s.anchor }}">{{ s.heading }}</a>
+          {#- В шторке id секций с префиксом peek- (см. section_view.html). #}
+          <a href="#{{ 'peek-' if peek }}{{ s.anchor }}">{{ s.heading }}</a>
         </li>
         {% endfor %}
       </ul>

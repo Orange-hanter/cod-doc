@@ -291,10 +291,11 @@
   window.addEventListener('popstate', (ev) => {
     let st = ev.state && ev.state[STATE_KEY];
     // Шторка с карточкой той самой страницы, что под ней, — это сама
-    // страница (запись осталась от прошлой загрузки документа).
+    // страница (запись осталась от прошлой загрузки документа). Только без
+    // якоря: `#секция` той же карточки — осознанно открытая шторка.
     if (st) {
       const u = new URL(st.url, location.href);
-      if (u.pathname + u.search === docUrl) st = null;
+      if (!u.hash && u.pathname + u.search === docUrl) st = null;
     }
     if (finishOnPop) {
       finishOnPop = false;
@@ -419,13 +420,17 @@
     if (target) target.focus();
   }
 
-  // Элемент по id ищется только в теле шторки: у страницы под ней могут быть
-  // элементы с теми же id (документ поверх того же документа).
+  // Элемент по id ищется только в теле шторки. Секции документа в шторке
+  // несут id с префиксом `peek-` (section_view.html): шторка может лежать
+  // поверх страницы того же документа. Ссылка же знает якорь без префикса
+  // (`#api` из ADR или из текста секции), поэтому ищем оба написания.
   function findInBody(rawId) {
     let id = rawId;
     // Битая percent-последовательность (`#100%`) — якорь как есть, а не URIError.
     try { id = decodeURIComponent(rawId); } catch (e) { /* keep raw */ }
-    return id ? body.querySelector('[id="' + CSS.escape(id) + '"]') : null;
+    if (!id) return null;
+    const byId = (x) => body.querySelector('[id="' + CSS.escape(x) + '"]');
+    return byId(id) || byId('peek-' + id);
   }
 
   // Якоря внутри шторки прокручивают шторку, а не страницу под ней.

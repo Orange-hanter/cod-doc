@@ -25,12 +25,20 @@ _TASK_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/tasks/\{\{[^}]+\}\}"')
 # href карточки документа: ключ — выражение, дальше разве что `#якорь`
 # (в том числе условный `{% if %}#…{% endif %}`), но не `/expand` и т.п.
 _DOC_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/docs/\{\{[^}]+\}\}(?:"|#|\?|\{%)')
-# Литеральный хвост — что угодно, кроме `{` (начало `{{ id }}`) и конца
-# атрибута: страница под `/tasks/` или `/docs/`, которая не карточка.
-_NON_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/(?:tasks|docs)/[^{"]')
+# Страница под `/tasks/` или `/docs/`, которая не карточка: литеральный
+# хвост (что угодно, кроме `{` — начала `{{ id }}` — и конца атрибута) либо
+# выражение и дальше `/…` — подстраница (`{{ kind }}/new`, `{{ key }}/expand`).
+_NON_DETAIL_HREF = re.compile(r'href="/p/\{\{[^}]+\}\}/(?:tasks|docs)/(?:[^{"]|\{\{[^}]+\}\}/)')
+_HREF_VALUE = re.compile(r'href="([^"]*)"')
 # Сырой вид документа (`?raw=1`) — режим полной страницы, шторка всегда
 # отрисованная: такой ссылке data-peek не нужен.
 _RAW_VIEW = "?raw=1"
+
+
+def _href(tag: str) -> str:
+    m = _HREF_VALUE.search(tag)
+    return m.group(1) if m else ""
+
 
 # Шаблоны, где href пришёл из Python (`_link_href`, `_DEEPLINK_BY_KIND`)
 # и вид цели известен только строкой: шаблон → (выражение href, вызов
@@ -79,17 +87,41 @@ def test_every_doc_detail_link_decides_on_sheet() -> None:
     undecided = [
         _show(name, tag)
         for name, tag in _detail_anchors(_DOC_DETAIL_HREF)
-        if _RAW_VIEW not in tag and "data-peek" not in tag and "data-no-peek" not in tag
+        # Исключение — по значению href, а не по подстроке тега: `?raw=1` в
+        # `hx-get` или `data-*` не освобождает ссылку на карточку от решения.
+        if _RAW_VIEW not in _href(tag) and "data-peek" not in tag and "data-no-peek" not in tag
     ]
     assert not undecided, "ссылка на документ без data-peek/data-no-peek:\n" + "\n".join(undecided)
 
 
 def test_non_detail_href_pattern() -> None:
     """Шаблон ловит любой литеральный хвост, а не только строчную латиницу."""
-    for tail in ("tasks/legacy", "tasks/Foo", "tasks/_x", "tasks/9", "docs/new", "docs/navigator"):
+    for tail in (
+        "tasks/legacy",
+        "tasks/Foo",
+        "tasks/_x",
+        "tasks/9",
+        "docs/new",
+        "docs/navigator",
+        "docs/{{ kind }}/new",
+        "docs/{{ d.doc_key }}/expand",
+        "tasks/{{ t.task_id }}/status",
+    ):
         assert _NON_DETAIL_HREF.search(f'href="/p/{{{{ project.name }}}}/{tail}"'), tail
-    assert not _NON_DETAIL_HREF.search('href="/p/{{ project.name }}/tasks/{{ t.task_id }}"')
-    assert not _NON_DETAIL_HREF.search('href="/p/{{ project.name }}/docs/{{ d.doc_key }}"')
+    for card in (
+        "tasks/{{ t.task_id }}",
+        "docs/{{ d.doc_key }}",
+        "docs/{{ d.doc_key }}#{{ s.anchor }}",
+        "docs/{{ d.doc_key }}?raw=1",
+    ):
+        assert not _NON_DETAIL_HREF.search(f'href="/p/{{{{ project.name }}}}/{card}"'), card
+
+
+def test_raw_exemption_reads_href_only() -> None:
+    assert (
+        _href('<a hx-get="/x?raw=1" href="/p/{{ p }}/docs/{{ k }}">') == "/p/{{ p }}/docs/{{ k }}"
+    )
+    assert _RAW_VIEW in _href('<a href="/p/{{ p }}/docs/{{ k }}?raw=1">')
 
 
 def test_doc_detail_href_pattern() -> None:

@@ -684,10 +684,15 @@ def test_doc_peek_returns_read_only_fragment(docs_client) -> None:
     assert 'data-peek-kind="doc"' in body
     assert f'data-peek-url="{_DOC_URL}"' in body
     assert 'data-peek-title="Auth Module Overview"' in body
-    # Тело и оглавление на месте: якоря секций — цель TOC внутри шторки.
+    # Тело и оглавление на месте. id секций с префиксом peek-: шторка может
+    # лежать поверх страницы того же документа, а два id="api" в одном DOM
+    # делают #api неоднозначным. Оглавление ведёт на префиксные id.
     assert "Entities and tables." in body
-    assert 'id="data-model"' in body
-    assert 'href="#api"' in body
+    assert 'id="peek-data-model"' in body
+    assert 'id="peek-section-api"' in body
+    assert 'href="#peek-api"' in body
+    assert 'id="data-model"' not in body
+    assert 'id="section-api"' not in body
     # Только чтение: ни правки, ни комментариев, ни служебных панелей страницы.
     for page_only in (
         "<html",
@@ -709,7 +714,8 @@ def test_doc_peek_returns_read_only_fragment(docs_client) -> None:
 def test_doc_peek_ignores_raw_mode(docs_client) -> None:
     """Сырой режим — переключатель страницы; шторка всегда отрисованная."""
     client, _entry = docs_client
-    body = client.get(f"{_DOC_URL}?peek=1&raw=1").text
+    body = client.get(f"{_DOC_URL}?peek=1&raw=1", headers={"HX-Request": "true"}).text
+    assert 'data-peek-kind="doc"' in body
     assert '<pre class="md-preview">' not in body
     assert "Entities and tables." in body
 
@@ -746,4 +752,25 @@ def test_doc_page_comment_toolbar_ignores_sheet_sections(docs_client) -> None:
     """Выделение в документе из шторки не должно открывать комментарий к странице."""
     client, _entry = docs_client
     body = client.get(_DOC_URL).text
+    # Защита завязана на id шторки — он обязан совпадать с id в оболочке
+    # шторки (_frag/peek_shell.html), которую base.html вставляет в ту же страницу.
     assert "section.closest('#peek')" in body
+    assert '<dialog id="peek" class="peek"' in body
+
+
+def test_doc_page_section_ids_stay_unprefixed(docs_client) -> None:
+    """Префикс peek- — только в шторке: страница и её #якоря не меняются."""
+    client, _entry = docs_client
+    body = client.get(_DOC_URL).text
+    assert 'id="section-api"' in body
+    assert 'id="api"' in body
+    assert 'href="#api"' in body
+    assert "peek-api" not in body
+
+
+def test_doc_peek_404_escapes_key(docs_client) -> None:
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs/x/%3Cb%3Ey?peek=1")
+    assert r.status_code == 404
+    assert "<b>y" not in r.text
+    assert "&lt;b&gt;y" in r.text
