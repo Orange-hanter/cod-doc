@@ -85,8 +85,20 @@ def collect(texts: Iterable[str | None]) -> tuple[set[str], set[str]]:
         if not text:
             continue
         ids.update(m.group("entity") for m in _ENTITY_ONLY.finditer(text))
-        paths.update(m.group("path") for m in _PATH_ONLY.finditer(text))
+        paths.update(
+            m.group("path") for m in _PATH_ONLY.finditer(text) if _plain_path(m.group("path"))
+        )
     return ids, paths
+
+
+def _plain_path(path: str) -> bool:
+    """Путь без сегментов `.`/`..` (ведущий `./` можно).
+
+    `src/../lib/x.py` на диске — `lib/x.py`, а `file_url` выбрасывает `..`
+    и строит `src/lib/x.py`: ссылка вела бы на другой файл. Такой путь
+    остаётся текстом.
+    """
+    return not any(seg in {".", ".."} for seg in path.removeprefix("./").split("/"))
 
 
 def _is_file(base: Path, rel: str) -> bool:

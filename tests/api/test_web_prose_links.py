@@ -206,3 +206,9 @@ def test_disk_cache_survives_concurrent_renders(tmp_path: Path, monkeypatch) -> 
     for th in threads:
         th.join()
     assert errors == []
+
+
+def test_path_with_dot_segments_stays_text() -> None:
+    # `src/../lib/x.py` — на диске `lib/x.py`, а ссылка вела бы на `src/lib/x.py`.
+    _ids, paths = collect(["src/../lib/x.py и ./README.md, a/./b.py"])
+    assert paths == {"./README.md"}
