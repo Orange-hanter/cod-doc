@@ -899,7 +899,13 @@ def task_move_plan(
 @click.option("--commit", default=None, help="Git commit SHA")
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None, help="Итог закрытия — виден на карточке задачи")
-@click.option("--pr", type=int, default=None, help="Номер PR/MR, которым закрыта задача")
+@click.option(
+    "--pr",
+    # IntRange: `--pr 0` — ошибка click с текстом, а не ValueError сервиса трейсбеком.
+    type=click.IntRange(min=1),
+    default=None,
+    help="Номер PR/MR, которым закрыта задача",
+)
 @click.pass_context
 def task_complete(
     ctx: click.Context,

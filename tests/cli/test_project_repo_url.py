@@ -107,3 +107,12 @@ def test_cli_unknown_project(registry: str) -> None:
     r = CliRunner().invoke(main, ["project", "repo-url", "nope", "https://github.com/o/r"])
     assert r.exit_code == 1
     assert "не найден" in r.output
+
+
+@pytest.mark.parametrize("bad", ["0", "-1"])
+def test_task_complete_rejects_non_positive_pr(bad: str) -> None:
+    """`--pr 0` — ошибка click до сервиса (exit 2, текст), а не трейсбек ValueError."""
+    r = CliRunner().invoke(main, ["task", "complete", "X-1", "-p", "proj", "--pr", bad])
+    assert r.exit_code == 2
+    assert "--pr" in r.output
+    assert "Traceback" not in r.output
