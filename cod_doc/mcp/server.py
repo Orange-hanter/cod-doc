@@ -39,6 +39,7 @@ from cod_doc.mcp.tools import (
     question_tools,
     repair_tools,
     revision_tools,
+    roadmap_tools,
     routine_tools,
     run_tools,
     scenario_tools,
@@ -112,6 +113,8 @@ for _module in (
     repair_tools,
     # RFC 29 §10.7 / CLO-016 sync_* (status, pull, push; standard/full)
     sync_tools,
+    # RFC 36 / ROAD-005 roadmap_get (work order + throughput forecast; standard/full)
+    roadmap_tools,
 ):
     _module.register(mcp)
 

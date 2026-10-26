@@ -93,12 +93,17 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
     return result
 
 
-def roadmap_to_dict(roadmap: Roadmap) -> dict[str, Any]:
+def roadmap_to_dict(roadmap: Roadmap, *, plan_scope: str | None = None) -> dict[str, Any]:
     """Дорожная карта (RFC 36 §3.2.5) в JSON-форму — одна на MCP, CLI, REST и веб (C-04).
 
     Даты — ISO-строки или ``None``; ``meaning`` повторяет главное правило
     прямо в ответе: дата — прогноз по пропускной способности, не срок (C-19).
+    ``plan_scope`` оставляет строки и полосы одного плана; позиции и даты —
+    по-прежнему очереди всего проекта.
     """
+
+    def keep(scope: str) -> bool:
+        return plan_scope is None or scope == plan_scope
 
     def day(value: date | None) -> str | None:
         return None if value is None else value.isoformat()
@@ -126,6 +131,7 @@ def roadmap_to_dict(roadmap: Roadmap) -> dict[str, Any]:
                     "p85": day(dates[row.task_id].p85),
                 }
                 for row in queue.rows
+                if keep(row.plan_scope)
             ],
             "plans": [
                 {
@@ -137,6 +143,7 @@ def roadmap_to_dict(roadmap: Roadmap) -> dict[str, Any]:
                     "open_count": bar.open_count,
                 }
                 for bar in queue.plans
+                if keep(bar.scope)
             ],
         },
         "forecast": {
@@ -153,6 +160,7 @@ def roadmap_to_dict(roadmap: Roadmap) -> dict[str, Any]:
                     "p85_finish": day(p.p85_finish),
                 }
                 for p in forecast.plans
+                if keep(p.scope)
             ],
             "warnings": [w.value for w in forecast.warnings],
             "runs": forecast.runs,

@@ -58,6 +58,7 @@ READER_TOOLS: Final = frozenset(
         "plan_ready",
         "plan_reverse_chain",
         "plan_sections_list",
+        "roadmap_get",
         "question_get",
         "question_list",
         "revision_get",

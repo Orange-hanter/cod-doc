@@ -404,6 +404,7 @@ _cod-doc() {
         (reindex)    _cod_doc_reindex && ret=0 ;;
         (remote)     _cod_doc_remote && ret=0 ;;
         (revision)   _cod_doc_revision && ret=0 ;;
+        (roadmap)    _cod_doc_roadmap && ret=0 ;;
         (routine)    _cod_doc_routine && ret=0 ;;
         (runtime)    _cod_doc_runtime && ret=0 ;;
         (scenario)   _cod_doc_scenario && ret=0 ;;
@@ -459,6 +460,7 @@ _cod-doc() {
     'reindex:Rebuild repo-level indexes (files / symbols / imports).'
     'remote:Remotes проекта в ~/.cod-doc/config.yaml (RFC 29 §10.12).'
     'revision:Inspect and revert revision history.'
+    'roadmap:Дорожная карта; порядок работ проекта и прогноз «когда очередь дойд…'
     'routine:Inspect and run routines (scheduled health checks).'
     'runtime:Рантайм сервисов и демоны launchd (замена cod-doc-services.sh).'
     'scenario:Author test scenarios and project them into docs/system/scenarios/.'
@@ -3474,6 +3476,50 @@ _cod-doc() {
     '(--until)--until=[ISO-8601; ревизии не позже момента (по умолчанию — без верхней гран…]:until' \
     '*--group-by=[Ключи агрегации; повторяйте опцию для нескольких]:group-by:(day entity_kind author)' \
     '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_roadmap] )) || _cod_doc_roadmap() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_roadmap_commands' \
+    '*:: :->cod_doc_roadmap_cmd' && ret=0
+
+  case $state in
+    (cod_doc_roadmap_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-roadmap-$words[1]:"
+      case $words[1] in
+        (show) _cod_doc_roadmap_show && ret=0 ;;
+        (*)    _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_roadmap_commands] )) || _cod_doc_roadmap_commands() {
+  local -a cmds
+  cmds=(
+    'show:Очередь задач всего проекта с прогнозом p50/p85.'
+  )
+  _describe -t cod-doc-roadmap-commands 'cod-doc roadmap command' cmds
+}
+
+(( $+functions[_cod_doc_roadmap_show] )) || _cod_doc_roadmap_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--plan)--plan=[Только строки этого плана]:plan-scope:_cod_doc_plans' \
+    '(--include-backlog)--include-backlog[Включить backlog]' \
+    '(--weeks)--weeks=[Окно выборки, недель]:weeks' \
+    '(--seed)--seed=[Seed Монте-Карло]:seed' \
+    '(--asof)--asof=[Дата отсчёта прогноза YYYY-MM-DD (по умолчанию — сегодня, UTC)]:asof' \
+    '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }

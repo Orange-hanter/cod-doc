@@ -9,7 +9,8 @@ from __future__ import annotations
 import io
 import json
 import logging
-from typing import Annotated
+from datetime import UTC, date, datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -24,11 +25,13 @@ from cod_doc.api.v1.schemas import (
     SearchResponse,
     SearchScope,
 )
+from cod_doc.services import roadmap_service
 from cod_doc.services.activity_service import _uuid7, emit
 from cod_doc.services.context_service import context_get
 from cod_doc.services.finding_service import ingest_findings
 from cod_doc.services.ingest_service import INGEST_ADAPTERS, lookup_adapter
 from cod_doc.services.search_service import SearchIndexMissing, search
+from cod_doc.services.serializers import roadmap_to_dict
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -42,6 +45,9 @@ _TOKEN_BUDGET_DEFAULT = 8000
 _SEARCH_LIMIT_MIN = 1
 _SEARCH_LIMIT_MAX = 100
 _SEARCH_LIMIT_DEFAULT = 20
+_ROADMAP_WEEKS_MIN = 1
+_ROADMAP_WEEKS_MAX = 52
+_ROADMAP_WEEKS_DEFAULT = 8
 
 
 def _build_source_run_id(adapter_name: str) -> str:
@@ -163,3 +169,35 @@ def search_v1(
     except SearchIndexMissing as exc:
         raise HTTPException(503, str(exc)) from exc
     return SearchResponse(**result)
+
+
+@router.get("/projects/{slug}/roadmap")
+def get_roadmap(
+    slug: str,
+    db: ProjectDb,
+    include_backlog: bool = False,
+    weeks: int = Query(
+        default=_ROADMAP_WEEKS_DEFAULT, ge=_ROADMAP_WEEKS_MIN, le=_ROADMAP_WEEKS_MAX
+    ),
+    plan_scope: str | None = None,
+    seed: int = 0,
+    asof: date | None = None,
+) -> dict[str, Any]:
+    """Порядок работ и прогноз (RFC 36, ROAD-006) — та же форма, что у MCP ``roadmap_get``.
+
+    Даты — прогноз по пропускной способности, не сроки. Цикл в графе — 409.
+    """
+    del slug  # slug уже провалидирован dependency get_project_db
+    session, project_id = db
+    try:
+        built = roadmap_service.build(
+            session,
+            project_id=project_id,
+            asof=asof or datetime.now(UTC).date(),
+            include_backlog=include_backlog,
+            weeks=weeks,
+            seed=seed,
+        )
+    except roadmap_service.RoadmapCycleError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return roadmap_to_dict(built, plan_scope=plan_scope)
