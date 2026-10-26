@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
+from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import plan_service as plans
@@ -73,6 +74,9 @@ def plan_show(
         raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
 
     progress = plans.recalc(session, plan_id, project_id=project_db_id)
+    # ADO-149: соседи — планы в порядке списка планов. Ключ — row_id, а не
+    # scope: адрес страницы плана — row_id, scope лишь подпись.
+    plan_scopes = {str(p.row_id): p.scope for p in plans.list_for_project(session, project_db_id)}
     ready_tasks = plans.ready(session, plan_id, limit=PLAN_READY_LIMIT, project_id=project_db_id)
     exported = plans.export(session, plan_id, project_id=project_db_id)
 
@@ -138,6 +142,16 @@ def plan_show(
             ],
             "exported": exported,
             "dependency_graph_html": render_markdown(exported.get("dependency_graph", "")),
+            "nav": back_nav(
+                request,
+                proj.entry.name,
+                tab="plans",
+                order=list(plan_scopes),
+                current=str(plan_id),
+                href=lambda key: f"/p/{proj.entry.name}/plans/{key}",
+                entity_label=entity_labels(session, project_db_id),
+                label=plan_scopes.__getitem__,
+            ),
         },
     )
 

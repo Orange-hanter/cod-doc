@@ -480,11 +480,15 @@ def test_adr_show_form_fields_are_styleable(adr_client) -> None:
     assert 'class="form-actions"' in r.text
 
 
-def test_adr_show_back_link_is_sticky(adr_client) -> None:
-    """ADO-135: возврат к списку виден с любой глубины прокрутки."""
+def test_adr_show_back_bar_with_neighbours(adr_client) -> None:
+    """ADO-135 → ADO-149: липкая полоса «назад» с соседними решениями."""
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr/ADR-001")
-    assert 'class="adr-back"' in r.text
+    assert 'class="back-bar"' in r.text
+    assert f'href="/p/{entry.name}/adr" data-back' in r.text
+    assert 'class="back-bar-label">ADRs</span>' in r.text
+    assert f'href="/p/{entry.name}/adr/ADR-002" rel="next"' in r.text
+    assert "adr-back" not in r.text
 
 
 def test_adr_new_form_uses_settings_form(adr_client) -> None:

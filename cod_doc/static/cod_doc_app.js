@@ -87,6 +87,40 @@
     ev.detail.isError = false;
   });
 
+  // ── Back to the parent (ADO-149) ─────────────────────────────────────
+  // Полоса «назад» ведёт по href (родитель из ?from / Referer, иначе индекс
+  // вкладки). Если предыдущая запись истории и есть этот родитель — идём
+  // history.back(): список возвращается с прокруткой, а его собственный
+  // «назад» не начинает вести обратно сюда.
+  //
+  // document.referrer — страница, с которой загружен документ, то есть
+  // запись перед той, на которой он загрузился. Но в документе бывают свои
+  // записи: клик по #якорю оглавления, pushState шторки и htmx. С такой
+  // записи history.back() вернул бы на этот же документ. Поэтому запись
+  // загрузки помечается, и back() идёт только с неё.
+  const LOAD_KEY = 'codDocLoadEntry';
+  const loadToken = String(Date.now()) + Math.random().toString(36).slice(2);
+  try {
+    history.replaceState(Object.assign({}, history.state, { [LOAD_KEY]: loadToken }), '');
+  } catch (e) { /* state не сериализуется — back() не включаем */ }
+
+  document.addEventListener('click', (ev) => {
+    const link = ev.target.closest && ev.target.closest('a[data-back]');
+    if (!link || ev.defaultPrevented || ev.button !== 0) return;
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    if (history.length < 2) return;
+    if (!history.state || history.state[LOAD_KEY] !== loadToken) return;
+    let ref;
+    try { ref = new URL(document.referrer); } catch (e) { return; }
+    const to = new URL(link.href, location.href);
+    if (ref.origin !== location.origin) return;
+    // Запись истории не помнит якорь ссылки: с `#…` — обычный переход.
+    if (to.hash) return;
+    if (ref.pathname + ref.search !== to.pathname + to.search) return;
+    ev.preventDefault();
+    history.back();
+  });
+
   // ── Agent console ────────────────────────────────────────────────────
   // Only wires up if the page has the console container. Listens for
   // cod_doc:event events emitted by cod_doc_ws.js and renders a live

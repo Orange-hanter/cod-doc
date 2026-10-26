@@ -53,8 +53,12 @@
   // Перезагрузка с открытой шторкой оставляет текущей записи её state, хотя
   // документ теперь — полная страница этой карточки. Стираем: иначе «Назад»
   // на эту запись открыл бы карточку шторкой поверх её же страницы.
+  // Стирается только ключ шторки: метку записи загрузки (cod_doc_app.js,
+  // ADO-149) он не трогает.
   if (history.state && history.state[STATE_KEY]) {
-    history.replaceState(null, '', location.href);
+    const rest = Object.assign({}, history.state);
+    delete rest[STATE_KEY];
+    history.replaceState(rest, '', location.href);
   }
 
   // ── Loading ──────────────────────────────────────────────────────────
@@ -77,12 +81,21 @@
     htmx.ajax('GET', peekUrl(url), { source: body, target: body, swap: 'innerHTML' });
   }
 
+  // ADO-149: полная страница помнит, что лежало под шторкой (список с
+  // фильтрами), — её «назад» ведёт туда, а не на индекс вкладки.
+  function fullPageUrl(url, hash) {
+    const u = new URL(url, location.href);
+    if (u.pathname + u.search !== docUrl) u.searchParams.set('from', docUrl);
+    u.hash = hash;
+    return u.pathname + u.search + u.hash;
+  }
+
   function applyHeader() {
     const card = body.querySelector('.peek-doc');
     const title = card ? card.dataset.peekTitle : '';
     titleEl.textContent = title || '';
     fullLink.href = card && card.dataset.peekUrl
-      ? card.dataset.peekUrl + new URL(currentUrl, location.href).hash
+      ? fullPageUrl(card.dataset.peekUrl, new URL(currentUrl, location.href).hash)
       : currentUrl;
     // Заголовок вкладки — тот же, что у полной страницы карточки.
     document.title = (card && card.dataset.peekPageTitle) || pageTitle;

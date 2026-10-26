@@ -9,6 +9,7 @@
 </nav>
 
 {% with slug=project.name, active="plans" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+{% include "_frag/back_bar.html" %}
 
 <h1>{{ plan.scope }}</h1>
 <section class="doc-meta">

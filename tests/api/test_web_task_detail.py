@@ -1030,6 +1030,64 @@ def test_pr_number_unicode_digit_is_400_not_500(task_detail_client) -> None:
     assert "PR" in r.text
 
 
+# ── ADO-149: полоса «назад» и соседи по плану ─────────────────────────────
+
+
+def test_task_back_bar_returns_to_filtered_list(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    page = client.get(
+        "/p/demo/tasks/DET-002",
+        headers={"Referer": "http://testserver/p/demo/tasks?status=todo"},
+    ).text
+    assert 'class="back-bar"' in page
+    assert 'href="/p/demo/tasks?status=todo" data-back' in page
+    assert '<span class="back-bar-tag">filtered</span>' in page
+    # Соседи — задачи плана; шаг несёт родителя с собой.
+    assert (
+        'href="/p/demo/tasks/DET-001?from=%2Fp%2Fdemo%2Ftasks%3Fstatus%3Dtodo" rel="prev"' in page
+    )
+    assert (
+        'href="/p/demo/tasks/DET-003?from=%2Fp%2Fdemo%2Ftasks%3Fstatus%3Dtodo" rel="next"' in page
+    )
+
+
+def test_task_back_bar_defaults_to_tasks_and_skips_peek(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    page = client.get("/p/demo/tasks/DET-001").text
+    assert 'href="/p/demo/tasks" data-back' in page
+    assert 'class="back-bar-label">Tasks</span>' in page
+    # Первая задача плана: «назад» по соседям выключен, место — 1 из 3.
+    assert 'aria-disabled="true" title="First"' in page
+    assert 'title="1 of 3"' in page
+    assert 'rel="prev"' not in page  # первая задача плана
+    assert 'href="/p/demo/tasks/DET-002" rel="next"' in page
+    sheet = client.get("/p/demo/tasks/DET-001?peek=1", headers={"HX-Request": "true"}).text
+    assert "back-bar" not in sheet
+
+
+def test_task_back_to_plan_page_is_labelled_with_scope(task_detail_client) -> None:
+    """ADO-149: родитель — страница плана; подпись — его scope, а не row_id."""
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import PlanModel
+
+    client, entry = task_detail_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            plan_id = session.execute(
+                select(PlanModel.row_id).where(PlanModel.scope == "payments")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    page = client.get(
+        "/p/demo/tasks/DET-001",
+        headers={"Referer": f"http://testserver/p/demo/plans/{plan_id}"},
+    ).text
+    assert f'href="/p/demo/plans/{plan_id}" data-back' in page
+    assert 'class="back-bar-label">payments</span>' in page
+
+
 # ── ADO-142: живые ссылки в описании и acceptance ─────────────────────────
 
 

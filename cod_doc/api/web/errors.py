@@ -108,17 +108,29 @@ def _safe_back_url(request: Request, fallback: str) -> str:
     так что сырые байты заголовка в ``Location`` не попадают.
     """
     referer = request.headers.get("Referer")
-    if not referer or _has_unsafe_chars(referer):
-        return fallback
-    parts = urlsplit(referer)
+    back = same_site_path(request, referer) if referer else None
+    return back if back is not None else fallback
+
+
+def same_site_path(request: Request, url: str) -> str | None:
+    """Относительный путь из ``url``, если он ведёт на этот же сайт; иначе None.
+
+    Правила — как у ``_safe_back_url``: свой хост в любом написании, ровно
+    один ведущий ``/``, без ``\\`` и управляющих символов; итог собран заново
+    с percent-кодированием. Его же зовёт полоса «назад» (ADO-149) — и для
+    ``Referer``, и для ``?from=``.
+    """
+    if _has_unsafe_chars(url):
+        return None
+    parts = urlsplit(url)
     if parts.scheme or parts.netloc:
         if not _same_origin(parts, request):
-            return fallback
-    elif referer.startswith("//"):
-        return fallback
+            return None
+    elif url.startswith("//"):
+        return None
     path = parts.path
     if not path.startswith("/") or path.startswith("//"):
-        return fallback
+        return None
     back = quote(path, safe=_PATH_SAFE)
     if parts.query:
         back += "?" + quote(parts.query, safe=_QUERY_SAFE)

@@ -1,0 +1,35 @@
+{#- ADO-149: липкая полоса под топбаром — ← к родителю, ‹ prev · N / M · next ›.
+
+Variables: `nav` — `api/web/back_nav.BackNav`; нет `nav` (фрагмент
+шторки, `?peek=1`) — нет и полосы: у шторки свой заголовок и Esc.
+`data-back` даёт ссылке `history.back()`, когда предыдущая запись
+истории и есть родитель (`cod_doc_app.js`); без JS это обычная ссылка. -#}
+{%- macro chevron(dir) -%}
+<svg class="back-bar-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="{{ 'M10 3.5 5.5 8l4.5 4.5' if dir == 'left' else 'M6 3.5 10.5 8 6 12.5' }}"/></svg>
+{%- endmacro -%}
+{%- if nav %}
+<nav class="back-bar" aria-label="Page navigation">
+  <a class="back-bar-back" href="{{ nav.back.href }}" data-back title="{{ 'Back to where you came from' if nav.has_context else 'Back to the list' }}">
+    {{- chevron('left') -}}
+    <span class="back-bar-label">{{ nav.back.label }}</span>
+    {%- if nav.filtered %}<span class="back-bar-tag">filtered</span>{% endif -%}
+  </a>
+  {%- if nav.prev or nav.next %}
+  <div class="back-bar-steps" role="group" aria-label="Neighbours">
+    {%- if nav.prev %}
+    <a class="back-bar-step" href="{{ nav.prev.href }}" rel="prev" title="Previous: {{ nav.prev.label }}" aria-label="Previous: {{ nav.prev.label }}">{{ chevron('left') }}<span class="back-bar-key">{{ nav.prev.label }}</span></a>
+    {%- else %}
+    <span class="back-bar-step is-off" aria-disabled="true" title="First">{{ chevron('left') }}</span>
+    {%- endif %}
+    {%- if nav.position %}
+    <span class="back-bar-pos" title="{{ nav.position }} of {{ nav.total }}">{{ nav.position }}<span class="back-bar-sep">/</span>{{ nav.total }}</span>
+    {%- endif %}
+    {%- if nav.next %}
+    <a class="back-bar-step" href="{{ nav.next.href }}" rel="next" title="Next: {{ nav.next.label }}" aria-label="Next: {{ nav.next.label }}"><span class="back-bar-key">{{ nav.next.label }}</span>{{ chevron('right') }}</a>
+    {%- else %}
+    <span class="back-bar-step is-off" aria-disabled="true" title="Last">{{ chevron('right') }}</span>
+    {%- endif %}
+  </div>
+  {%- endif %}
+</nav>
+{%- endif %}

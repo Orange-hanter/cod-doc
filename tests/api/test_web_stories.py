@@ -474,6 +474,33 @@ def test_import_master_save_rejects_empty_master(stories_client) -> None:
     assert r.status_code == 400
 
 
+# ── ADO-149: полоса «назад» и соседние истории ────────────────────────
+
+
+def test_story_back_bar_neighbours(stories_client) -> None:
+    client, entry, project_db_id, _ = stories_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    with transactional(make_session_factory(engine)) as session:
+        for sid in ("US-010", "US-002", "US-001"):
+            story_service.create(
+                session,
+                project_id=project_db_id,
+                story_id=sid,
+                persona="dev",
+                narrative=f"story {sid}",
+                priority=Priority.LOW,
+                author="human:test",
+            )
+    engine.dispose()
+
+    page = client.get(f"/p/{entry.name}/stories/US-002").text
+    assert 'href="/p/demo/stories" data-back' in page
+    assert 'class="back-bar-label">Stories</span>' in page
+    assert 'class="back-bar-pos" title="2 of 3"' in page
+    assert 'href="/p/demo/stories/US-001" rel="prev"' in page
+    assert 'href="/p/demo/stories/US-010" rel="next"' in page
+
+
 # ── ADO-142: живые ссылки в критериях приёмки ─────────────────────────
 
 

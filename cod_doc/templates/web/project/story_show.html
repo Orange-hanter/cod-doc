@@ -9,6 +9,7 @@
 </nav>
 
 {% with slug=project.name, active="stories" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+{% include "_frag/back_bar.html" %}
 
 <header class="task-hero status-tone-{{ story.status }}">
   <div class="task-hero-row task-hero-top">

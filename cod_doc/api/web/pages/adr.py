@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
+from cod_doc.api.web.back_nav import back_nav, entity_labels, natural_key
 from cod_doc.api.web.markdown import (
     autolink_adr_refs,
     lead_paragraph,
@@ -921,6 +922,19 @@ def adr_show(
             "decide": decide,
             "author_is_agent": actor_kind_for_author(payload["author"]) == ActorKind.AGENT,
             "topics": adr_topic_service.names(session, project_id),
+            # ADO-149: соседи — решения по номеру.
+            "nav": back_nav(
+                request,
+                proj.entry.name,
+                tab="adr",
+                order=sorted(
+                    (r.adr_id for r in adr_service.list_for_project(session, project_id)),
+                    key=natural_key,
+                ),
+                current=adr_id,
+                href=lambda key: f"/p/{proj.entry.name}/adr/{key}",
+                entity_label=entity_labels(session, project_id),
+            ),
         },
     )
 

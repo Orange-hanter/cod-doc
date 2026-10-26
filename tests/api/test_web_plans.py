@@ -381,3 +381,32 @@ def test_plan_show_404_for_plan_of_another_project(plans_client) -> None:
     assert r.status_code == 404
     r = client.post(f"/p/{entry.name}/plans/{foreign_id}/freeze", follow_redirects=False)
     assert r.status_code == 404
+
+
+def test_plan_show_has_back_bar(plans_client) -> None:
+    """ADO-149: полоса «назад» и на странице плана."""
+    client, entry, plan_id = plans_client
+    page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
+    assert 'href="/p/demo/plans" data-back' in page
+    assert 'class="back-bar-label">Plans</span>' in page
+
+
+def test_plan_neighbours_link_by_row_id_and_show_scope(plans_client) -> None:
+    """ADO-149: шаг к соседнему плану — по row_id, подпись — его scope."""
+    client, entry, plan_id = plans_client
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            now = datetime.now(UTC)
+            other = PlanRepository(session).add(
+                Plan(project_id=sole_project_id(session), scope="zz-later", principle="x")
+            )
+            other.created = now
+            other.last_updated = now
+            session.flush()
+            other_id = other.row_id
+    finally:
+        engine.dispose()
+    page = client.get(f"/p/{entry.name}/plans/{plan_id}").text
+    assert f'href="/p/demo/plans/{other_id}" rel="next" title="Next: zz-later"' in page
+    assert '<span class="back-bar-key">zz-later</span>' in page

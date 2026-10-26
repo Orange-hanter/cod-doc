@@ -95,6 +95,7 @@
   /* Layout */
   --content-max: 1280px;
   --topbar-h: 52px;
+  --backbar-h: 36px;  /* ADO-149: липкая полоса «назад» под топбаром */
 }
 
 [data-theme="dark"] {

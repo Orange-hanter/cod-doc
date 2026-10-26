@@ -490,3 +490,20 @@ def test_node_ancestors_depth_is_capped_from_root(session_factory) -> None:  # t
 
         assert len(chain) == tree._ANCESTOR_DEPTH_LIMIT
         assert [n.node_key for n in chain] == [f"n{i}" for i in range(4, 12)]
+
+
+def test_doc_keys_in_node_lists_one_section_or_the_inbox(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """ADO-149: соседи документа — ключи одного раздела, Инбокс — node_id=None."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        for key in ("docs/b", "docs/a", "docs/inbox"):
+            _doc(session, pid, key)
+        for key in ("docs/b", "docs/a"):
+            tree.assign(
+                session, project_id=pid, doc_key=key, node_key="vision", author="human:test"
+            )
+        node = tree.get_node(session, pid, "vision")
+        assert node is not None and node.row_id is not None
+        assert tree.doc_keys_in_node(session, pid, node.row_id) == ["docs/a", "docs/b"]
+        assert tree.doc_keys_in_node(session, pid, None) == ["docs/inbox"]
