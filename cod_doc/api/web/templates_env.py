@@ -117,11 +117,12 @@ def _fingerprint(name: str) -> str:
     return _STATIC_VERSION_CACHE[name]
 
 
-# WUI-001: виды ссылок, которые открываются в шторке. Ссылки, собранные в
-# Python (поиск, связи вопроса и сценария), несут вид цели строкой; шаблон
-# спрашивает `peekable(kind)`, а не держит свой список. «doc»/«document»
-# добавит WUI-002.
-PEEKABLE_KINDS: Final = frozenset({"task"})
+# WUI-001/002: виды ссылок, которые открываются в шторке. Ссылки, собранные
+# в Python (поиск, связи вопроса и сценария), несут вид цели строкой; шаблон
+# спрашивает `peekable(kind)`, а не держит свой список. Документ называется
+# по-разному: «doc» в поиске, «document» и «section» (документ + #якорь) в
+# связях вопроса и сценария.
+PEEKABLE_KINDS: Final = frozenset({"task", "doc", "document", "section"})
 
 
 def peekable(kind: str | None) -> bool:

@@ -38,7 +38,13 @@ _T1 = _T0 + 10_000
 
 #: Партиалы, которые подключает `base.html`. Список продублирован намеренно:
 #: расхождение с шаблоном ловит `test_base_html_links_every_partial`.
-_PARTIALS = ("css/_base.css", "css/_components.css", "css/_task_detail.css", "css/_peek.css")
+_PARTIALS = (
+    "css/_base.css",
+    "css/_components.css",
+    "css/_task_detail.css",
+    "css/_doc_detail.css",
+    "css/_peek.css",
+)
 
 
 @pytest.fixture(autouse=True)

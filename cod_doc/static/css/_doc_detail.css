@@ -1,0 +1,470 @@
+/* ── Document card (doc_show) ─────────────────────────────────────────────
+   Was an inline <style> in doc_show.html. Moved to a global partial for
+   WUI-002: the peek sheet renders the document card on any page (the task
+   kanban, an ADR), where an inline block from the doc page does not exist. */
+
+/* Banner */
+.ds-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  margin: 0 0 var(--space-4);
+  font-size: calc(13px * var(--text-scale, 1));
+  border: 1px solid var(--border);
+}
+.ds-banner-warning { background: var(--warning-soft-bg); border-color: var(--warning-border); color: var(--warning-soft-fg); }
+.ds-banner-info    { background: var(--info-soft-bg); border-color: var(--info-border); color: var(--info-soft-fg); }
+.ds-banner-danger  { background: var(--danger-soft-bg); border-color: var(--danger-border); color: var(--danger-soft-fg); }
+.ds-banner-icon { font-size: calc(18px * var(--text-scale, 1)); flex-shrink: 0; }
+.ds-banner-body { flex: 1; }
+.ds-banner-action { margin-left: auto; flex-shrink: 0; }
+
+/* Header */
+.ds-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-3);
+  flex-wrap: wrap;
+}
+.ds-header-main { flex: 1; min-width: 0; }
+.ds-title {
+  font-size: calc(26px * var(--text-scale, 1));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--fg-strong);
+  margin: 0 0 var(--space-1);
+  line-height: 1.25;
+}
+.ds-path {
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--text-scale, 1));
+  color: var(--muted);
+  display: block;
+}
+.ds-header-actions { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; }
+
+/* Meta chips */
+.ds-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+}
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: calc(11px * var(--text-scale, 1));
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted-strong);
+}
+.ds-chip-type { background: var(--purple-soft-bg); color: var(--purple); border-color: var(--purple); opacity: .85; }
+.ds-chip-draft { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border-color: var(--warning-border); }
+.ds-chip-active { background: var(--success-soft-bg); color: var(--success-soft-fg); border-color: var(--success-border); }
+.ds-chip-review { background: var(--info-soft-bg); color: var(--info-soft-fg); border-color: var(--info-border); }
+.ds-chip-deprecated { background: var(--bg-alt); color: var(--muted); border-color: var(--border); }
+.ds-chip-owner { background: var(--bg-soft); }
+.ds-chip-sensitivity { background: var(--danger-soft-bg); color: var(--danger-soft-fg); border-color: var(--danger-border); }
+.ds-meta-updated { margin-left: auto; }
+
+/* Layout */
+.ds-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-5);
+  align-items: start;
+  margin: 0 0 var(--space-5);
+}
+@media (max-width: 860px) { .ds-layout { grid-template-columns: 1fr; } }
+
+/* Sidebar */
+.ds-sidebar {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ds-toc {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+.ds-toc-label {
+  font-size: calc(10px * var(--text-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+}
+.ds-toc ul { list-style: none; padding: 0; margin: 0; }
+.ds-toc li { padding: 2px 0; }
+.ds-toc li.toc-lvl-2 { padding-left: 0; }
+.ds-toc li.toc-lvl-3 { padding-left: var(--space-3); }
+.ds-toc li.toc-lvl-4 { padding-left: var(--space-5); }
+.ds-toc a { font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); }
+.ds-toc a:hover { color: var(--accent); text-decoration: none; }
+.ds-sidebar-empty { font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); padding: var(--space-1) 0; }
+
+/* AI expand */
+.ds-ai-expand {
+  background: linear-gradient(135deg, var(--accent-soft-bg) 0%, var(--bg) 100%);
+  border: 1px solid var(--accent-soft-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ds-ai-expand-header { display: flex; gap: var(--space-2); align-items: flex-start; }
+.ds-ai-expand-icon { font-size: calc(18px * var(--text-scale, 1)); flex-shrink: 0; }
+.ds-expand-input {
+  padding: 6px 10px;
+  font: inherit;
+  font-size: calc(12px * var(--text-scale, 1));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  width: 100%;
+}
+.ds-ai-expand-mini { padding: var(--space-1) 0; }
+
+/* Body */
+.ds-body { min-width: 0; }
+.ds-preamble {
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+  font-size: calc(14px * var(--text-scale, 1));
+  line-height: 1.65;
+}
+.ds-preamble p { margin: 0 0 var(--space-2); }
+.ds-preamble p:last-child { margin-bottom: 0; }
+.ds-sections { display: flex; flex-direction: column; gap: var(--space-1); }
+.ds-empty-body {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+  color: var(--muted);
+}
+.ds-empty-icon { font-size: calc(36px * var(--text-scale, 1)); margin-bottom: var(--space-2); opacity: .5; }
+
+/* Section override for doc-show */
+.ds-body .doc-section {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+  margin-bottom: var(--space-2);
+}
+.ds-body .doc-section:first-child { margin-top: 0; }
+.ds-body .doc-section h2 { font-size: calc(17px * var(--text-scale, 1)); font-weight: 600; color: var(--fg-strong); }
+.ds-body .doc-section h3 { font-size: calc(14px * var(--text-scale, 1)); font-weight: 600; color: var(--fg-strong); }
+.ds-body .section-body { font-size: calc(14px * var(--text-scale, 1)); line-height: 1.65; margin-top: var(--space-2); }
+.ds-body .section-body p:last-child { margin-bottom: 0; }
+.section-edit-btn { opacity: .5; }
+.section-edit-btn:hover { opacity: 1; }
+.section-comment-btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: .5;
+  font-size: calc(12px * var(--text-scale, 1));
+  margin-left: 4px;
+  padding: 0 4px;
+}
+.section-comment-btn:hover { opacity: 1; color: var(--accent); }
+
+/* Panel (links + suggestions) */
+.ds-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+}
+.ds-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ds-panel-header h2 { margin: 0; font-size: calc(13px * var(--text-scale, 1)); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-strong); font-weight: 700; }
+
+/* Links */
+.ds-links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+@media (max-width: 700px) { .ds-links-grid { grid-template-columns: 1fr; } }
+.ds-links-col-title { font-size: calc(12px * var(--text-scale, 1)); font-weight: 600; color: var(--fg-strong); margin: 0 0 var(--space-2); }
+.ds-link-list { list-style: none; padding: 0; margin: 0; }
+.ds-link-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: calc(12px * var(--text-scale, 1));
+}
+.ds-link-item:last-child { border-bottom: 0; }
+.ds-link-broken { color: var(--danger); }
+.ds-link-section { margin-left: auto; }
+.ds-link-sections { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 2px; width: 100%; }
+
+/* Suggestions */
+.ds-sugg-group { margin-bottom: var(--space-3); }
+.ds-sugg-section-label { font-size: calc(11px * var(--text-scale, 1)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: var(--space-1); }
+.ds-sugg-list { list-style: none; padding: 0; margin: 0; }
+.ds-sugg-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: calc(12px * var(--text-scale, 1));
+}
+.ds-sugg-item:last-child { border-bottom: 0; }
+.ds-sugg-score { background: var(--bg-alt); border-radius: var(--radius-pill); padding: 1px 8px; font-size: calc(10px * var(--text-scale, 1)); font-family: var(--font-mono); color: var(--muted); }
+.ds-sugg-actions { margin-left: auto; display: flex; gap: var(--space-1); }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Comments — section side-bubbles + doc-level zone + selection toolbar.
+   ───────────────────────────────────────────────────────────────────── */
+
+.section-comment-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: calc(11px * var(--text-scale, 1));
+  font-weight: 600;
+  color: var(--warning-soft-fg);
+  background: var(--warning-soft-bg);
+  border: 1px solid var(--warning-border);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  vertical-align: middle;
+}
+.section-comment-badge:hover { background: var(--warning-border); text-decoration:none; }
+
+/* Bubbles flow inline at the bottom of the section. The original
+   absolute-positioned "right margin" layout pushed bubbles past the
+   viewport edge on narrow doc widths and forced horizontal scroll —
+   the inline variant always stays inside the section box. */
+.section-comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--warning-border);
+}
+
+.comment-bubble {
+  background: var(--warning-soft-bg);
+  border: 1px solid var(--warning-border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: calc(12px * var(--text-scale, 1));
+  line-height: 1.45;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.comment-bubble.comment-resolved {
+  background: var(--bg-alt);
+  border-color: var(--border);
+  opacity: .65;
+}
+.comment-bubble.comment-applied {
+  background: var(--success-soft-bg);
+  border-color: var(--success-border);
+}
+.comment-bubble.comment-doclevel {
+  background: var(--bg);
+  border-left-color: var(--accent);
+}
+
+.comment-bubble-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-1);
+}
+.comment-author {
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--text-scale, 1));
+  color: var(--muted-strong);
+}
+.comment-status {
+  font-size: calc(9px * var(--text-scale, 1));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--muted);
+}
+.status-open      { color: var(--warning-soft-fg); }
+.status-resolved  { color: var(--muted); }
+.status-applied   { color: var(--success-soft-fg); }
+
+.comment-quote {
+  margin: 0 0 var(--space-1);
+  padding: 2px var(--space-2);
+  border-left: 2px solid var(--border);
+  font-size: calc(11px * var(--text-scale, 1));
+  color: var(--muted);
+  font-style: italic;
+}
+.comment-body { white-space: pre-wrap; }
+.comment-actions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  margin-top: var(--space-1);
+}
+.inline-form { display: inline; }
+
+/* Doc-level comments list — full-width cards stacked vertically. */
+.ds-comment-doclevel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.ds-comment-doclevel-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.ds-comment-doclevel-form textarea {
+  font: inherit;
+  font-size: calc(13px * var(--text-scale, 1));
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+}
+
+/* Selection toolbar (floats next to the cursor on text selection). */
+#comment-selection-toolbar {
+  position: absolute;
+  z-index: 30;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  border-radius: var(--radius-sm);
+}
+
+/* Modal for entering the comment body.
+   NB: the explicit `[hidden]` override is required — `display: flex`
+   on the class beats the user-agent `[hidden] { display: none }` rule
+   because class and attribute selectors have equal specificity and
+   ours is declared later. Same trick on the selection toolbar. */
+.comment-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.comment-modal[hidden],
+#comment-selection-toolbar[hidden] { display: none; }
+.comment-modal-card {
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  width: min(480px, 92vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,.2);
+}
+.comment-modal-card textarea {
+  width: 100%;
+  font: inherit;
+  font-size: calc(13px * var(--text-scale, 1));
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  margin-top: var(--space-2);
+}
+.comment-modal-card blockquote {
+  margin: 4px 0 var(--space-2);
+  padding: 4px var(--space-2);
+  border-left: 2px solid var(--border);
+  font-size: calc(12px * var(--text-scale, 1));
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Inline spinner used inside buttons and the AI-apply overlay. */
+.spinner-inline {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Full-page veil shown while the AI-apply request is in flight. The
+   request can take 10-30s depending on how many sections the model
+   has to rewrite — without this the page just looks frozen. */
+.ai-apply-veil {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: calc(14px * var(--text-scale, 1));
+  gap: var(--space-3);
+}
+.ai-apply-veil[hidden] { display: none; }
+.ai-apply-veil .veil-spinner {
+  width: 38px; height: 38px;
+  border: 3px solid #fff;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+.ai-apply-veil .veil-hint { opacity: .8; font-size: calc(12px * var(--text-scale, 1)); max-width: 380px; text-align:center; }
+
+/* AI expand button states */
+.btn .btn-label { display: inline; }
+.btn .btn-loading { display: none; }
+.btn.is-loading .btn-label { display: none; }
+.btn.is-loading .btn-loading { display: inline; }
+.btn.is-loading { opacity: 0.75; cursor: not-allowed; pointer-events: none; }

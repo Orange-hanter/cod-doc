@@ -1,0 +1,223 @@
+{# Document card — shared by the doc page and the peek sheet (WUI-002).
+
+   `peek` set: read-only. No accept/raw controls, no AI expand, no section
+   edit or comment buttons, no page ids. Comments, suggestions and the page
+   script stay in doc_show.html: their JS binds to fixed ids once per page,
+   and the sheet injects this markup into a live page. #}
+{# ── Status banner ─────────────────────────────────────────────────────── #}
+{% if doc.status == "draft" %}
+<div class="ds-banner ds-banner-warning">
+  <span class="ds-banner-icon">✏</span>
+  <div class="ds-banner-body">
+    <strong>Draft</strong> — this document is a work in progress.
+    When ready, promote it to active:
+  </div>
+  {% if not peek %}
+  <form method="post" action="/p/{{ project.name }}/docs-accept" class="ds-banner-action">
+    <input type="hidden" name="doc_key" value="{{ doc.doc_key }}">
+    <input type="hidden" name="new_status" value="active">
+    <button type="submit" class="btn btn-sm btn-success">✓ Accept → active</button>
+  </form>
+  {% endif %}
+</div>
+{% elif doc.status == "review" %}
+<div class="ds-banner ds-banner-info">
+  <span class="ds-banner-icon">👁</span>
+  <div class="ds-banner-body"><strong>In review</strong> — awaiting sign-off.</div>
+  {% if not peek %}
+  <form method="post" action="/p/{{ project.name }}/docs-accept" class="ds-banner-action">
+    <input type="hidden" name="doc_key" value="{{ doc.doc_key }}">
+    <input type="hidden" name="new_status" value="active">
+    <button type="submit" class="btn btn-sm btn-success">✓ Accept → active</button>
+  </form>
+  {% endif %}
+</div>
+{% elif doc.status == "deprecated" %}
+<div class="ds-banner ds-banner-danger">
+  <span class="ds-banner-icon">⚠</span>
+  <div class="ds-banner-body"><strong>Deprecated</strong> — this document is no longer maintained.</div>
+</div>
+{% endif %}
+
+{# ── Document header ────────────────────────────────────────────────────── #}
+<div class="ds-header">
+  <div class="ds-header-main">
+    <h1 class="ds-title">{{ doc.title }}</h1>
+    <code class="ds-path">{{ doc.path }}</code>
+  </div>
+  {% if not peek %}
+  <div class="ds-header-actions">
+    {% if is_raw %}
+      <a class="btn btn-sm btn-secondary" href="/p/{{ project.name }}/docs/{{ doc.doc_key }}" data-no-peek>Rendered</a>
+    {% else %}
+      <a class="btn btn-sm btn-secondary" href="/p/{{ project.name }}/docs/{{ doc.doc_key }}?raw=1">Raw</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{# ── Metadata chips ─────────────────────────────────────────────────────── #}
+<div class="ds-meta">
+  <span class="ds-chip ds-chip-type">{{ doc.type }}</span>
+  <span class="ds-chip ds-chip-status ds-chip-{{ doc.status }}">{{ doc.status }}</span>
+  {% if doc.sensitivity and doc.sensitivity != "internal" %}
+    <span class="ds-chip ds-chip-sensitivity">{{ doc.sensitivity }}</span>
+  {% endif %}
+  {% if doc.owner %}
+    <span class="ds-chip ds-chip-owner">
+      <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11" style="margin-right:3px;opacity:.7;">
+        <circle cx="6" cy="4" r="2.5"/><path d="M1 10.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
+      </svg>{{ doc.owner }}</span>
+  {% endif %}
+  {% if doc.last_updated %}
+    <span class="ds-meta-updated muted-tiny" title="{{ doc.last_updated | ts_tooltip }}">Updated {{ doc.last_updated | short_datetime }}</span>
+  {% endif %}
+</div>
+
+{# ── Main body ──────────────────────────────────────────────────────────── #}
+<div class="ds-layout">
+
+  {# Sidebar #}
+  <aside class="ds-sidebar">
+    {% if sections %}
+    <nav class="ds-toc">
+      <div class="ds-toc-label">Sections</div>
+      <ul>
+        {% for s in sections %}
+        <li class="toc-lvl-{{ s.level }}">
+          {#- В шторке id секций с префиксом peek- (см. section_view.html). #}
+          <a href="#{{ 'peek-' if peek }}{{ s.anchor }}">{{ s.heading }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% else %}
+    <div class="ds-sidebar-empty">
+      <span class="muted-tiny">No sections yet</span>
+    </div>
+    {% endif %}
+
+    {# AI expand block — page only: its JS lives in doc_show.html. #}
+    {% if peek %}
+    {% elif not has_sections and doc.preamble %}
+    <div class="ds-ai-expand" id="ai-expand-block">
+      <div class="ds-ai-expand-header">
+        <span class="ds-ai-expand-icon">✨</span>
+        <div>
+          <div style="font-weight:600;font-size:calc(13px * var(--text-scale, 1));">Expand with AI</div>
+          <div class="muted-tiny">Generate sections from the preamble</div>
+        </div>
+      </div>
+      <input type="text" id="expand-intent"
+             class="ds-expand-input"
+             placeholder="Focus (optional, e.g. «add code examples»)">
+      <button type="button" class="btn btn-primary btn-sm" id="btn-expand"
+              style="width:100%;" onclick="runExpand()">
+        <span class="btn-label">✨ Generate sections</span>
+        <span class="btn-loading" hidden>Generating…</span>
+      </button>
+      <div id="expand-status" class="muted-tiny" style="margin-top:var(--space-1);"></div>
+    </div>
+    {% elif has_sections %}
+    <div class="ds-ai-expand-mini">
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-expand-more"
+              onclick="document.getElementById('ai-expand-full').hidden=false; this.hidden=true;">
+        ✨ AI: add more sections
+      </button>
+      <div id="ai-expand-full" hidden style="margin-top:var(--space-2);">
+        <input type="text" id="expand-intent-more" class="ds-expand-input"
+               placeholder="What to add?">
+        <button type="button" class="btn btn-primary btn-sm" onclick="runExpand('expand-intent-more')"
+                style="width:100%;margin-top:var(--space-1);">✨ Generate</button>
+        <div id="expand-status-more" class="muted-tiny" style="margin-top:var(--space-1);"></div>
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+
+  {# Body #}
+  <article class="ds-body"{% if not peek %} id="doc-body"{% endif %}>
+    {% if is_raw %}
+      {% if raw_body %}
+        <pre class="md-preview">{{ raw_body }}</pre>
+      {% else %}
+        <div class="ds-empty-body">
+          <div class="ds-empty-icon">📄</div>
+          <p>Document body is empty.</p>
+        </div>
+      {% endif %}
+    {% else %}
+      {% if preamble_html %}
+        <div class="ds-preamble">{{ preamble_html | safe }}</div>
+      {% endif %}
+      {% if sections_html %}
+        <div class="ds-sections">
+          {% for s in sections_html %}
+            {% include "_frag/section_view.html" %}
+          {% endfor %}
+        </div>
+      {% elif not preamble_html %}
+        <div class="ds-empty-body">
+          <div class="ds-empty-icon">📄</div>
+          <p class="muted">Document body is empty.</p>
+          <p class="muted-tiny">Add a preamble when creating, or use ✨ AI expand.</p>
+        </div>
+      {% endif %}
+    {% endif %}
+  </article>
+
+</div>
+
+{# ── Links ──────────────────────────────────────────────────────────────── #}
+<section class="ds-panel"{% if not peek %} id="doc-links"{% endif %}>
+  <header class="ds-panel-header">
+    <h2>Links
+      <span class="count-chip">↑ {{ outgoing_links | length }} · ↓ {{ incoming_links | length }}</span>
+    </h2>
+    <span class="muted-tiny">Use <code>[label](other-doc-key)</code> in section bodies to build links.</span>
+  </header>
+  <div class="ds-links-grid">
+    <div class="ds-links-col">
+      <h3 class="ds-links-col-title">Outgoing <span class="muted-tiny">— this doc points to</span></h3>
+      {% if outgoing_links %}
+        <ul class="ds-link-list">
+          {% for link in outgoing_links %}
+            <li class="ds-link-item {% if link.broken_reason %}ds-link-broken{% endif %}">
+              {% if link.to_doc_key %}
+                <a class="mono" href="/p/{{ project.name }}/docs/{{ link.to_doc_key }}" data-peek>{{ link.to_doc_key }}</a>
+              {% else %}
+                <code>{{ link.raw }}</code>
+              {% endif %}
+              <span class="ds-link-section muted-tiny">§ {{ link.from_section }}</span>
+              {% if link.broken_reason %}
+                <span class="badge badge-warning">broken</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted-tiny" style="padding: var(--space-2) 0;">No outgoing links yet.</p>
+      {% endif %}
+    </div>
+    <div class="ds-links-col">
+      <h3 class="ds-links-col-title">Incoming <span class="muted-tiny">— points to this doc</span></h3>
+      {% if incoming_links %}
+        <ul class="ds-link-list">
+          {% for grp in incoming_links %}
+            <li class="ds-link-item">
+              <a class="mono" href="/p/{{ project.name }}/docs/{{ grp.doc_key }}" data-peek>{{ grp.doc_key }}</a>
+              {% if grp.title %}<span class="muted-tiny">— {{ grp.title }}</span>{% endif %}
+              {% if grp.sections %}
+                <div class="ds-link-sections">
+                  {% for sec in grp.sections %}<span class="muted-tiny">§ {{ sec.heading }}</span>{% endfor %}
+                </div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted-tiny" style="padding: var(--space-2) 0;">Nobody links here yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>

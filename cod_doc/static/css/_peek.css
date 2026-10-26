@@ -148,3 +148,8 @@ html.peek-open { overflow: hidden; }
   .peek-alerts,
   .peek-guard { padding-left: var(--space-3); padding-right: var(--space-3); }
 }
+
+/* Document card in the sheet (WUI-002). The sticky sidebar is measured from
+   the page topbar on its own page; inside the sheet the scroll container is
+   .peek-body, so it sticks to the top of the sheet instead. */
+.peek .ds-sidebar { top: 0; }

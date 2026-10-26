@@ -14,7 +14,10 @@
      посетителя, хотя отпечаток точки входа честно менялся (ADO-144 лечил
      симптом на один слой выше, чем нужно). Здесь у каждого файла свой ?v=.
      Порядок тот же, что был в app.css: токены → компоненты → оверрайды. #}
-  {% for css in ('css/_base.css', 'css/_components.css', 'css/_task_detail.css', 'css/_peek.css') %}
+  {% for css in (
+    'css/_base.css', 'css/_components.css', 'css/_task_detail.css', 'css/_doc_detail.css',
+    'css/_peek.css',
+  ) %}
     <link rel="stylesheet" href="{{ static_url(css) }}">
   {% endfor %}
   <script>

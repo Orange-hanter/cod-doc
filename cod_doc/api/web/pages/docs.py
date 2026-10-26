@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -17,6 +18,7 @@ from cod_doc.api.deps import (
 )
 from cod_doc.api.web.errors import ValidationWebError, set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.peek import is_peek, peek_not_found
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
 from cod_doc.domain.entities import (
     DocNode,
@@ -1119,6 +1121,103 @@ def _doc_node_chain(session: Session, project_id: int, node_id: int | None) -> l
     return _crumb_dicts(doc_tree.node_ancestors(nodes, node_key))
 
 
+@dataclass
+class _DocComments:
+    """Комментарии документа для страницы: облачка по якорям и общая зона."""
+
+    by_anchor: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    doc_level: list[dict[str, Any]] = field(default_factory=list)
+    open_count: int = 0
+    total: int = 0
+
+
+def _doc_comments(
+    session: Session,
+    project_db_id: int,
+    doc_id: int,
+    sections_html: list[dict[str, Any]],
+) -> _DocComments:
+    """Комментарии документа; счётчики по секциям дописываются в `sections_html`."""
+    from cod_doc.services import comment_service as _comments
+
+    comments_rows = _comments.list_for_document(session, doc_id, project_id=project_db_id)
+    comments_by_anchor: dict[str, list[dict[str, Any]]] = {}
+    doc_level_comments: list[dict[str, Any]] = []
+    open_count = 0
+    for c in comments_rows:
+        c_view = {
+            "row_id": c.row_id,
+            "section_id": c.section_id,
+            "anchor": c.anchor,
+            "quote": c.quote or "",
+            "body": c.body,
+            "author": c.author,
+            "status": c.status,
+            "created": c.created,
+        }
+        if c.status == "open":
+            open_count += 1
+        if c.anchor:
+            comments_by_anchor.setdefault(c.anchor, []).append(c_view)
+        else:
+            doc_level_comments.append(c_view)
+    # Attach per-section comment counts onto the rendered section dicts.
+    for section_view in sections_html:
+        section_view["comments"] = comments_by_anchor.get(section_view["anchor"], [])
+        section_view["open_comments"] = sum(
+            1 for c in section_view["comments"] if c["status"] == "open"
+        )
+    return _DocComments(
+        by_anchor=comments_by_anchor,
+        doc_level=doc_level_comments,
+        open_count=open_count,
+        total=len(comments_rows),
+    )
+
+
+def _doc_suggestions(
+    session: Session,
+    project_db_id: int,
+    doc_id: int,
+    sections_db: list[Any],
+) -> list[dict[str, Any]]:
+    """PCA-422 follow-up: pending semantic-similarity hits, grouped by section."""
+    suggestions_by_section: list[dict[str, Any]] = []
+    try:
+        from cod_doc.services.link_service import semantic as _semantic
+
+        sec_id_to_heading = {s.row_id: s.heading for s in sections_db if s.row_id is not None}
+        rows = _semantic.list_suggestions_for_document(
+            session,
+            project_id=project_db_id,
+            document_id=doc_id,
+        )
+        # Group by from_section
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        for r in rows:
+            grouped.setdefault(r["from_section_id"], []).append(
+                {
+                    "row_id": r["row_id"],
+                    "to_doc_key": r["to_doc_key"],
+                    "score": round(r["score"], 3),
+                }
+            )
+        for sec_id, items in grouped.items():
+            suggestions_by_section.append(
+                {
+                    "section_id": sec_id,
+                    "section_heading": sec_id_to_heading.get(sec_id, "?"),
+                    # Renamed from "items" → "suggestions": Jinja's attribute lookup
+                    # resolves `grp.items` to the dict.items builtin method, not the
+                    # dict key, raising TypeError on `| length`.
+                    "suggestions": items,
+                }
+            )
+    except Exception:
+        suggestions_by_section = []
+    return suggestions_by_section
+
+
 @router.get("/p/{slug}/docs/{doc_key:path}", response_class=HTMLResponse)
 def doc_show(
     request: Request,
@@ -1129,8 +1228,12 @@ def doc_show(
 ) -> HTMLResponse:
     proj = get_project(slug)
     session, project_db_id = db
+    # WUI-002: `?peek=1` — та же карточка фрагментом для шторки, только чтение.
+    peek = is_peek(request)
     doc = docs.get(session, project_db_id, doc_key)
     if doc is None or doc.row_id is None:
+        if peek:
+            return peek_not_found(request, message=f"Документ не найден: {doc_key}")
         raise HTTPException(404, f"Документ не найден: {doc_key}")
     sections_db = docs.get_sections(session, doc.row_id, project_id=project_db_id)
     doc_node_chain = _doc_node_chain(session, project_db_id, doc.node_id)
@@ -1142,7 +1245,11 @@ def doc_show(
         {"anchor": s.anchor, "heading": s.heading, "level": s.level} for s in sections_db
     ]
 
-    is_raw = bool(raw)
+    # Сырой вид — режим полной страницы, шторка всегда отрисованная: ссылки
+    # с `?raw=1` намеренно без data-peek (стережёт test_web_peek_links), так
+    # что из интерфейса `?peek=1&raw=1` не приходит; пришедший руками `raw`
+    # игнорируется, а не ломает фрагмент.
+    is_raw = bool(raw) and not peek
     raw_body: str | None = None
     preamble_html: str | None = None
     sections_html: list[dict[str, Any]] = []
@@ -1167,7 +1274,8 @@ def doc_show(
                 "head_rev": revisions.head_for_entity(
                     session, EntityKind.SECTION, s.row_id, project_id=project_db_id
                 )
-                if s.row_id is not None
+                # Ревизия нужна только форме правки; в шторке правки нет.
+                if s.row_id is not None and not peek
                 else None,
             }
             for s in sections_db
@@ -1211,75 +1319,18 @@ def doc_show(
     incoming = sorted(incoming_groups.values(), key=lambda x: x["doc_key"])
 
     # Comments on this document — section-anchored bubbles + doc-level zone.
-    from cod_doc.services import comment_service as _comments
-
-    comments_rows = _comments.list_for_document(session, doc.row_id, project_id=project_db_id)
-    comments_by_anchor: dict[str, list[dict[str, Any]]] = {}
-    doc_level_comments: list[dict[str, Any]] = []
-    open_count = 0
-    for c in comments_rows:
-        c_view = {
-            "row_id": c.row_id,
-            "section_id": c.section_id,
-            "anchor": c.anchor,
-            "quote": c.quote or "",
-            "body": c.body,
-            "author": c.author,
-            "status": c.status,
-            "created": c.created,
-        }
-        if c.status == "open":
-            open_count += 1
-        if c.anchor:
-            comments_by_anchor.setdefault(c.anchor, []).append(c_view)
-        else:
-            doc_level_comments.append(c_view)
-    # Attach per-section comment counts onto the rendered section dicts.
-    for section_view in sections_html:
-        section_view["comments"] = comments_by_anchor.get(section_view["anchor"], [])
-        section_view["open_comments"] = sum(
-            1 for c in section_view["comments"] if c["status"] == "open"
-        )
-
-    # PCA-422 follow-up: Suggested links — pending semantic-similarity hits
-    # for sections of this document, with Accept/Reject controls.
-    suggestions_by_section: list[dict[str, Any]] = []
-    try:
-        from cod_doc.services.link_service import semantic as _semantic
-
-        sec_id_to_heading = {s.row_id: s.heading for s in sections_db if s.row_id is not None}
-        rows = _semantic.list_suggestions_for_document(
-            session,
-            project_id=project_db_id,
-            document_id=doc.row_id,
-        )
-        # Group by from_section
-        grouped: dict[int, list[dict[str, Any]]] = {}
-        for r in rows:
-            grouped.setdefault(r["from_section_id"], []).append(
-                {
-                    "row_id": r["row_id"],
-                    "to_doc_key": r["to_doc_key"],
-                    "score": round(r["score"], 3),
-                }
-            )
-        for sec_id, items in grouped.items():
-            suggestions_by_section.append(
-                {
-                    "section_id": sec_id,
-                    "section_heading": sec_id_to_heading.get(sec_id, "?"),
-                    # Renamed from "items" → "suggestions": Jinja's attribute lookup
-                    # resolves `grp.items` to the dict.items builtin method, not the
-                    # dict key, raising TypeError on `| length`.
-                    "suggestions": items,
-                }
-            )
-    except Exception:
-        suggestions_by_section = []
+    # Suggested links — pending semantic-similarity hits. Both are page-only:
+    # the sheet (WUI-002) is read-only and does not render them.
+    comments = (
+        _DocComments() if peek else _doc_comments(session, project_db_id, doc.row_id, sections_html)
+    )
+    suggestions_by_section = (
+        [] if peek else _doc_suggestions(session, project_db_id, doc.row_id, sections_db)
+    )
 
     return templates.TemplateResponse(
         request,
-        "project/doc_show.html",
+        "_frag/peek_doc.html" if peek else "project/doc_show.html",
         {
             "project": {"name": proj.entry.name},
             "linked_questions": question_service.linked_questions(
@@ -1310,10 +1361,10 @@ def doc_show(
             "incoming_links": incoming,
             "suggestions_by_section": suggestions_by_section,
             "has_sections": bool(sections_db),
-            "comments_by_anchor": comments_by_anchor,
-            "doc_level_comments": doc_level_comments,
-            "open_comment_count": open_count,
-            "comment_total": len(comments_rows),
+            "comments_by_anchor": comments.by_anchor,
+            "doc_level_comments": comments.doc_level,
+            "open_comment_count": comments.open_count,
+            "comment_total": comments.total,
         },
     )
 

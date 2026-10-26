@@ -25,7 +25,7 @@
     {% for d in documents %}
       <tr>
         <td class="docs-cell-title">
-          <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.title }}</a>
+          <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}" data-peek>{{ d.title }}</a>
           {%- if d.drift %} <span class="docs-drift" title="Проекция разошлась с БД — см. doc drift">⚠</span>{% endif %}
           <span class="docs-key mono">{{ d.doc_key }}</span>
         </td>

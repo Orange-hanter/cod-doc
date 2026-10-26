@@ -52,6 +52,7 @@ def test_index_renders_project_list(web_client) -> None:
         "css/_base.css",
         "css/_components.css",
         "css/_task_detail.css",
+        "css/_doc_detail.css",
         "css/_peek.css",
     ):
         assert f'<link rel="stylesheet" href="/static/{rel}?v=' in r.text, rel
