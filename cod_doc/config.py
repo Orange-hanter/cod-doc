@@ -75,9 +75,14 @@ def normalize_repo_url(url: str) -> str:
     scp = _SCP_GIT_URL.match(value)
     if scp:
         value = f"https://{scp['host']}/{scp['path']}"
-    value = value.rstrip("/")
-    value = value.removesuffix(".git")
-    if not re.match(r"^https?://[^/\s]+/\S+$", value):
+    # Query и фрагмент (`?tab=readme`, `#readme`) к адресу репозитория не
+    # относятся: склеенный с ними `/commit/<sha>` ушёл бы в строку запроса.
+    value = re.split(r"[?#]", value, maxsplit=1)[0].rstrip("/")
+    head, _, last = value.rpartition("/")
+    # `.git` — суффикс клона, но не всё имя: `o/.git` остаётся как есть.
+    if last.endswith(".git") and last != ".git":
+        value = f"{head}/{last.removesuffix('.git')}"
+    if not re.match(r"^https?://[^/\s?#]+/[^\s?#]+$", value):
         raise ValueError(f"не веб-адрес репозитория: {url!r} (ожидается https://host/owner/repo)")
     return value
 

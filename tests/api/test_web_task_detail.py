@@ -966,3 +966,57 @@ def test_done_card_lists_affected_files_at_closing_sha(task_detail_client) -> No
     assert 'href="https://github.com/o/r/blob/4b770e4/docs/a.md"' in page
     # Порядок — по пути.
     assert page.index(">cod_doc/b.py<") < page.index(">docs/a.md<")
+
+
+def test_pr_number_with_space_after_hash_is_accepted(task_detail_client) -> None:
+    client, _entry = task_detail_client
+    _set_repo_url("https://github.com/o/r")
+    r = _close_via_web(client, pr="# 12")
+    assert r.status_code == 200
+    assert 'href="https://github.com/o/r/pull/12"' in r.text
+
+
+# ── ADO-148: ссылки на хостинг — только безопасные и рабочие ──────────────
+
+
+def test_file_url_drops_dot_segments_and_encodes() -> None:
+    from cod_doc.api.web.task_detail import file_url
+
+    base = "https://github.com/o/r"
+    assert file_url(base, "4b770e4", "docs/a.md") == f"{base}/blob/4b770e4/docs/a.md"
+    # `..` увёл бы ссылку за /blob/ после нормализации в браузере.
+    assert file_url(base, "4b770e4", "../../settings/x") == f"{base}/blob/4b770e4/settings/x"
+    # `#` и `?` не обрезают путь, пробел кодируется.
+    assert file_url(base, None, "a b/c#d?e.md") == f"{base}/blob/HEAD/a%20b/c%23d%3Fe.md"
+    assert file_url(base, "4b770e4", "../..") is None
+
+
+def test_commit_and_pr_urls_reject_garbage() -> None:
+    from cod_doc.api.web.task_detail import commit_url, pr_url
+
+    base = "https://github.com/o/r"
+    assert commit_url(base, "ABC1234") == f"{base}/commit/abc1234"
+    # sha из MCP/CLI — любая строка: не hex — ссылки нет.
+    assert commit_url(base, "abc/../../x") is None
+    assert commit_url(base, "a b") is None
+    assert pr_url(base, -5) is None
+    assert pr_url(base, 0) is None
+
+
+def test_links_survive_hand_edited_repo_url() -> None:
+    """Реестр правят руками: адрес без схемы — нет ссылок, а не 500."""
+    from cod_doc.api.web.task_detail import commit_url, file_url, pr_url
+
+    for bad in ("github.com/o/r", "o/r", "https://gitlab.com"):
+        assert commit_url(bad, "4b770e4") is None, bad
+        assert pr_url(bad, 3) is None, bad
+        assert file_url(bad, "4b770e4", "a.py") is None, bad
+
+
+def test_gitlab_links() -> None:
+    from cod_doc.api.web.task_detail import commit_url, file_url, pr_url
+
+    base = "https://gitlab.example.com/g/sub/r"
+    assert commit_url(base, "4b770e4") == f"{base}/-/commit/4b770e4"
+    assert pr_url(base, 9) == f"{base}/-/merge_requests/9"
+    assert file_url(base, "4b770e4", "a.py") == f"{base}/-/blob/4b770e4/a.py"

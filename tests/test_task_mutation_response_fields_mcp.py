@@ -183,6 +183,8 @@ def test_complete_records_pr_and_summary(
         record = task_service.completion_record(session, project_id=pid, task_row_id=row_id)
     assert record is not None
     assert (record.commit_sha, record.pr, record.summary) == ("abc1234", 261, "итог закрытия")
+    # Автор мутации доходит до закрывающей ревизии, а не подменяется дефолтом.
+    assert record.author == "agent:dakh/claude-code"
 
 
 def test_update_status_response_carries_relations(

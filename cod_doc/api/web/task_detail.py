@@ -9,9 +9,12 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, urlsplit
 
 from cod_doc.api.web.markdown import render_markdown
+from cod_doc.config import normalize_repo_url
 from cod_doc.domain.entities import EntityKind, QuestionLinkKind, Task, TaskStatus
 from cod_doc.services import plan_service as plans
 from cod_doc.services import question_service
@@ -21,6 +24,8 @@ from cod_doc.services import trace_service as traces
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from cod_doc.services.task_service import CompletionRecord
 
 # Событие для htmx: «задача изменилась». Шторка по нему помечает список под
 # собой устаревшим и перечитывает его при закрытии.
@@ -39,33 +44,69 @@ def task_changed_header(task_id: str) -> dict[str, str]:
     return {"HX-Trigger": json.dumps({TASK_CHANGED_EVENT: {"task_id": task_id}})}
 
 
+_SHA_RE = re.compile(r"^[0-9a-f]{7,64}$")
+
+
 def _is_gitlab(repo_url: str) -> bool:
-    return "gitlab" in repo_url.split("/")[2]
+    # urlsplit, а не split("/")[2]: правленный руками реестр не должен ронять
+    # карточку IndexError'ом на адресе без схемы.
+    return "gitlab" in (urlsplit(repo_url).hostname or "")
+
+
+def _repo_prefix(repo_url: str | None) -> str | None:
+    """Основа ссылок на хостинг; не веб-адрес репозитория — None, ссылок нет."""
+    if not repo_url:
+        return None
+    try:
+        base = normalize_repo_url(repo_url)
+    except ValueError:
+        return None
+    return f"{base}/-" if _is_gitlab(base) else base
 
 
 def commit_url(repo_url: str | None, sha: str | None) -> str | None:
-    """Коммит на хостинге репозитория (ADO-148); без `repo_url` — None."""
-    if not repo_url or not sha:
+    """Коммит на хостинге репозитория (ADO-148); без `repo_url` — None.
+
+    sha в БД пишут и MCP/CLI, а не только форма: не hex — ссылки нет, иначе
+    `abc/../x` увёл бы её за пределы `/commit/`.
+    """
+    prefix = _repo_prefix(repo_url)
+    if prefix is None or not sha or not _SHA_RE.match(sha.lower()):
         return None
-    return f"{repo_url}{'/-' if _is_gitlab(repo_url) else ''}/commit/{sha}"
+    return f"{prefix}/commit/{sha.lower()}"
 
 
 def pr_url(repo_url: str | None, pr: int | None) -> str | None:
     """PR (GitHub) или MR (GitLab) по номеру; без `repo_url` — None."""
-    if not repo_url or not pr:
+    prefix = _repo_prefix(repo_url)
+    if prefix is None or pr is None or pr <= 0:
         return None
-    if _is_gitlab(repo_url):
-        return f"{repo_url}/-/merge_requests/{pr}"
-    return f"{repo_url}/pull/{pr}"
+    return f"{prefix}/merge_requests/{pr}" if prefix.endswith("/-") else f"{prefix}/pull/{pr}"
 
 
 def file_url(repo_url: str | None, ref: str | None, path: str) -> str | None:
-    """Файл в репозитории на коммите закрытия (иначе — на HEAD ветки по умолчанию)."""
-    if not repo_url:
+    """Файл в репозитории на коммите закрытия (иначе — на HEAD ветки по умолчанию).
+
+    Путь из `affects_files` — произвольная строка автора задачи: сегменты
+    `.`/`..` выбрасываются (браузер нормализовал бы их и увёл ссылку за
+    `/blob/`), остальные кодируются — `#` и `?` не обрезают путь.
+    """
+    prefix = _repo_prefix(repo_url)
+    segments = [quote(seg, safe="") for seg in path.split("/") if seg not in {"", ".", ".."}]
+    if prefix is None or not segments:
         return None
-    return (
-        f"{repo_url}{'/-' if _is_gitlab(repo_url) else ''}/blob/{ref or 'HEAD'}/{path.lstrip('/')}"
-    )
+    sha = ref.lower() if ref and _SHA_RE.match(ref.lower()) else "HEAD"
+    return f"{prefix}/blob/{sha}/{'/'.join(segments)}"
+
+
+# «Итог не передан» — отличие от «закрытия нет» (None) для task_head_context.
+_UNSET: Any = object()
+
+
+def _completion(session: Session, project_db_id: int, task: Task) -> CompletionRecord | None:
+    if task.status is not TaskStatus.DONE or task.row_id is None:
+        return None
+    return tasks.completion_record(session, project_id=project_db_id, task_row_id=task.row_id)
 
 
 def task_head_context(
@@ -74,18 +115,17 @@ def task_head_context(
     task: Task,
     *,
     repo_url: str | None = None,
+    completion: CompletionRecord | None = _UNSET,
 ) -> dict[str, Any]:
     """Поля шапки: hero (статус, приоритет, тип, план, коммит, PR) и действия.
 
     ADO-148: чип коммита — ссылка на хостинг, когда у проекта задан
     `repo_url`; PR берётся из закрывающей ревизии (`completion_record`).
+    `completion` уже прочитан вызывающим (тело карточки) — второй раз не читаем.
     """
     plan = plans.get_for_project(session, task.plan_id, project_id=project_db_id)
-    completion = (
-        tasks.completion_record(session, project_id=project_db_id, task_row_id=task.row_id)
-        if task.status is TaskStatus.DONE and task.row_id is not None
-        else None
-    )
+    if completion is _UNSET:
+        completion = _completion(session, project_db_id, task)
     pr = completion.pr if completion else None
     return {
         "links": {
@@ -124,12 +164,8 @@ def task_detail_context(
         session, EntityKind.TASK, task.row_id, project_id=project_db_id
     )
     trace = traces.list_for_task(session, task.row_id)
-    head = task_head_context(session, project_db_id, task, repo_url=repo_url)
-    completion = (
-        tasks.completion_record(session, project_id=project_db_id, task_row_id=task.row_id)
-        if task.status is TaskStatus.DONE
-        else None
-    )
+    completion = _completion(session, project_db_id, task)
+    head = task_head_context(session, project_db_id, task, repo_url=repo_url, completion=completion)
     return {
         **head,
         "task": {

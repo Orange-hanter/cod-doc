@@ -691,3 +691,9 @@ def test_lead_paragraph_skips_headings_and_lists() -> None:
         "Первый <strong>абзац</strong>\nвторая строка"
     )
     assert lead_paragraph("") == ""
+
+
+def test_link_with_leading_space_in_url_is_not_a_link() -> None:
+    """Браузер срезал бы ведущий пробел URL; шаблон ссылки пробел в URL не пускает вовсе."""
+    out = render_markdown("[x]( javascript:alert(1))")
+    assert "<a " not in out

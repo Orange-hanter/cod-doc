@@ -557,6 +557,11 @@ def complete(
         TaskNotFoundError,
     )
 
+    # Неверный номер PR — тот же ответ {ok: false}, что у прочих отказов, а
+    # не ValueError из сервиса как необработанное исключение тула.
+    if pr is not None and pr <= 0:
+        return {"ok": False, "hint": f"PR number must be positive: {pr}", "code": "invalid"}
+
     try:
         t = task_service.complete(
             session,

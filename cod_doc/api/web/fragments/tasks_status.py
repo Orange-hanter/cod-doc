@@ -52,7 +52,8 @@ def _closing_refs(commit_sha: str, pr: str) -> tuple[str | None, int | None]:
     sha = commit_sha.strip().lower() or None
     if sha is not None and not _SHA_RE.match(sha):
         raise ValidationWebError(f"Не похоже на sha коммита: {commit_sha.strip()!r}")
-    raw_pr = pr.strip().lstrip("#")
+    # `#261` и `# 261` — тот же номер.
+    raw_pr = pr.strip().lstrip("#").strip()
     if not raw_pr:
         return sha, None
     if not raw_pr.isdigit() or int(raw_pr) <= 0:

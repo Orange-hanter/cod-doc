@@ -1511,9 +1511,11 @@ def complete(
     """
     from cod_doc.services.task_status_machine import is_terminal, validate_transition
 
+    # Сначала поиск задачи: для несуществующей — TaskNotFoundError, как и
+    # раньше, а не ошибка номера PR (на неё вызывающие не рассчитаны).
+    model = _require_task(session, task_id, project_id=project_id)
     if pr is not None and pr <= 0:
         raise ValueError(f"номер PR должен быть положительным: {pr}")
-    model = _require_task(session, task_id, project_id=project_id)
 
     if model.status == TaskStatus.DONE.value:
         raise TaskAlreadyDoneError(task_id)

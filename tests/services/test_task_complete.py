@@ -365,3 +365,26 @@ def test_affected_files_sorted(engine_with_schema) -> None:  # type: ignore[no-u
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s, affected_files=["src/b.py", "docs/a.md"])
         assert tasks.affected_files(session, task.row_id) == ["docs/a.md", "src/b.py"]  # type: ignore[arg-type]
+
+
+def test_complete_missing_task_with_bad_pr_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Сначала поиск задачи: вызывающие ждут TaskNotFoundError, а не ошибку PR."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory, commit=False) as session:
+        p, _pl, _s = _seed_plan(session)
+        with pytest.raises(tasks.TaskNotFoundError):
+            tasks.complete(session, project_id=p, task_id="NOPE-1", author="human:dakh", pr=0)
+
+
+def test_agent_complete_bad_pr_is_ok_false(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services import agent_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory, commit=False) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        out = agent_service.complete(
+            session, project_id=p, task_id=task.task_id, agent_id="agent:x", pr=-1
+        )
+    assert out["ok"] is False
+    assert out["code"] == "invalid"

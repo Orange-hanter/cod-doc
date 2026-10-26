@@ -33,6 +33,10 @@ if TYPE_CHECKING:
             "  https://gitlab.example.com/group/sub/repo.git  ",
             "https://gitlab.example.com/group/sub/repo",
         ),
+        # Query и фрагмент к адресу репозитория не относятся.
+        ("https://github.com/o/r?tab=readme-ov-file", "https://github.com/o/r"),
+        ("https://github.com/o/r#readme", "https://github.com/o/r"),
+        ("https://github.com/o/r.git?x=1", "https://github.com/o/r"),
     ],
 )
 def test_normalize_repo_url(raw: str, expected: str) -> None:
