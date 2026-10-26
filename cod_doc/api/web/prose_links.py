@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,6 +65,7 @@ _DISK_CHECK_LIMIT = 32
 _DISK_TTL_S = 30.0
 _DISK_CACHE_MAX = 4096
 _disk_cache: dict[tuple[str, str], tuple[float, bool]] = {}
+_disk_lock = threading.Lock()
 _now = time.monotonic
 # Хвостовая пунктуация предложения к адресу не относится.
 _URL_TRAIL = ".,;:!?)"
@@ -91,7 +93,8 @@ def _is_file(base: Path, rel: str) -> bool:
     """Файл ли `rel` под `base`, без выхода за корень; ответ живёт `_DISK_TTL_S`."""
     key = (str(base), rel)
     now = _now()
-    hit = _disk_cache.get(key)
+    with _disk_lock:
+        hit = _disk_cache.get(key)
     if hit is not None and now - hit[0] < _DISK_TTL_S:
         return hit[1]
     try:
@@ -99,13 +102,16 @@ def _is_file(base: Path, rel: str) -> bool:
         exists = target.is_relative_to(base) and target.is_file()
     except OSError:
         exists = False
-    if len(_disk_cache) >= _DISK_CACHE_MAX:
-        # Сначала протухшее; сброс целиком — только если кэш полон свежим.
-        for stale in [k for k, (at, _) in _disk_cache.items() if now - at >= _DISK_TTL_S]:
-            del _disk_cache[stale]
+    # Синхронные обработчики FastAPI идут в пуле потоков: обход кэша под
+    # чужой вставкой дал бы «dictionary changed size during iteration».
+    with _disk_lock:
         if len(_disk_cache) >= _DISK_CACHE_MAX:
-            _disk_cache.clear()
-    _disk_cache[key] = (now, exists)
+            # Сначала протухшее; сброс целиком — только если кэш полон свежим.
+            for stale in [k for k, (at, _) in _disk_cache.items() if now - at >= _DISK_TTL_S]:
+                del _disk_cache[stale]
+            if len(_disk_cache) >= _DISK_CACHE_MAX:
+                _disk_cache.clear()
+        _disk_cache[key] = (now, exists)
     return exists
 
 

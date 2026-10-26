@@ -181,3 +181,28 @@ def test_candidates_are_capped_before_queries(monkeypatch) -> None:
     many = " ".join(f"ADO-{i} src/f{i}.py" for i in range(prose_links._CANDIDATE_LIMIT + 50))
     ProseLinks.build(None, 1, slug="demo", repo_url=REPO, root=None, texts=[many])  # type: ignore[arg-type]
     assert seen == {"ids": prose_links._CANDIDATE_LIMIT, "paths": prose_links._CANDIDATE_LIMIT}
+
+
+def test_disk_cache_survives_concurrent_renders(tmp_path: Path, monkeypatch) -> None:
+    """Кэш общий для потоков пула: переполнение под нагрузкой не роняет рендер."""
+    import threading
+
+    from cod_doc.api.web import prose_links
+
+    monkeypatch.setattr(prose_links, "_DISK_CACHE_MAX", 8)
+    monkeypatch.setattr(prose_links, "_disk_cache", {})
+    errors: list[BaseException] = []
+
+    def worker(n: int) -> None:
+        try:
+            for i in range(300):
+                prose_links._is_file(tmp_path, f"w{n}-{i}.md")
+        except BaseException as exc:  # собираем любую ошибку потока
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert errors == []

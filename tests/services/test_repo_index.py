@@ -232,4 +232,7 @@ def test_indexed_paths_spans_chunks(engine_with_schema, monkeypatch) -> None:  #
         session.flush()
         asked = {"a.py", "b.py", "c.py", "d.py", "e.py"}
         assert repo_index_service.indexed_paths(session, pid, asked) == {"a.py", "c.py", "e.py"}
+        # Число путей кратно чанку: два полных чанка, без пустого третьего.
+        even = {"a.py", "b.py", "c.py", "d.py"}
+        assert repo_index_service.indexed_paths(session, pid, even) == {"a.py", "c.py"}
         assert repo_index_service.indexed_paths(session, pid, set()) == set()
