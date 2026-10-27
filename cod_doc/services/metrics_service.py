@@ -143,7 +143,10 @@ class _Values:
 
 
 def _values(session: Session, task: TaskModel) -> _Values:
-    completed_at = _as_utc(task.completed_at) or datetime.now(UTC)
+    # Легаси-строки done без completed_at (на живой БД cod-doc — 34): конец —
+    # last_updated, а не now(), иначе каждый rebuild «удлинял» бы задачу и
+    # пересчёт не был бы идемпотентным.
+    completed_at = _as_utc(task.completed_at) or _as_utc(task.last_updated) or datetime.now(UTC)
     created = _as_utc(task.created) or completed_at  # paranoia for old rows
     duration_h = max(0.0, round((completed_at - created).total_seconds() / _SECONDS_PER_HOUR, 4))
     ip_h, bl_h = _derive_state_durations(session, task)
