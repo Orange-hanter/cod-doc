@@ -33,6 +33,7 @@ from cod_doc.mcp.tools import (
     doc_tools,
     doc_tree_tools,
     finding_tools,
+    flow_tools,
     legacy_agent_tools,
     link_tools,
     plan_tools,
@@ -115,6 +116,8 @@ for _module in (
     sync_tools,
     # RFC 36 / ROAD-005 roadmap_get (work order + throughput forecast; standard/full)
     roadmap_tools,
+    # RFC 33 §3.1 / FLW-003 flow_metrics_rebuild (task_metrics from the journal)
+    flow_tools,
 ):
     _module.register(mcp)
 
