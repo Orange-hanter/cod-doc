@@ -1190,6 +1190,7 @@ _SHIPPED_BEFORE_UID: Mapping[str, frozenset[str]] = MappingProxyType(
                 "completed_at",
                 "completed_commit",
                 "blocked_reason",
+                "estimate_person_hours",
                 "normalized_title",
                 "checked_out_by",
                 "checked_out_at",

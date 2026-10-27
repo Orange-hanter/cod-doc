@@ -47,6 +47,7 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             completed_at=model.completed_at,
             completed_commit=model.completed_commit,
             blocked_reason=model.blocked_reason,
+            estimate_person_hours=model.estimate_person_hours,
         )
 
     def _to_model(self, entity: Task) -> TaskModel:
@@ -63,6 +64,7 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             "acceptance": entity.acceptance,
             "completed_commit": entity.completed_commit,
             "blocked_reason": entity.blocked_reason,
+            "estimate_person_hours": entity.estimate_person_hours,
         }
         if entity.row_id is not None:
             kwargs["row_id"] = entity.row_id

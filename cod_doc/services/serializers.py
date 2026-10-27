@@ -42,6 +42,7 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
         "description": t.description,
         "acceptance": t.acceptance,
         "blocked_reason": t.blocked_reason,
+        "estimate_person_hours": t.estimate_person_hours,
         "blocked_by": [],
         "affects_files": [],
         "story_id": None,

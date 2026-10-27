@@ -390,6 +390,7 @@ def _(w: World) -> Expect:
 
 case("task_service.update_acceptance")(_task_field("update_acceptance", new_acceptance="done"))
 case("task_service.update_priority")(_task_field("update_priority", new_priority=Priority.HIGH))
+case("task_service.set_estimate")(_task_field("set_estimate", person_hours=6.0))
 case("task_service.update_status")(
     _task_field("update_status", new_status=TaskStatus.BLOCKED, reason="waiting")
 )

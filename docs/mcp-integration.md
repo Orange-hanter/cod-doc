@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **193 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **194 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -86,8 +86,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 189 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 193 (включая legacy)
+cod-doc-mcp --profile standard           # 190 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 194 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -142,7 +142,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 189 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 190 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -375,7 +375,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | Семейство | Кол-во | Назначение | Ключевые тулы |
 |-----------|-------:|------------|---------------|
 | **doc.\*** | 19 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_update`, `doc_add_section`, `doc_patch_section`, `doc_delete_section`, `doc_move_section`, `doc_rename_section`, `doc_delete`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get`, `doc_section_get`, `doc_accept`, `doc_update_status`, `doc_backfill_projection` |
-| **task.\*** | 20 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_update`, `task_move_to_section`, `task_move_to_plan`, `task_complete`, `task_set_blocker`, `task_add_dependency`, `task_remove_dependency`, `task_find_duplicate`, `task_log_progress`, `task_clear_blocker`, `task_list_blocked`, `task_stale`, `task_summary`, `task_heartbeat_context` |
+| **task.\*** | 21 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_set_estimate`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_update`, `task_move_to_section`, `task_move_to_plan`, `task_complete`, `task_set_blocker`, `task_add_dependency`, `task_remove_dependency`, `task_find_duplicate`, `task_log_progress`, `task_clear_blocker`, `task_list_blocked`, `task_stale`, `task_summary`, `task_heartbeat_context` |
 | **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
 | **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
 | **plan.\*** | 16 | Планы исполнения и графы зависимостей. **Breaking (ADO-199, RFC 26 §3.3):** дефолтный слаг секции в `plan_create`/`plan_section_create` — `plan_section_slug` (`{LETTER}-{Kebab}`, напр. `F-Structure-protocol-RFC-24`), а не заголовок целиком; явный слаг вне конвенции, буква вне `^[A-Z]{1,2}$`, отрицательная позиция и управляющие символы в заголовке отклоняются. HTML-сущности в заголовке (`&amp;`) — не ошибка, а `warnings` в ответе. Уже лежащие в БД слаги вне конвенции читаются как прежде | `plan_create`, `plan_move`, `plan_freeze`, `plan_section_create`, `plan_section_update`, `plan_section_move`, `plan_section_delete`, `plan_list`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
@@ -404,7 +404,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **sync.\* (RFC 29 §10.7)** | 5 | Синхронизация проекта с remote: `sync_status` — голова реплики и remote, ahead/behind (делает fetch), неотправленные операции, открытые конфликты, restricted-документы, `verify=true` сверяет дайджест состояния (§3.7); `sync_pull` — fetch + слияние с хвостом (`dry_run`), конфликты — в `PullResult.conflicts`; `sync_push` — упаковка хвоста журнала в changeset и CAS `refs/main`; `sync_conflicts` — конфликты слияния (`status=open\|resolved\|all`): в БД «наше», «их» лежит в конфликте; `sync_resolve` — разрешение `take=ours\|theirs\|<текст>` с операцией, ревизией и событием `sync.conflict_resolved`, ответ — конфликт плюс `revision_id`. Ошибки — `ValueError` с кодом `SYNC-NNN` в начале сообщения. Remote заводит человек (`cod-doc remote add`), в MCP настройки remote нет намеренно. Только профили standard/full; на `agent` сигнал о конфликтах — пункт очереди `curator_next` | `sync_status`, `sync_pull`, `sync_push`, `sync_conflicts`, `sync_resolve` |
 | **roadmap.\* (RFC 36)** | 1 | Дорожная карта: порядок работ всего проекта (ранг плана → секция → приоритет, блокер подтягивается к задаче, которую держит, в том числе из другого плана) и прогноз по недельной пропускной способности — вилка p50/p85 «когда очередь дойдёт до задачи», **не срок**. Ничего не пишет; цикл в графе — `ValueError` с циклами. Порядок планов меняет `plan_move`. Только профили standard/full | `roadmap_get` |
 | **flow.\* (RFC 33)** | 1 | Метрики потока: `flow_metrics_rebuild` пересчитывает `task_metrics` закрытых задач — время в `in_progress` и `blocked` — из журнала переходов `activity_event` (FLW-003); дубли `task.status_changed` без `old_status` игнорируются, задачи старше журнала остаются без длительностей. Идемпотентно, `dry_run`; одно событие `metrics.rebuilt`. Только профили standard/full | `flow_metrics_rebuild` |
-| **ИТОГО** | **193** | | |
+| **ИТОГО** | **194** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

@@ -63,6 +63,8 @@ MIGRATIONS: Mapping[str, bool] = MappingProxyType(
         "0053_sync_access": False,
         # plan.rank — уезжающая колонка: порядок планов проекта (RFC 36, ROAD-001).
         "0054_plan_rank": True,
+        # task.estimate_person_hours — уезжающая колонка (RFC 36 §3.2.3, ROAD-009).
+        "0055_task_estimate": True,
     }
 )
 
