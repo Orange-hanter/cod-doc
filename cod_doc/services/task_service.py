@@ -921,7 +921,13 @@ def set_estimate(
     без записи. Без изменения значения — no-op. Ревизия ``op=estimate`` и
     событие ``task.estimate_changed`` — одним вызовом (ADO-040).
     """
-    if person_hours is not None and (not math.isfinite(person_hours) or person_hours <= 0):
+    # bool — подкласс int: без явного отказа True записался бы как 1.0 чел·ч.
+    if person_hours is not None and (
+        isinstance(person_hours, bool)
+        or not isinstance(person_hours, int | float)
+        or not math.isfinite(person_hours)
+        or person_hours <= 0
+    ):
         raise ValueError(
             f"estimate must be a positive number of person-hours, got {person_hours!r}"
         )

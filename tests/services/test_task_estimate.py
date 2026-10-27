@@ -88,7 +88,7 @@ def test_none_clears(sf: sessionmaker[Session], pid: int) -> None:
     assert _state(sf) == (None, 2, 2)
 
 
-@pytest.mark.parametrize("bad", [0.0, -1.0, math.inf, math.nan])
+@pytest.mark.parametrize("bad", [0.0, -1.0, math.inf, math.nan, True, "5"])
 def test_non_positive_is_refused_without_write(
     sf: sessionmaker[Session], pid: int, bad: float
 ) -> None:
