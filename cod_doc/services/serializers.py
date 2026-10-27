@@ -117,6 +117,7 @@ def roadmap_to_dict(roadmap: Roadmap, *, plan_scope: str | None = None) -> dict[
             "the queue reaches a task, not deadlines."
         ),
         "queue": {
+            "unit": queue.unit.value,
             "rows": [
                 {
                     "position": row.position,
@@ -128,6 +129,8 @@ def roadmap_to_dict(roadmap: Roadmap, *, plan_scope: str | None = None) -> dict[
                     "priority": row.priority.value,
                     "pulled_by": list(row.pulled_by),
                     "flags": sorted(flag.value for flag in row.flags),
+                    "weight": row.weight,
+                    "duration_source": row.duration_source.value,
                     "p50": day(dates[row.task_id].p50),
                     "p85": day(dates[row.task_id].p85),
                 }
@@ -150,7 +153,12 @@ def roadmap_to_dict(roadmap: Roadmap, *, plan_scope: str | None = None) -> dict[
         "forecast": {
             "asof": forecast.asof.isoformat(),
             "sample": [
-                {"week_start": w.week_start.isoformat(), "closed": w.closed, "created": w.created}
+                {
+                    "week_start": w.week_start.isoformat(),
+                    "closed": w.closed,
+                    "created": w.created,
+                    "closed_weight": w.closed_weight,
+                }
                 for w in forecast.sample
             ],
             "plans": [
@@ -166,5 +174,6 @@ def roadmap_to_dict(roadmap: Roadmap, *, plan_scope: str | None = None) -> dict[
             "warnings": [w.value for w in forecast.warnings],
             "runs": forecast.runs,
             "seed": forecast.seed,
+            "unit": forecast.unit.value,
         },
     }

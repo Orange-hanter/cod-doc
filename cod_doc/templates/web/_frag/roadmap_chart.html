@@ -55,7 +55,7 @@ Variables:
         </div>
         <div class="rm-track">
           <span class="rm-today" style="left: {{ chart.today }}%"></span>
-          {%- for b in r.bars %}<a href="{{ r.href }}" class="rm-bar rm-bar-{{ b.kind }}" style="left: {{ b.left }}%; width: {{ b.width }}%" title="{{ r.task_id }}: {{ b.title }}"><span class="rm-sr">{{ r.task_id }}: {{ b.title }}</span></a>{% endfor -%}
+          {%- for b in r.bars %}<a href="{{ r.href }}" class="rm-bar rm-bar-{{ b.kind }}{% if b.source %} rm-src-{{ b.source }}{% endif %}" style="left: {{ b.left }}%; width: {{ b.width }}%" title="{{ r.task_id }}: {{ b.title }}"><span class="rm-sr">{{ r.task_id }}: {{ b.title }}</span></a>{% endfor -%}
           {%- if r.note %}<span class="rm-note muted">{{ r.note }}</span>{% endif %}
         </div>
       </div>
@@ -71,4 +71,12 @@ Variables:
     <span class="rm-swatch rm-bar-working"></span> факт: в работе
     · ▶ в работе · ⛔ заблокирована · ↑ подтянута вперёд · ⇄ связь с другим планом
   </p>
+  {%- if chart.unit == "person_hours" %}
+  <p class="rm-legend muted">
+    Очередь в чел·ч — вес задачи:
+    <span class="rm-swatch rm-bar-forecast rm-src-explicit"></span> оценка
+    <span class="rm-swatch rm-bar-forecast rm-src-empirical"></span> медиана по типу
+    <span class="rm-swatch rm-bar-forecast rm-src-uniform"></span> средняя по проекту
+  </p>
+  {%- endif %}
 </div>

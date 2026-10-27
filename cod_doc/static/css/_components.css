@@ -4344,6 +4344,13 @@ main:has(> .back-bar) .sections-nav {
 .rm-bar-tail { background: var(--accent-soft-bg); border: 1px dashed var(--accent); }
 .rm-bar-done { background: var(--success-soft-bg); border: 1px solid var(--success-border); }
 .rm-bar-working { background: var(--info-soft-bg); border: 1px solid var(--info-border); }
+/* V2 (ROAD-010): источник веса — сплошная оценка, штриховка эмпирики, редкая — средней. */
+.rm-bar-forecast.rm-src-empirical {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 4px, var(--accent-soft-bg) 4px 6px);
+}
+.rm-bar-forecast.rm-src-uniform {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 2px, var(--accent-soft-bg) 2px 6px);
+}
 .rm-note { position: absolute; left: var(--space-2); top: 2px; font-size: 0.85em; }
 .rm-group { border-top: 1px solid var(--border-soft); padding: var(--space-1) 0; }
 .rm-group-name { font-weight: 600; }

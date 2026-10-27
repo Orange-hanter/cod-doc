@@ -236,3 +236,22 @@ def test_cycle_is_explained_not_crashed(client: TestClient) -> None:
     assert page.status_code == 200
     assert "Очередь не построена" in page.text
     assert "BE-1" in page.text and "BE-2" in page.text
+
+
+def test_duration_source_is_shown_per_bar(client: TestClient) -> None:
+    """ROAD-010: очередь в чел·ч — у полосы источник веса, легенда его объясняет."""
+    _seed(closed_weeks=6)
+    plain = client.get(f"/p/{SLUG}/roadmap").text
+    factory, engine = _factory()
+    try:
+        with transactional(factory) as s:
+            task = s.scalars(select(TaskModel).where(TaskModel.task_id == "BE-1")).one()
+            task.estimate_person_hours = 6.0
+    finally:
+        engine.dispose()
+    weighted = client.get(f"/p/{SLUG}/roadmap").text
+
+    assert "rm-src-" not in plain  # очередь в задачах — источник у всех один
+    assert 'href="/p/webroad/tasks/BE-1" class="rm-bar rm-bar-forecast rm-src-explicit"' in weighted
+    assert 'class="rm-bar rm-bar-forecast rm-src-uniform"' in weighted  # остальные — средняя
+    assert "Очередь в чел·ч" in weighted

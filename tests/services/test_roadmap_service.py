@@ -407,10 +407,11 @@ def test_throughput_counts_full_weeks_only(sf: sessionmaker[Session]) -> None:
             )
         sample = roadmap_service.throughput(s, project_id=seed.project_id, asof=ASOF, weeks=3)
 
+    # Очередь в задачах (ни оценок, ни метрик): closed_weight — те же закрытия.
     assert sample == (
-        ThroughputWeek(week_start=date(2026, 10, 5), closed=0, created=0),
-        ThroughputWeek(week_start=date(2026, 10, 12), closed=1, created=5),
-        ThroughputWeek(week_start=date(2026, 10, 19), closed=2, created=0),
+        ThroughputWeek(week_start=date(2026, 10, 5), closed=0, created=0, closed_weight=0.0),
+        ThroughputWeek(week_start=date(2026, 10, 12), closed=1, created=5, closed_weight=1.0),
+        ThroughputWeek(week_start=date(2026, 10, 19), closed=2, created=0, closed_weight=2.0),
     )
 
 

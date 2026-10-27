@@ -21,6 +21,7 @@ from __future__ import annotations
 import heapq
 import math
 import random
+import statistics
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -30,10 +31,12 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import Priority, TaskStatus, canonical_task_status
 from cod_doc.domain.roadmap import (
+    EMPIRICAL_WINDOW_DAYS,
     FORECAST_RUNS,
     FORECAST_WINDOW_WEEKS,
     HORIZON_WEEKS,
     MIN_SAMPLE_WEEKS,
+    DurationSource,
     Forecast,
     ForecastRow,
     ForecastWarning,
@@ -43,10 +46,17 @@ from cod_doc.domain.roadmap import (
     Queue,
     QueueFlag,
     QueueRow,
+    QueueUnit,
     Roadmap,
     ThroughputWeek,
 )
-from cod_doc.infra.models import DependencyModel, PlanModel, PlanSectionModel, TaskModel
+from cod_doc.infra.models import (
+    DependencyModel,
+    PlanModel,
+    PlanSectionModel,
+    TaskMetricsModel,
+    TaskModel,
+)
 from cod_doc.services.plan_service.audit import _find_cycles
 
 if TYPE_CHECKING:
@@ -63,6 +73,7 @@ _CLOSED: Final = frozenset({TaskStatus.DONE.value, TaskStatus.CANCELLED.value})
 _WORKING: Final = frozenset({TaskStatus.IN_PROGRESS_NEW.value, TaskStatus.IN_REVIEW.value})
 _PRIORITY_ORDER: Final = {p.value: i for i, p in enumerate(Priority)}
 _NO_RANK: Final = "~"  # после любого ранга: строка без ранга не обгоняет ранжированные
+_REACHED_EPS: Final = 1e-9  # сумма float-весов: позиция покрыта, если вес ≤ ёмкости с допуском
 
 
 class RoadmapCycleError(ValueError):
@@ -92,6 +103,8 @@ class _Node:
     plan_key: tuple[str, str, int]
     section_letter: str
     section_key: tuple[str, int]
+    type: str
+    estimate: float | None
 
 
 _Key = tuple[int, tuple[str, str, int], tuple[str, int], int, str]
@@ -125,6 +138,8 @@ def _load_nodes(session: Session, project_id: int, *, include_backlog: bool) -> 
             PlanSectionModel.letter,
             PlanSectionModel.rank,
             PlanSectionModel.row_id,
+            TaskModel.type,
+            TaskModel.estimate_person_hours,
         )
         .join(PlanModel, PlanModel.row_id == TaskModel.plan_id)
         .join(PlanSectionModel, PlanSectionModel.row_id == TaskModel.section_id)
@@ -146,6 +161,8 @@ def _load_nodes(session: Session, project_id: int, *, include_backlog: bool) -> 
         letter,
         section_rank,
         section_row_id,
+        task_type,
+        estimate,
     ) in rows:
         status = canonical_task_status(raw_status)
         if status in _CLOSED or (status == TaskStatus.BACKLOG.value and not include_backlog):
@@ -165,9 +182,90 @@ def _load_nodes(session: Session, project_id: int, *, include_backlog: bool) -> 
                 plan_key=(plan_rank or _NO_RANK, plan_uid or "", plan_id),
                 section_letter=letter,
                 section_key=(section_rank or _NO_RANK, section_row_id),
+                type=task_type,
+                estimate=estimate,
             )
         )
     return nodes
+
+
+# --- веса (V2, ROAD-010) ---------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class _WeightModel:
+    """Как взвешивать задачи: единица очереди, медианы по типу, средняя по проекту."""
+
+    unit: QueueUnit
+    by_type: dict[str, float]
+    fallback: float
+
+
+_TASKS_MODEL: Final = _WeightModel(QueueUnit.TASKS, {}, 1.0)
+
+
+def _weight_model(session: Session, project_id: int) -> _WeightModel:
+    """Единица очереди и эмпирика (RFC 36 §4 V2).
+
+    Очередь в чел·ч, если в проекте есть хоть какие-то часы: эмпирика
+    (``task_metrics.in_progress_hours`` за ``EMPIRICAL_WINDOW_DAYS`` до самой
+    свежей строки метрик — окно привязано к данным, не к часам) или оценки
+    задач. Нет ни того ни другого — очередь в задачах, ровно как V1. Средняя
+    по проекту — медиана всех известных часов: эмпирики, иначе оценок.
+    """
+    newest = session.scalar(
+        select(TaskMetricsModel.completed_at)
+        .where(
+            TaskMetricsModel.project_id == project_id,
+            TaskMetricsModel.in_progress_hours.is_not(None),
+        )
+        .order_by(TaskMetricsModel.completed_at.desc())
+        .limit(1)
+    )
+    samples: dict[str, list[float]] = defaultdict(list)
+    if newest is not None:
+        since = newest - timedelta(days=EMPIRICAL_WINDOW_DAYS)
+        for task_type, hours in session.execute(
+            select(TaskMetricsModel.type, TaskMetricsModel.in_progress_hours).where(
+                TaskMetricsModel.project_id == project_id,
+                TaskMetricsModel.in_progress_hours.is_not(None),
+                TaskMetricsModel.completed_at >= since,
+            )
+        ).all():
+            if hours is not None:  # отсечено и в SQL; тип колонки всё равно nullable
+                samples[task_type].append(float(hours))
+    estimates = [
+        float(h)
+        for (h,) in session.execute(
+            select(TaskModel.estimate_person_hours).where(
+                TaskModel.project_id == project_id,
+                TaskModel.estimate_person_hours.is_not(None),
+            )
+        ).all()
+        if h is not None
+    ]
+    empirical = [h for values in samples.values() for h in values]
+    known = empirical or estimates
+    if not known:
+        return _TASKS_MODEL
+    return _WeightModel(
+        unit=QueueUnit.PERSON_HOURS,
+        by_type={t: statistics.median(v) for t, v in samples.items()},
+        fallback=statistics.median(known),
+    )
+
+
+def _weight(
+    model: _WeightModel, task_type: str, estimate: float | None
+) -> tuple[float, DurationSource]:
+    """Вес задачи: оценка → медиана по типу → средняя по проекту (контракт ROAD-010)."""
+    if model.unit is QueueUnit.TASKS:
+        return 1.0, DurationSource.UNIFORM
+    if estimate is not None:
+        return float(estimate), DurationSource.EXPLICIT
+    if task_type in model.by_type:
+        return model.by_type[task_type], DurationSource.EMPIRICAL
+    return model.fallback, DurationSource.UNIFORM
 
 
 def _load_edges(session: Session, row_ids: Iterable[int]) -> list[tuple[int, int, str]]:
@@ -252,6 +350,7 @@ def sequence(session: Session, *, project_id: int, include_backlog: bool = False
 
     order = _topological(nodes, dependents)
     effective, origin = _effective_keys(nodes, dependents, order)
+    weights = _weight_model(session, project_id)
 
     indegree: dict[int, int] = dict.fromkeys(nodes, 0)
     for children in dependents.values():
@@ -264,6 +363,7 @@ def sequence(session: Session, *, project_id: int, include_backlog: bool = False
         _, row_id = heapq.heappop(heap)
         node = nodes[row_id]
         source = origin[row_id]
+        weight, duration_source = _weight(weights, node.type, node.estimate)
         flags = {
             flag
             for flag, on in (
@@ -291,6 +391,8 @@ def sequence(session: Session, *, project_id: int, include_backlog: bool = False
                 priority=Priority(node.priority),
                 pulled_by=(nodes[source].task_id,) if source != row_id else (),
                 flags=frozenset(flags),
+                weight=weight,
+                duration_source=duration_source,
             )
         )
         for child in dependents.get(row_id, ()):
@@ -298,7 +400,7 @@ def sequence(session: Session, *, project_id: int, include_backlog: bool = False
             if indegree[child] == 0:
                 heapq.heappush(heap, (effective[child], child))
 
-    return Queue(rows=tuple(rows), plans=_plan_bars(nodes, rows))
+    return Queue(rows=tuple(rows), plans=_plan_bars(nodes, rows), unit=weights.unit)
 
 
 def _plan_bars(nodes: dict[int, _Node], rows: Sequence[QueueRow]) -> tuple[PlanBar, ...]:
@@ -343,19 +445,37 @@ def throughput(
     Неделя — с понедельника. Текущая, неполная неделя в выборку не входит
     (контракт C-09): на снимке 2026-10-19 её единственный день дал бы 8
     закрытых против медианы 39 и утащил прогноз.
+
+    V2 (ROAD-010): ``closed_weight`` — те же закрытия в чел·ч: факт
+    ``task_metrics.in_progress_hours``, иначе оценка, эмпирика по типу или
+    средняя по проекту — тот же каскад, что у весов очереди. Очередь в
+    задачах — ``closed_weight`` равен ``closed``.
     """
     end = _week_start(asof)
     start = end - timedelta(days=_DAYS_PER_WEEK * weeks)
     since = datetime.combine(start, datetime.min.time(), tzinfo=UTC)
+    model = _weight_model(session, project_id)
     closed: dict[date, int] = defaultdict(int)
+    closed_weight: dict[date, float] = defaultdict(float)
     created: dict[date, int] = defaultdict(int)
-    for status, completed_at in session.execute(
-        select(TaskModel.status, TaskModel.completed_at).where(
-            TaskModel.project_id == project_id, TaskModel.completed_at >= since
+    for status, completed_at, task_type, estimate, actual in session.execute(
+        select(
+            TaskModel.status,
+            TaskModel.completed_at,
+            TaskModel.type,
+            TaskModel.estimate_person_hours,
+            TaskMetricsModel.in_progress_hours,
         )
+        .outerjoin(TaskMetricsModel, TaskMetricsModel.task_id == TaskModel.row_id)
+        .where(TaskModel.project_id == project_id, TaskModel.completed_at >= since)
     ).all():
         if completed_at is not None and canonical_task_status(status) == TaskStatus.DONE.value:
-            closed[_week_start(_as_date(completed_at))] += 1
+            week = _week_start(_as_date(completed_at))
+            closed[week] += 1
+            if model.unit is QueueUnit.PERSON_HOURS and actual is not None:
+                closed_weight[week] += float(actual)
+            else:
+                closed_weight[week] += _weight(model, task_type, estimate)[0]
     for (created_at,) in session.execute(
         select(TaskModel.created).where(
             TaskModel.project_id == project_id, TaskModel.created >= since
@@ -365,24 +485,39 @@ def throughput(
     out = []
     for i in range(weeks):
         week = start + timedelta(days=_DAYS_PER_WEEK * i)
-        out.append(ThroughputWeek(week_start=week, closed=closed[week], created=created[week]))
+        out.append(
+            ThroughputWeek(
+                week_start=week,
+                closed=closed[week],
+                created=created[week],
+                closed_weight=round(closed_weight[week], 4),
+            )
+        )
     return tuple(out)
 
 
 # --- прогноз ------------------------------------------------------------------------
 
 
-def _weeks_to_reach(n: int, closed: Sequence[int], rng: random.Random) -> list[int | None]:
-    """Один прогон: для позиции k — номер недели (с 1), когда сумма покроет k+1."""
+def _weeks_to_reach(
+    cumulative: Sequence[float], capacity: Sequence[float], rng: random.Random
+) -> list[int | None]:
+    """Один прогон: позиция k покрыта в неделю, когда ёмкость дошла до её накопленного веса.
+
+    ``cumulative[k]`` — сумма весов позиций 0…k. С весом 1 и ёмкостью «закрыто
+    задач» это прежний V1: та же проверка перед броском, те же броски ``rng``.
+    """
+    n = len(cumulative)
     reached: list[int | None] = [None] * n
-    done = 0
+    done = 0.0
+    k = 0
     for week in range(1, HORIZON_WEEKS + 1):
-        if done >= n:
+        if k >= n:
             break
-        total = done + rng.choice(closed)
-        for k in range(done, min(total, n)):
+        done += rng.choice(capacity)
+        while k < n and cumulative[k] <= done + _REACHED_EPS:
             reached[k] = week
-        done = max(done, total)
+            k += 1
     return reached
 
 
@@ -412,18 +547,26 @@ def forecast(
     closed = [w.closed for w in sample]
     if sum(w.created for w in sample) > sum(closed):
         warnings.append(ForecastWarning.INFLOW_EXCEEDS)
+    # V2: очередь в чел·ч расходует ёмкость в чел·ч; в задачах — как V1.
+    hours = queue.unit is QueueUnit.PERSON_HOURS
+    capacity = [w.closed_weight for w in sample] if hours else [float(c) for c in closed]
     n = len(queue.rows)
     p50: list[int | None] = [None] * n
     p85: list[int | None] = [None] * n
     if len(sample) < MIN_SAMPLE_WEEKS:
         warnings.append(ForecastWarning.SHORT_SAMPLE)
-    elif not any(closed):
+    elif not any(capacity):
         warnings.append(ForecastWarning.ZERO_SAMPLE)
     elif n:
         rng = random.Random(seed)
+        cumulative: list[float] = []
+        total = 0.0
+        for row in queue.rows:
+            total += row.weight if hours else 1.0
+            cumulative.append(total)
         per_position: list[list[int | None]] = [[] for _ in range(n)]
         for _ in range(runs):
-            for k, week in enumerate(_weeks_to_reach(n, closed, rng)):
+            for k, week in enumerate(_weeks_to_reach(cumulative, capacity, rng)):
                 per_position[k].append(week)
         p50 = [_quantile(v, _P50) for v in per_position]
         p85 = [_quantile(v, _P85) for v in per_position]
@@ -454,6 +597,7 @@ def forecast(
         warnings=tuple(warnings),
         runs=runs,
         seed=seed,
+        unit=queue.unit,
     )
 
 
