@@ -178,6 +178,31 @@ def test_mcp_flow_metrics_rebuild(
     assert (row.in_progress_hours, row.blocked_hours) == (3.0, 2.0)
 
 
+def test_rebuild_is_idempotent_for_done_task_without_completed_at(
+    sf: sessionmaker[Session],
+) -> None:
+    """Легаси-строка done без completed_at: длительность не растёт от прогона к прогону.
+
+    На живой БД cod-doc таких 34; с отсчётом от now() второй прогон менял их все.
+    """
+    with transactional(sf) as s:
+        pid = _seed_task(s, status="todo")
+        task = s.scalars(select(TaskModel).where(TaskModel.task_id == "CO-001")).one()
+        task.status = "done"
+        task.created = T0
+        task.completed_at = None
+        task.last_updated = T0 + timedelta(hours=5)
+    with transactional(sf) as s:
+        metrics_service.rebuild(s, project_id=pid, author=AUTHOR)
+    with transactional(sf) as s:
+        again = metrics_service.rebuild(s, project_id=pid, author=AUTHOR)
+    with transactional(sf) as s:
+        row = s.scalars(select(TaskMetricsModel)).one()
+
+    assert again.updated == 0
+    assert row.duration_hours == 5.0
+
+
 def test_rebuild_dry_run_writes_nothing(sf: sessionmaker[Session]) -> None:
     with transactional(sf) as s:
         pid = _seed_task(s, status="todo")
