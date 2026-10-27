@@ -145,7 +145,8 @@ def test_dropped_column_counts_as_shipped_change() -> None:
 
 def test_epoch_of_a_schema() -> None:
     head = sync_epochs.code_head()
-    assert sync_epochs.epoch_of(head) == "0050_sync_rank"
+    assert sync_epochs.epoch_of(head) == "0054_plan_rank"
+    assert sync_epochs.epoch_of("0053_sync_access") == "0050_sync_rank"
     assert sync_epochs.epoch_of("0050_sync_rank") == "0050_sync_rank"
     assert sync_epochs.epoch_of(sync_epochs.SYNC_BASELINE) is None
     with pytest.raises(sync_epochs.UnknownRevisionError):
@@ -161,7 +162,11 @@ def test_unknown_epoch_is_newer_and_own_unknown_epoch_is_refused() -> None:
 
 def test_epochs_opened_between() -> None:
     head = sync_epochs.code_head()
-    assert sync_epochs.epochs_opened_between(sync_epochs.SYNC_BASELINE, head) == ["0050_sync_rank"]
-    assert sync_epochs.epochs_opened_between("0050_sync_rank", head) == []
+    assert sync_epochs.epochs_opened_between(sync_epochs.SYNC_BASELINE, head) == [
+        "0050_sync_rank",
+        "0054_plan_rank",
+    ]
+    assert sync_epochs.epochs_opened_between("0050_sync_rank", head) == ["0054_plan_rank"]
+    assert sync_epochs.epochs_opened_between("0054_plan_rank", head) == []
     assert sync_epochs.epochs_opened_between(None, head) == []
     assert sync_epochs.epochs_opened_between("9999_newer_than_code", head) == []

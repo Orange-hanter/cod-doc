@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select, text
 
 from cod_doc.domain.entities import Plan, PlanSection, Task
+from cod_doc.infra import ordering
 from cod_doc.infra.models import AffectedFileModel, PlanModel, ProjectModel
 from cod_doc.infra.repositories import (
     PlanRepository,
@@ -80,6 +81,10 @@ def get_for_project(session: Session, plan_id: int, *, project_id: int) -> Plan 
     model = session.get(PlanModel, plan_id)
     if model is None or model.project_id != project_id:
         return None
+    return _plan_from_model(model)
+
+
+def _plan_from_model(model: PlanModel) -> Plan:
     return Plan(
         row_id=model.row_id,
         project_id=model.project_id,
@@ -90,34 +95,25 @@ def get_for_project(session: Session, plan_id: int, *, project_id: int) -> Plan 
         completed_log_id=model.completed_log_id,
         created=model.created,
         last_updated=model.last_updated,
+        id_prefix=model.id_prefix,
+        rank=model.rank,
     )
 
 
 def list_for_project(session: Session, project_id: int) -> list[Plan]:
-    """All plans owned by the project, ordered by `created` (oldest first).
+    """All plans owned by the project, in queue order (``plan.rank``, RFC 36).
 
-    Lightweight read helper for the overview dashboard (WEB-014); recalc
-    is done lazily per-plan only when the caller actually needs progress.
+    До 0054 порядок был ``created`` — бэкфилл ранга его сохранил, дальше его
+    меняет только ``plan_move``. Lightweight read helper for the overview
+    dashboard (WEB-014); recalc is done lazily per-plan only when the caller
+    actually needs progress.
     """
     stmt = (
         select(PlanModel)
         .where(PlanModel.project_id == project_id)
-        .order_by(PlanModel.created.asc(), PlanModel.row_id.asc())
+        .order_by(*ordering.order_by(PlanModel))
     )
-    return [
-        Plan(
-            row_id=m.row_id,
-            project_id=m.project_id,
-            scope=m.scope,
-            principle=m.principle,
-            module_id=m.module_id,
-            parent_doc_id=m.parent_doc_id,
-            completed_log_id=m.completed_log_id,
-            created=m.created,
-            last_updated=m.last_updated,
-        )
-        for m in session.execute(stmt).scalars()
-    ]
+    return [_plan_from_model(m) for m in session.execute(stmt).scalars()]
 
 
 def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgress]:

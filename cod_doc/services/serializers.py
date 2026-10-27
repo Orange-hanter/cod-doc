@@ -11,9 +11,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from datetime import date
+
     from sqlalchemy.orm import Session
 
     from cod_doc.domain.entities import Task
+    from cod_doc.domain.roadmap import Roadmap
 
 
 def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
@@ -88,3 +91,79 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
         )
         result["story_id"] = story_id_for_task(session, project_id=t.project_id, task_id=t.task_id)
     return result
+
+
+def roadmap_to_dict(roadmap: Roadmap, *, plan_scope: str | None = None) -> dict[str, Any]:
+    """Дорожная карта (RFC 36 §3.2.5) в JSON-форму — одна на MCP, CLI, REST и веб (C-04).
+
+    Даты — ISO-строки или ``None``; ``meaning`` повторяет главное правило
+    прямо в ответе: дата — прогноз по пропускной способности, не срок (C-19).
+    ``plan_scope`` оставляет строки и полосы одного плана; позиции и даты —
+    по-прежнему очереди всего проекта.
+    """
+
+    def keep(scope: str) -> bool:
+        return plan_scope is None or scope == plan_scope
+
+    def day(value: date | None) -> str | None:
+        return None if value is None else value.isoformat()
+
+    queue, forecast = roadmap.queue, roadmap.forecast
+    dates = {row.task_id: row for row in forecast.rows}
+    return {
+        "meaning": (
+            "Order is the plan; dates are a throughput forecast (p50/p85) of when "
+            "the queue reaches a task, not deadlines."
+        ),
+        "queue": {
+            "rows": [
+                {
+                    "position": row.position,
+                    "task_id": row.task_id,
+                    "title": row.title,
+                    "plan_scope": row.plan_scope,
+                    "section_letter": row.section_letter,
+                    "status": row.status.value,
+                    "priority": row.priority.value,
+                    "pulled_by": list(row.pulled_by),
+                    "flags": sorted(flag.value for flag in row.flags),
+                    "p50": day(dates[row.task_id].p50),
+                    "p85": day(dates[row.task_id].p85),
+                }
+                for row in queue.rows
+                if keep(row.plan_scope)
+            ],
+            "plans": [
+                {
+                    "scope": bar.scope,
+                    "principle": bar.principle,
+                    "rank": bar.rank,
+                    "first_position": bar.first_position,
+                    "last_position": bar.last_position,
+                    "open_count": bar.open_count,
+                }
+                for bar in queue.plans
+                if keep(bar.scope)
+            ],
+        },
+        "forecast": {
+            "asof": forecast.asof.isoformat(),
+            "sample": [
+                {"week_start": w.week_start.isoformat(), "closed": w.closed, "created": w.created}
+                for w in forecast.sample
+            ],
+            "plans": [
+                {
+                    "scope": p.scope,
+                    "p50_start": day(p.p50_start),
+                    "p50_finish": day(p.p50_finish),
+                    "p85_finish": day(p.p85_finish),
+                }
+                for p in forecast.plans
+                if keep(p.scope)
+            ],
+            "warnings": [w.value for w in forecast.warnings],
+            "runs": forecast.runs,
+            "seed": forecast.seed,
+        },
+    }

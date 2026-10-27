@@ -54,7 +54,10 @@ _UNIQUE_EXEMPT: dict[tuple[str, tuple[str, ...]], str] = {
     ("finding", ("finding_uid",)): "uuid — глобален по построению",
 }
 
-_ORDER_PLACES = 11  # RFC 29 §3.2, Q-009: число из RFC — контракт CLO-003, не из схемы
+_ORDER_PLACES = 12  # RFC 29 §3.2, Q-009: 11 мест (CLO-003) + plan (RFC 36 §3.2.2, ROAD-001)
+#: Места порядка без позиции вовсе: план не адресуется индексом, его порядок —
+#: только ранг (RFC 36 §3.2.2); пересчитывать нечего.
+_RANK_ONLY_PLACES = frozenset({"plan"})
 _POSITION_COLUMNS = frozenset({"position", "node_position"})
 
 
@@ -251,16 +254,23 @@ def test_registry_classifies_tables_per_rfc() -> None:
 
 
 def test_order_places_have_rank_and_local_position() -> None:
-    """У каждого места порядка ровно одна local-колонка позиции, и она есть в схеме."""
+    """У каждого места порядка ровно одна local-колонка позиции, и она есть в схеме.
+
+    Исключение — ``_RANK_ONLY_PLACES``: у них позиции нет ни в схеме, ни в реестре.
+    """
     tables = _all_model_tables()
     ordered = [spec for spec in REGISTRY.values() if spec.rank_column]
     assert len(ordered) == _ORDER_PLACES, sorted(s.table for s in ordered)
     for spec in ordered:
+        assert spec.rank_column not in spec.local_columns, spec.table  # ранг уезжает
+        if spec.table in _RANK_ONLY_PLACES:
+            assert not spec.local_columns & _POSITION_COLUMNS, spec.table
+            assert not set(tables[spec.table].columns.keys()) & _POSITION_COLUMNS, spec.table
+            continue
         positions = spec.local_columns & _POSITION_COLUMNS
         assert len(positions) == 1, (spec.table, positions)
         (position,) = positions
         assert position in tables[spec.table].columns, (spec.table, position)
-        assert spec.rank_column not in spec.local_columns, spec.table  # ранг уезжает
 
 
 def test_order_places_have_no_position_unique() -> None:

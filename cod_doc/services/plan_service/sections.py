@@ -155,6 +155,83 @@ def create_plan(
     return plan
 
 
+def move_plan(
+    session: Session,
+    *,
+    project_id: int,
+    plan_scope: str,
+    author: str,
+    before: str | None = None,
+    after: str | None = None,
+    reason: str | None = None,
+) -> list[Plan]:
+    """Переставить план в очереди проекта; вернуть планы проекта в новом порядке.
+
+    RFC 36 §3.6 (ROAD-002, контракты C-05/C-06). Ровно один из ``before`` /
+    ``after`` — scope другого плана того же проекта, иначе ``ValueError``; свой
+    scope — ``ValueError``; неизвестный или чужого проекта — ``PlanNotFoundError``.
+    Новый ранг получает только переставленный план (``ordering.place``).
+
+    Ревизия пишется на переставленный план, событие ``plan.moved`` — одно на
+    вызов; план уже на месте — ни ревизии, ни события.
+    """
+    if (before is None) == (after is None):
+        raise ValueError("move_plan needs exactly one of before, after")
+    anchor_scope = before if before is not None else after
+    assert anchor_scope is not None
+    target = _require_plan(session, plan_scope, project_id=project_id)
+    if anchor_scope == target.scope:
+        raise ValueError(f"plan {plan_scope!r} cannot be moved relative to itself")
+    anchor = _require_plan(session, anchor_scope, project_id=project_id)
+
+    ordered = list(
+        session.execute(
+            select(PlanModel)
+            .where(PlanModel.project_id == project_id)
+            .order_by(*ordering.order_by(PlanModel))
+        ).scalars()
+    )
+    others = [m for m in ordered if m is not target]
+    index = others.index(anchor) + (1 if after is not None else 0)
+    if index != ordered.index(target):
+        old_rank = target.rank
+        ordered = ordering.place(ordered, target, index)
+        session.flush()
+        rev.write(
+            session,
+            project_id=project_id,
+            entity_kind=EntityKind.PLAN,
+            entity_id=target.row_id,
+            author=author,
+            diff=_diff(
+                "move_plan",
+                scope=plan_scope,
+                rank={"from": old_rank, "to": target.rank},
+                before=before,
+                after=after,
+            ),
+            reason=reason or "move_plan",
+        )
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            "plan.moved",
+            author,
+            scope_kind=EntityKind.PLAN.value,
+            scope_id=plan_scope,
+            payload={"scope": plan_scope, "order": [m.scope for m in ordered]},
+            summary=f"Plan {plan_scope} moved",
+        )
+
+    repo = PlanRepository(session)
+    result = []
+    for model in ordered:
+        plan = repo.get(model.row_id)
+        assert plan is not None
+        result.append(plan)
+    return result
+
+
 def create_section(
     session: Session,
     *,

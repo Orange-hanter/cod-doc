@@ -25,6 +25,7 @@ from . import (
     proposals,
     questions,
     revisions,
+    roadmap,
     routines,
     run,
     scenarios,
@@ -39,6 +40,8 @@ router = APIRouter()
 router.include_router(index.router)
 router.include_router(project.router)
 router.include_router(plans.router)
+# RFC 36 / ROAD-007: дорожная карта — очередь проекта и прогноз, перестановка планов.
+router.include_router(roadmap.router)
 router.include_router(revisions.router)
 router.include_router(tasks.router)
 router.include_router(stories.router)

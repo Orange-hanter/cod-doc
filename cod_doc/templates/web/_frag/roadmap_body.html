@@ -1,0 +1,49 @@
+{#- RFC 36 §3.5: тело экрана дорожной карты — то, что перерисовывает htmx после
+перестановки плана. Variables: chart, payload, warnings, cycle, project,
+asof, weeks, history, backlog. -#}
+<div id="roadmap-body">
+  {%- if cycle %}
+    <p class="warn">Очередь не построена: {{ cycle }}. Разорвите цикл зависимостей (task_remove_dependency) — частичной очереди нет.</p>
+  {%- else %}
+    {%- for w in warnings %}<p class="warn rm-warning">⚠ {{ w }}</p>{% endfor %}
+    {%- if not chart.groups %}
+      <p class="muted">Открытых задач нет — дорожной карте нечего показать.</p>
+    {%- else %}
+      {% with reorder=True, open_rows=False %}{% include "_frag/roadmap_chart.html" %}{% endwith %}
+
+      <h2>Очередь</h2>
+      <p class="muted">Позиция — порядок, в котором очередь дойдёт до задачи. p50/p85 — прогноз по закрытым за неделю
+        ({{ payload.forecast.sample | length }} полных недель до {{ payload.forecast.asof }}), не срок.</p>
+      <div class="table-scroll">
+      <table class="grid roadmap-table">
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>Задача</th>
+            <th>План</th>
+            <th>Секция</th>
+            <th>Статус</th>
+            <th>≈ p50</th>
+            <th>≈ p85</th>
+            <th>Отметки</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for r in payload.queue.rows %}
+          <tr data-task="{{ r.task_id }}">
+            <td class="num">{{ r.position }}</td>
+            <td><a href="/p/{{ project.name }}/tasks/{{ r.task_id }}" class="mono" data-peek>{{ r.task_id }}</a> {{ r.title }}</td>
+            <td class="mono">{{ r.plan_scope }}</td>
+            <td class="mono">{{ r.section_letter }}</td>
+            <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+            <td class="mono">{{ r.p50 or "—" }}</td>
+            <td class="mono">{{ r.p85 or "—" }}</td>
+            <td>{{ r.flags | join(", ") }}{% if r.pulled_by %} — ради {{ r.pulled_by | join(", ") }}{% endif %}</td>
+          </tr>
+          {%- endfor %}
+        </tbody>
+      </table>
+      </div>
+    {%- endif %}
+  {%- endif %}
+</div>

@@ -25,6 +25,8 @@ cod-doc plan export      — экспорт markdown
 cod-doc plan critical-path — критический путь
 cod-doc plan forward     — цепочка prerequisites
 cod-doc plan reverse     — цепочка dependents
+cod-doc plan move        — переставить план в очереди проекта
+cod-doc roadmap show     — порядок работ проекта и прогноз (не сроки)
 cod-doc task checkout    — взять задачу в работу (pending → in-progress)
 cod-doc task release     — снять замок с задачи
 cod-doc story list       — список историй
@@ -110,6 +112,7 @@ from cod_doc.cli.cmd_import import import_cmd
 from cod_doc.cli.cmd_ingest import ingest
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_reindex import reindex
+from cod_doc.cli.cmd_roadmap import roadmap
 from cod_doc.cli.cmd_runtime import runtime
 from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
@@ -184,6 +187,7 @@ main.add_command(serve)
 main.add_command(mcp_server)
 main.add_command(task)
 main.add_command(plan)
+main.add_command(roadmap)
 main.add_command(story)
 main.add_command(scenario)
 main.add_command(question)

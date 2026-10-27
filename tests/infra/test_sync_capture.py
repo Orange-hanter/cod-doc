@@ -815,7 +815,7 @@ def test_new_ordered_rows_ship_rank_not_position(factory: sessionmaker[Session])
             steps=["one"],
         )
         session.commit()
-        for table in ("section", "plan_section", "scenario_step"):
+        for table in ("plan", "section", "plan_section", "scenario_step"):
             [op] = ops(session, entity_kind=table)
             assert op["fields"].get("rank"), (table, op["fields"])
             assert "position" not in op["fields"], table

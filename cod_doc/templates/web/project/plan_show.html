@@ -89,6 +89,16 @@
   {% endif %}
 </section>
 
+<section class="overview-block" id="timeline">
+  <h2>Timeline</h2>
+  {#- ADO-137 / RFC 36 §3.5: секции × время. Факт — created → completed_at,
+      открытым задачам — прогноз очереди проекта. План — пакет работ, не спринт. #}
+  <p class="muted">Факт — от заведения до закрытия задачи; открытые задачи — прогноз, когда до них дойдёт очередь
+    проекта (<a href="/p/{{ project.name }}/roadmap">дорожная карта</a>). Даты прогноза — не сроки.</p>
+  {%- if timeline.cycle %}<p class="warn">Прогноза нет: {{ timeline.cycle }}</p>{% endif %}
+  {% with chart=timeline.chart, reorder=False, open_rows=True %}{% include "_frag/roadmap_chart.html" %}{% endwith %}
+</section>
+
 <section class="overview-block">
   <h2>Next batch (ready to start)</h2>
   {% if ready %}

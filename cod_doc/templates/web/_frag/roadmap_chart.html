@@ -1,0 +1,74 @@
+{#- RFC 36 §3.5: шкала дорожной карты. Координаты посчитаны сервером
+(`api/web/roadmap_chart.py`), здесь — только отрисовка.
+
+Variables:
+- chart        — `roadmap_chart.Chart`
+- project      — {"name"}
+- reorder      — показывать кнопки «выше/ниже» у групп (экран дорожной карты)
+- history, backlog — текущие тумблеры, уходят в форму перестановки
+- open_rows    — раскрыть задачи групп по умолчанию
+-#}
+<div class="rm-chart" role="group" aria-label="Шкала: прогноз и факт по задачам">
+  <div class="rm-row rm-axis" aria-hidden="true">
+    <div class="rm-label muted">≈ прогноз, не срок</div>
+    <div class="rm-track">
+      {%- for t in chart.ticks %}<span class="rm-tick" style="left: {{ t.left }}%">{{ t.label }}</span>{% endfor -%}
+      <span class="rm-today" style="left: {{ chart.today }}%" title="сегодня"></span>
+    </div>
+  </div>
+  {%- for g in chart.groups %}
+  <section class="rm-group" data-group="{{ g.key }}">
+    <div class="rm-row rm-group-row">
+      <div class="rm-label">
+        {%- if reorder %}
+        <span class="rm-move">
+          {%- for direction, mark, label, enabled in (("up", "↑", "Выше", g.can_up), ("down", "↓", "Ниже", g.can_down)) %}
+          <form method="post" action="/p/{{ project.name }}/roadmap/plans/{{ g.key }}/move"
+                hx-post="/p/{{ project.name }}/roadmap/plans/{{ g.key }}/move"
+                hx-target="#roadmap-body" hx-swap="outerHTML">
+            <input type="hidden" name="direction" value="{{ direction }}">
+            {%- if history %}<input type="hidden" name="history" value="true">{% endif %}
+            {%- if backlog %}<input type="hidden" name="backlog" value="true">{% endif %}
+            <button type="submit" class="rm-btn" title="{{ label }}: {{ g.key }}" aria-label="{{ label }}: {{ g.key }}" {% if not enabled %}disabled{% endif %}>{{ mark }}</button>
+          </form>
+          {%- endfor %}
+        </span>
+        {%- endif %}
+        {#- Принцип плана — в подсказке: в строке он съедал имя плана до «be…». #}
+        {%- if g.href %}<a href="{{ g.href }}" class="mono rm-group-name" title="{{ g.sublabel or g.label }}">{{ g.label }}</a>{% else %}<span class="rm-group-name" title="{{ g.sublabel or g.label }}">{{ g.label }}</span>{% endif %}
+      </div>
+      <div class="rm-track">
+        <span class="rm-today" style="left: {{ chart.today }}%"></span>
+        {%- for b in g.summary %}<span class="rm-bar rm-bar-{{ b.kind }} rm-bar-plan" style="left: {{ b.left }}%; width: {{ b.width }}%" title="{{ b.title }}"></span>{% endfor -%}
+        {%- if g.note %}<span class="rm-note muted">{{ g.note }}</span>{% endif %}
+      </div>
+    </div>
+    {%- if g.rows %}
+    <details class="rm-tasks" {% if open_rows %}open{% endif %}>
+      <summary class="muted">Задачи: {{ g.rows | length }}</summary>
+      {%- for r in g.rows %}
+      <div class="rm-row rm-task-row">
+        <div class="rm-label">
+          <a href="{{ r.href }}" class="rm-task-link" data-peek>{{ r.label }}</a>
+          {%- if r.marks %} <span class="rm-marks" title="{{ r.marks_title }}">{{ r.marks }}</span>{% endif %}
+          <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        </div>
+        <div class="rm-track">
+          <span class="rm-today" style="left: {{ chart.today }}%"></span>
+          {%- for b in r.bars %}<a href="{{ r.href }}" class="rm-bar rm-bar-{{ b.kind }}" style="left: {{ b.left }}%; width: {{ b.width }}%" title="{{ r.task_id }}: {{ b.title }}"><span class="rm-sr">{{ r.task_id }}: {{ b.title }}</span></a>{% endfor -%}
+          {%- if r.note %}<span class="rm-note muted">{{ r.note }}</span>{% endif %}
+        </div>
+      </div>
+      {%- endfor %}
+    </details>
+    {%- endif %}
+  </section>
+  {%- endfor %}
+  <p class="rm-legend muted">
+    <span class="rm-swatch rm-bar-forecast"></span> прогноз p50
+    <span class="rm-swatch rm-bar-tail"></span> до p85
+    <span class="rm-swatch rm-bar-done"></span> факт: закрыта
+    <span class="rm-swatch rm-bar-working"></span> факт: в работе
+    · ▶ в работе · ⛔ заблокирована · ↑ подтянута вперёд · ⇄ связь с другим планом
+  </p>
+</div>

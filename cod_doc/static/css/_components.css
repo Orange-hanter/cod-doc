@@ -1208,6 +1208,7 @@ a.nav-card-title:hover { color: var(--accent); }
 .task-history-table { min-width: 760px; } /* ULID 26 симв. + автор + дата + две обрезки */
 .costs-table { min-width: 860px; }        /* 7 колонок, из них пять числовых */
 .plans-table { min-width: 880px; }        /* scope + принцип прозой + прогресс-бар 100px */
+.roadmap-table { min-width: 960px; }      /* задача прозой + план + две даты + отметки */
 .tasks-legacy-table { min-width: 700px; }
 .adr-shelves-table { min-width: 720px; } /* порядок + имя с правкой + два текста + число */
 .adr-table { min-width: 560px; } /* знак + ID + заголовок с фактами + «когда»; автор в подсказке (ADO-236) */
@@ -4276,3 +4277,104 @@ main:has(> .back-bar) .sections-nav {
   font: inherit;
 }
 .proposal-questions { margin: 0; padding-left: 18px; line-height: 1.7; }
+
+/* --- RFC 36 §3.5: дорожная карта (/p/{slug}/roadmap, страница плана) ------- */
+/* Полосы позиционирует сервер (`api/web/roadmap_chart.py`): left/width в %.
+   Цвета — только токены темы, поэтому тёмная тема работает без оверрайдов. */
+.rm-intro { max-width: 70ch; }
+.rm-toggles { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.rm-warning { margin: var(--space-1) 0; }
+.rm-chart {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0;
+  background: var(--bg);
+}
+.rm-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 30%) 1fr;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 26px;
+}
+.rm-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rm-label > a { overflow: hidden; text-overflow: ellipsis; }
+.rm-track {
+  position: relative;
+  height: 22px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+}
+.rm-axis .rm-track { background: transparent; height: 20px; }
+.rm-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.75em;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+.rm-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed var(--accent);
+  pointer-events: none;
+  z-index: 1;
+}
+.rm-bar {
+  position: absolute;
+  top: 5px;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+.rm-bar-plan { top: 3px; height: 16px; }
+.rm-bar-forecast { background: var(--accent); }
+.rm-bar-tail { background: var(--accent-soft-bg); border: 1px dashed var(--accent); }
+.rm-bar-done { background: var(--success-soft-bg); border: 1px solid var(--success-border); }
+.rm-bar-working { background: var(--info-soft-bg); border: 1px solid var(--info-border); }
+.rm-note { position: absolute; left: var(--space-2); top: 2px; font-size: 0.85em; }
+.rm-group { border-top: 1px solid var(--border-soft); padding: var(--space-1) 0; }
+.rm-group-name { font-weight: 600; }
+.rm-tasks > summary { cursor: pointer; font-size: 0.85em; margin: 2px 0 2px var(--space-1); }
+.rm-task-row .rm-label { padding-left: var(--space-4); font-size: 0.9em; }
+.rm-task-link { color: inherit; }
+.rm-marks { color: var(--muted-strong); }
+.rm-move { display: inline-flex; gap: 2px; }
+.rm-move form { margin: 0; }
+.rm-btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.rm-btn:disabled { opacity: 0.35; cursor: default; }
+.rm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.rm-legend { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; font-size: 0.85em; margin-top: var(--space-2); }
+.rm-swatch { display: inline-block; width: 18px; height: 10px; border-radius: 2px; position: static; }
+@media (max-width: 640px) {
+  .rm-row { grid-template-columns: 1fr; gap: 2px; }
+  .rm-axis .rm-label { display: none; }
+}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Roadmap · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Roadmap</span></nav>
+
+<h1>{{ project.name }} · Roadmap</h1>
+
+{% with slug=project.name, active="roadmap" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="muted rm-intro">
+  Порядок работ всего проекта: план (кнопки ↑/↓) → секция → приоритет; блокер встаёт раньше задачи,
+  которую держит, даже из другого плана. Даты — когда очередь примерно дойдёт до задачи по закрытым
+  за неделю за последние {{ weeks }} недель, на {{ asof }}. <strong>Это прогноз, не срок.</strong>
+</p>
+
+<p class="rm-toggles">
+  {%- set base = "/p/" ~ project.name ~ "/roadmap" -%}
+  {%- macro href(h, b) -%}{{ base }}{% if h or b %}?{% if h %}history=1{% endif %}{% if h and b %}&amp;{% endif %}{% if b %}backlog=1{% endif %}{% endif %}{%- endmacro %}
+  <a href="{{ href(not history, backlog) }}" class="btn-secondary" aria-pressed="{{ 'true' if history else 'false' }}">
+    {{ "✓ " if history else "" }}История (факт)
+  </a>
+  <a href="{{ href(history, not backlog) }}" class="btn-secondary" aria-pressed="{{ 'true' if backlog else 'false' }}">
+    {{ "✓ " if backlog else "" }}Backlog
+  </a>
+</p>
+
+{% include "_frag/roadmap_body.html" %}
+{% endblock %}

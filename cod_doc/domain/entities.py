@@ -573,6 +573,8 @@ class Plan:
     last_updated: datetime | None = None
     #: ADO-243: явный префикс ID новых задач; None — вывод по задачам плана.
     id_prefix: str | None = None
+    #: RFC 36 (ROAD-001): дробный ранг плана в очереди проекта; ставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)

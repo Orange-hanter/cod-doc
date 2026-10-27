@@ -648,7 +648,7 @@ _SPECS: tuple[TableSpec, ...] = (
         rank_column=_RANK,
     ),
     # --- authored: планы и задачи -------------------------------------------
-    TableSpec("plan", _A, natural_keys=(_name("project_id", "scope"),)),
+    TableSpec("plan", _A, natural_keys=(_name("project_id", "scope"),), rank_column=_RANK),
     TableSpec(
         "plan_section",
         _A,
