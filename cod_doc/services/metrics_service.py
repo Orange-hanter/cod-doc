@@ -126,8 +126,9 @@ def _derive_state_durations(
         exit_at = transitions[i + 1][1] if i + 1 < len(transitions) else end_ts
         if status in spent:
             spent[status] += max(0.0, (exit_at - entered_at).total_seconds())
-    ip_h = round(spent[_IN_PROGRESS] / _SECONDS_PER_HOUR, 4) or None
-    bl_h = round(spent[_BLOCKED] / _SECONDS_PER_HOUR, 4) or None
+    # Было в состоянии (> 0 с) — значение, даже если округлилось до 0.0; не было — None.
+    ip_h = round(spent[_IN_PROGRESS] / _SECONDS_PER_HOUR, 4) if spent[_IN_PROGRESS] > 0 else None
+    bl_h = round(spent[_BLOCKED] / _SECONDS_PER_HOUR, 4) if spent[_BLOCKED] > 0 else None
     return (ip_h, bl_h)
 
 
@@ -138,6 +139,7 @@ class _Values:
     in_progress_hours: float | None
     blocked_hours: float | None
     revision_count: int
+    has_events: bool
 
 
 def _values(session: Session, task: TaskModel) -> _Values:
@@ -151,7 +153,10 @@ def _values(session: Session, task: TaskModel) -> _Values:
             RevisionModel.entity_id == task.row_id,
         )
     ).scalar_one()
-    return _Values(completed_at, duration_h, ip_h, bl_h, int(revisions))
+    # Есть ли переходы в журнале — тот же запрос, что внутри _derive_state_durations:
+    # без событий обе длительности None по построению.
+    has_events = ip_h is not None or bl_h is not None or bool(_transitions(session, task))
+    return _Values(completed_at, duration_h, ip_h, bl_h, int(revisions), has_events)
 
 
 # ----------------------------------------------------------------- #
@@ -235,7 +240,7 @@ def rebuild(
         values = _values(session, task)
         if values.in_progress_hours is not None:
             with_ip += 1
-        if not _transitions(session, task):
+        if not values.has_events:
             without_events += 1
         row = existing.get(task.row_id)
         if row is None:
