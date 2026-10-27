@@ -7,6 +7,7 @@ from datetime import datetime  # noqa: TC003 — runtime use by Mapped[datetime]
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -115,6 +116,9 @@ class TaskModel(SyncUidMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_commit: Mapped[str | None] = mapped_column(String(64))
     blocked_reason: Mapped[str | None] = mapped_column(Text)
+    # RFC 36 §3.2.3 (ROAD-009, миграция 0055): трудозатраты в человеко-часах —
+    # вес задачи в очереди, не срок. NULL — оценки нет.
+    estimate_person_hours: Mapped[float | None] = mapped_column(Float)
     normalized_title: Mapped[str | None] = mapped_column(Text)
     # PCA-200: atomic checkout fields. NULL = no active lock.
     # `checked_out_by` is either an agent run_id or 'human:<id>'.

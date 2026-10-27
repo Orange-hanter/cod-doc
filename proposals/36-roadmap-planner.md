@@ -219,13 +219,19 @@ class QueueFlag(StrEnum):
     CROSS_PLAN = "cross_plan"     # есть ребро в другой план
     BACKLOG = "backlog"           # только при include_backlog
 
+class QueueUnit(StrEnum):      TASKS = "tasks" | PERSON_HOURS = "person_hours"   # V2
+class DurationSource(StrEnum): EXPLICIT | EMPIRICAL | UNIFORM                     # V2
+
 class QueueRow:      task_id, plan_scope, section_letter, position: int,
                      status: TaskStatus, priority: Priority,
-                     pulled_by: tuple[str, ...], flags: frozenset[QueueFlag]
+                     pulled_by: tuple[str, ...], flags: frozenset[QueueFlag],
+                     weight: float = 1.0, duration_source = UNIFORM        # V2
 class PlanBar:       scope, rank, first_position, last_position, open_count
-class Queue:         rows: tuple[QueueRow, ...], plans: tuple[PlanBar, ...]
+class Queue:         rows: tuple[QueueRow, ...], plans: tuple[PlanBar, ...],
+                     unit: QueueUnit = TASKS                                  # V2
 
-class ThroughputWeek: week_start: date, closed: int, created: int
+class ThroughputWeek: week_start: date, closed: int, created: int,
+                      closed_weight: float = 0.0                               # V2, чел·ч
 
 class ForecastWarning(StrEnum):
     INFLOW_EXCEEDS = "inflow_exceeds"   # создано за окно больше, чем закрыто
@@ -238,12 +244,21 @@ class PlanForecast:  scope, p50_start: date | None, p50_finish: date | None,
                      p85_finish: date | None
 class Forecast:      asof: date, sample: tuple[ThroughputWeek, ...],
                      rows: tuple[ForecastRow, ...], plans: tuple[PlanForecast, ...],
-                     warnings: tuple[ForecastWarning, ...], runs: int, seed: int
+                     warnings: tuple[ForecastWarning, ...], runs: int, seed: int,
+                     unit: QueueUnit = TASKS                                  # V2
 class Roadmap:       queue: Queue, forecast: Forecast   # ответ roadmap_get
 ```
 
 Константы — именованные (PLR2004): `FORECAST_WINDOW_WEEKS = 8`,
-`MIN_SAMPLE_WEEKS = 4`, `HORIZON_WEEKS = 26`, `FORECAST_RUNS = 1000`.
+`MIN_SAMPLE_WEEKS = 4`, `HORIZON_WEEKS = 26`, `FORECAST_RUNS = 1000`,
+`EMPIRICAL_WINDOW_DAYS = 60` (V2).
+
+V2 (ROAD-010, как сделано): очередь в чел·ч, как только в проекте есть
+часы — эмпирика `task_metrics.in_progress_hours` или оценки; иначе — в задачах,
+и прогноз совпадает с V1 до бросков `rng`. Окно эмпирики — 60 дней до самой
+свежей строки метрик, а не до сегодняшней даты: `sequence()` остаётся без
+`asof` и детерминированным. Средняя по проекту — медиана всех известных часов
+(эмпирики, иначе оценок).
 
 #### 3.2.6. V3 — `forecast_snapshot` (миграция 0057, эскиз)
 

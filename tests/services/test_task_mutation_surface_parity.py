@@ -58,6 +58,7 @@ SPECS = (
                 "update_description",
                 "update_acceptance",
                 "update_priority",
+                "set_estimate",
                 "complete",
             }
         ),

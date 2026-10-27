@@ -4581,6 +4581,7 @@ _cod-doc() {
         (checkout)   _cod_doc_task_checkout && ret=0 ;;
         (complete)   _cod_doc_task_complete && ret=0 ;;
         (create)     _cod_doc_task_create && ret=0 ;;
+        (estimate)   _cod_doc_task_estimate && ret=0 ;;
         (list)       _cod_doc_task_list && ret=0 ;;
         (move)       _cod_doc_task_move && ret=0 ;;
         (move-plan)  _cod_doc_task_move_plan && ret=0 ;;
@@ -4603,6 +4604,7 @@ _cod-doc() {
     'checkout:Atomically lock TASK_ID and move it to in-progress.'
     'complete:Complete a task (validates blocking deps are done first).'
     'create:Create a new task in a plan section.'
+    'estimate:Оценка задачи TASK_ID в человеко-часах (RFC 36, ROAD-009).'
     'list:List tasks for a project.'
     'move:Переложить задачи в другую секцию того же плана (группировка бэклог…'
     'move-plan:Перенести задачи в секцию ДРУГОГО плана того же проекта (ADO-243).'
@@ -4681,6 +4683,22 @@ _cod-doc() {
     '(--author)--author=:author' \
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_estimate] )) || _cod_doc_task_estimate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--clear)--clear[Снять оценку]' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=[Причина для ревизии]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' \
+    '2::person-hours' && ret=0
   return ret
 }
 

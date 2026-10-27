@@ -28,6 +28,23 @@ MIN_SAMPLE_WEEKS: Final = 4
 HORIZON_WEEKS: Final = 26
 #: Прогонов Монте-Карло.
 FORECAST_RUNS: Final = 1000
+#: V2 (ROAD-010): окно эмпирики — медиана in_progress_hours по типу за столько дней.
+EMPIRICAL_WINDOW_DAYS: Final = 60
+
+
+class QueueUnit(StrEnum):
+    """В чём меряется очередь и ёмкость недели (RFC 36 §4 V2)."""
+
+    TASKS = "tasks"  # V1: задача — слот, ёмкость — закрытые задачи
+    PERSON_HOURS = "person_hours"  # V2: задача — чел·ч, ёмкость — закрытые чел·ч
+
+
+class DurationSource(StrEnum):
+    """Откуда вес задачи в очереди (RFC 36 §4 V2, ROAD-010)."""
+
+    EXPLICIT = "explicit"  # task.estimate_person_hours
+    EMPIRICAL = "empirical"  # медиана in_progress_hours закрытых задач того же типа
+    UNIFORM = "uniform"  # средняя по проекту — или слот, если очередь в задачах
 
 
 class QueueFlag(StrEnum):
@@ -61,6 +78,9 @@ class QueueRow:
     #: Задача, ради которой эта подтянута вперёд (пусто — стоит на своём месте).
     pulled_by: tuple[str, ...]
     flags: frozenset[QueueFlag]
+    #: V2: вес задачи в единицах очереди (чел·ч или 1 — слот) и его источник.
+    weight: float = 1.0
+    duration_source: DurationSource = DurationSource.UNIFORM
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +97,7 @@ class PlanBar:
 class Queue:
     rows: tuple[QueueRow, ...]
     plans: tuple[PlanBar, ...]
+    unit: QueueUnit = QueueUnit.TASKS
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +105,8 @@ class ThroughputWeek:
     week_start: date
     closed: int
     created: int
+    #: V2: закрыто за неделю в чел·ч (факт in_progress_hours, иначе оценка/эмпирика).
+    closed_weight: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +133,7 @@ class Forecast:
     warnings: tuple[ForecastWarning, ...]
     runs: int
     seed: int
+    unit: QueueUnit = QueueUnit.TASKS
 
 
 @dataclass(frozen=True, slots=True)

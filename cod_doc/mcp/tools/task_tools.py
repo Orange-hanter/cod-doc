@@ -1147,6 +1147,44 @@ def register(mcp: FastMCP) -> None:
             out["dry_run"] = True
         return out
 
+    @mcp.tool(name="task_set_estimate")
+    def task_set_estimate(
+        project: str,
+        task_id: str,
+        person_hours: float | None,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Set or clear a task's estimate in person-hours (RFC 36 §3.2.3, ROAD-009).
+
+        Effort of one executor (human or agent), not a duration and not a
+        deadline: the roadmap uses it as the task's weight in the queue and
+        never writes a date from it. ``person_hours=null`` clears the estimate;
+        ``<= 0`` raises ``ValueError`` and writes nothing. Writes a revision
+        (``op=estimate``) and a ``task.estimate_changed`` event; an unchanged
+        value is a no-op.
+
+        Ответ имеет форму task_get плюс ``estimate_person_hours``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import task_service
+        from cod_doc.services.task_service import TaskNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                t = task_service.set_estimate(
+                    session,
+                    project_id=require_project_id(session, project),
+                    task_id=task_id,
+                    person_hours=person_hours,
+                    author=author,
+                    reason=reason,
+                )
+                return task_to_dict(t, session=session)
+        except TaskNotFoundError:
+            raise ValueError(f"Task '{task_id}' not found.") from None
+
     @mcp.tool(name="task_move_to_section")
     def task_move_to_section(
         project: str,

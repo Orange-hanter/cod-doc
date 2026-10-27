@@ -608,6 +608,8 @@ class Task:
     completed_at: datetime | None = None
     completed_commit: str | None = None
     blocked_reason: str | None = None
+    #: RFC 36 §3.2.3 (ROAD-009): трудозатраты, чел·ч; вес в очереди, не срок.
+    estimate_person_hours: float | None = None
 
 
 @dataclass(slots=True)

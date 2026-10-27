@@ -514,6 +514,67 @@ def task_status(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+@task.command("estimate")
+@click.argument("task_id")
+@click.argument("person_hours", type=float, required=False)
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--clear", is_flag=True, default=False, help="Снять оценку")
+@click.option("--author", default="cli", show_default=True)
+@click.option("--reason", default=None, help="Причина для ревизии")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
+@click.pass_context
+def task_estimate(
+    ctx: click.Context,
+    task_id: str,
+    person_hours: float | None,
+    project: str,
+    clear: bool,
+    author: str,
+    reason: str | None,
+    as_json: bool,
+) -> None:
+    """Оценка задачи TASK_ID в человеко-часах (RFC 36, ROAD-009).
+
+    Трудозатраты одного исполнителя — вес задачи на дорожной карте, не срок.
+    Нужен ровно один из PERSON_HOURS и --clear.
+    """
+    import json as _json
+
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import task_service
+    from cod_doc.services.serializers import task_to_dict
+    from cod_doc.services.task_service import TaskNotFoundError
+
+    if (person_hours is None) == (not clear):
+        raise click.UsageError("Pass exactly one of PERSON_HOURS and --clear.")
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+    try:
+        with transactional(sf) as session:
+            t = task_service.set_estimate(
+                session,
+                project_id=_require_project_id(session, project),
+                task_id=task_id,
+                person_hours=None if clear else person_hours,
+                author=author,
+                reason=reason,
+            )
+            payload = task_to_dict(t, session=session)
+    except TaskNotFoundError:
+        console.print(f"[red]Task '{escape(task_id)}' not found.[/red]")
+        sys.exit(1)
+    except ValueError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        click.echo(_json.dumps(payload, ensure_ascii=False))
+        return
+    value = payload["estimate_person_hours"]
+    shown = "снята" if value is None else f"{value:g} чел·ч"
+    console.print(f"[green]✅ {escape(task_id)}: оценка {shown}[/green]")
+
+
 @task.command("update")
 @click.argument("task_id")
 @click.option("--project", "-p", required=True, help="Project slug")

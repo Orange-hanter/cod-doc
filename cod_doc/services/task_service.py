@@ -37,6 +37,7 @@ Caller owns the transaction (`transactional()` from `cod_doc.infra.db`).
 from __future__ import annotations
 
 import json
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -901,6 +902,64 @@ def update_acceptance(
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
     )
+
+
+def set_estimate(
+    session: Session,
+    *,
+    project_id: int,
+    task_id: str,
+    person_hours: float | None,
+    author: str,
+    reason: str | None = None,
+) -> Task:
+    """Оценка задачи в человеко-часах (RFC 36 §3.2.3, ROAD-009; контракт C-20).
+
+    Трудозатраты одного исполнителя (человек или агент), а не длительность и
+    не срок: дорожная карта берёт её весом задачи в очереди, даты из неё не
+    пишутся. ``None`` снимает оценку; ``<= 0`` или не число — ``ValueError``
+    без записи. Без изменения значения — no-op. Ревизия ``op=estimate`` и
+    событие ``task.estimate_changed`` — одним вызовом (ADO-040).
+    """
+    # bool — подкласс int: без явного отказа True записался бы как 1.0 чел·ч.
+    if person_hours is not None and (
+        isinstance(person_hours, bool)
+        or not isinstance(person_hours, int | float)
+        or not math.isfinite(person_hours)
+        or person_hours <= 0
+    ):
+        raise ValueError(
+            f"estimate must be a positive number of person-hours, got {person_hours!r}"
+        )
+    model = _require_task(session, task_id, project_id=project_id)
+    old = model.estimate_person_hours
+    if old == person_hours:
+        t = TaskRepository(session).get(model.row_id)
+        assert t is not None
+        return t
+
+    model.estimate_person_hours = person_hours
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("estimate", old=old, new=person_hours),
+        reason=reason,
+        activity_kind="task.estimate_changed",
+        activity_scope_kind="task",
+        activity_scope_id=task_id,
+        activity_payload={"old_person_hours": old, "new_person_hours": person_hours},
+        activity_summary=f"Task {task_id}: estimate {old} → {person_hours} person-hours",
+    )
+
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
 
 
 def update_priority(

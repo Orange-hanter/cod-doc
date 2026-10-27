@@ -55,6 +55,9 @@ class Bar:
     width: float
     kind: str  # forecast | tail | done | working
     title: str
+    #: V2 (ROAD-010): источник веса у прогнозной полосы — explicit | empirical |
+    #: uniform; пусто, когда очередь в задачах (источник у всех один).
+    source: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,7 @@ class Chart:
     today: float
     ticks: tuple[Tick, ...]
     groups: tuple[Group, ...]
+    unit: str = "tasks"
 
 
 class _Scale:
@@ -124,13 +128,29 @@ class _Scale:
         return tuple(out)
 
 
+_SOURCE_TITLES: Final = {
+    "explicit": "оценка",
+    "empirical": "медиана по типу",
+    "uniform": "средняя по проекту",
+}
+
+
 def _forecast_bars(
-    scale: _Scale, asof: date, p50: date | None, p85: date | None
+    scale: _Scale,
+    asof: date,
+    p50: date | None,
+    p85: date | None,
+    *,
+    source: str = "",
+    weight: float | None = None,
 ) -> tuple[Bar, ...]:
     if p50 is None:
         return ()
     title = f"≈ p50 {p50.isoformat()}" + (f", p85 {p85.isoformat()}" if p85 else "")
-    bars = [scale.bar(max(asof, p50 - _WEEK), p50, "forecast", title)]
+    if source and weight is not None:
+        title += f"; вес {weight:g} чел·ч — {_SOURCE_TITLES.get(source, source)}"
+    first = scale.bar(max(asof, p50 - _WEEK), p50, "forecast", title)
+    bars = [Bar(first.left, first.width, first.kind, first.title, source)]
     if p85 is not None and p85 > p50:
         bars.append(scale.bar(p50, p85, "tail", title))
     return tuple(bars)
@@ -145,13 +165,27 @@ def _history_bar(scale: _Scale, bar: HistoryBar) -> Bar:
 
 
 def _queue_row(
-    scale: _Scale, asof: date, row: QueueRow, p50: date | None, p85: date | None, href: str
+    scale: _Scale,
+    asof: date,
+    row: QueueRow,
+    p50: date | None,
+    p85: date | None,
+    href: str,
+    *,
+    hours: bool = False,
 ) -> Row:
     flags = sorted(flag.value for flag in row.flags)
     title = ", ".join(_FLAG_TITLES[f] for f in flags)
     if row.pulled_by:
         title += f"{'; ' if title else ''}ради {', '.join(row.pulled_by)}"
-    bars = _forecast_bars(scale, asof, p50, p85)
+    bars = _forecast_bars(
+        scale,
+        asof,
+        p50,
+        p85,
+        source=row.duration_source.value if hours else "",
+        weight=row.weight if hours else None,
+    )
     return Row(
         task_id=row.task_id,
         label=f"{row.task_id} {row.title}",
@@ -197,6 +231,7 @@ def plans_chart(
     """Экран дорожной карты: план → задачи в порядке очереди (+ факт при ``history``)."""
     scale = _domain(roadmap, history, since)
     asof = roadmap.forecast.asof
+    hours = roadmap.queue.unit.value == "person_hours"
     dates = {r.task_id: r for r in roadmap.forecast.rows}
     plan_dates = {p.scope: p for p in roadmap.forecast.plans}
     done_by_plan: dict[str, list[HistoryBar]] = {}
@@ -224,7 +259,7 @@ def plans_chart(
             if row.plan_scope != plan.scope:
                 continue
             d = dates[row.task_id]
-            built = _queue_row(scale, asof, row, d.p50, d.p85, task_href(row.task_id))
+            built = _queue_row(scale, asof, row, d.p50, d.p85, task_href(row.task_id), hours=hours)
             fact = working.get(row.task_id)
             if fact is not None:
                 built = Row(
@@ -257,6 +292,7 @@ def plans_chart(
         today=scale.at(asof),
         ticks=scale.ticks(),
         groups=tuple(groups),
+        unit="person_hours" if hours else "tasks",
     )
 
 
@@ -274,6 +310,7 @@ def sections_chart(
     ``roadmap is None`` — очередь не построилась (цикл в графе): показывается
     только факт.
     """
+    hours = roadmap is not None and roadmap.queue.unit.value == "person_hours"
     open_rows = [r for r in roadmap.queue.rows if r.plan_scope == plan_scope] if roadmap else []
     dates = {r.task_id: r for r in roadmap.forecast.rows} if roadmap else {}
     last = [d for r in open_rows for d in (dates[r.task_id].p50, dates[r.task_id].p85) if d]
@@ -291,7 +328,7 @@ def sections_chart(
             if row.section_letter != letter:
                 continue
             d = dates[row.task_id]
-            built = _queue_row(scale, asof, row, d.p50, d.p85, task_href(row.task_id))
+            built = _queue_row(scale, asof, row, d.p50, d.p85, task_href(row.task_id), hours=hours)
             fact = working.get(row.task_id)
             bars = ((_history_bar(scale, fact),) if fact else ()) + built.bars
             rows.append(
@@ -325,4 +362,5 @@ def sections_chart(
         today=scale.at(asof),
         ticks=scale.ticks(),
         groups=tuple(groups),
+        unit="person_hours" if hours else "tasks",
     )
