@@ -183,7 +183,16 @@ def test_domain_module_imports_only_stdlib_and_domain() -> None:
     banned = [
         name
         for name in imported
-        if name.startswith(("cod_doc.infra", "cod_doc.services", "sqlalchemy"))
+        if name.startswith(
+            (
+                "cod_doc.infra",
+                "cod_doc.services",
+                "cod_doc.mcp",
+                "cod_doc.api",
+                "cod_doc.cli",
+                "sqlalchemy",
+            )
+        )
     ]
     assert banned == []
 

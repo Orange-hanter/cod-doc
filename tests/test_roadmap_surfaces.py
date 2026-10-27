@@ -163,3 +163,19 @@ def test_cli_table_says_forecast_not_deadline() -> None:
     assert "не сроки" in out
     assert "RD-001" in out
     assert "срок:" not in out.lower()
+
+
+@pytest.mark.usefixtures("project")
+def test_cli_table_prints_titles_literally() -> None:
+    """Заголовок с rich-разметкой печатается как есть: ячейка — Text, не markup."""
+    entry = Config.load().get_project(SLUG)
+    assert entry is not None
+    factory, engine = db_for_entry(entry)
+    try:
+        with transactional(factory) as s:
+            task = s.scalars(select(TaskModel).where(TaskModel.task_id == "RD-001")).one()
+            task.title = "[/bold] скобки [b]как есть[/b]"
+    finally:
+        engine.dispose()
+    out = _cli(["roadmap", "show", "-p", SLUG, "--asof", ASOF])
+    assert "[/bold]" in out  # разметка не съедена (ширина CliRunner переносит строку)

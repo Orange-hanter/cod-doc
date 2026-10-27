@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session, sessionmaker
 
 SLUG = "webroad"
@@ -40,7 +41,7 @@ def _cli(args: list[str]) -> None:
     assert result.exit_code == 0, result.output
 
 
-def _factory() -> tuple[sessionmaker[Session], object]:
+def _factory() -> tuple[sessionmaker[Session], Engine]:
     entry = Config.load().get_project(SLUG)
     assert entry is not None
     return db_for_entry(entry)
@@ -88,7 +89,7 @@ def _seed(*, closed_weeks: int) -> None:
                     )
                 )
     finally:
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
 
 
 @pytest.fixture
@@ -165,7 +166,7 @@ def test_move_plan_via_htmx_redraws_and_records(client: TestClient) -> None:
                 select(ActivityEventModel.actor_id).where(ActivityEventModel.kind == "plan.moved")
             ).all()
     finally:
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
     assert len(authors) == 1
 
 
@@ -199,7 +200,7 @@ def test_plan_page_has_timeline(client: TestClient) -> None:
         with transactional(factory) as s:
             plan_id = s.scalar(select(PlanModel.row_id).where(PlanModel.scope == "alpha"))
     finally:
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
     html = client.get(f"/p/{SLUG}/plans/{plan_id}").text
     timeline = html[html.index('id="timeline"') : html.index("Next batch")]
     assert "A · Main" in timeline
@@ -230,7 +231,7 @@ def test_cycle_is_explained_not_crashed(client: TestClient) -> None:
                 DependencyModel(from_task_id=rows["BE-2"], to_task_id=rows["BE-1"], kind="blocks")
             )
     finally:
-        engine.dispose()  # type: ignore[attr-defined]
+        engine.dispose()
     page = client.get(f"/p/{SLUG}/roadmap")
     assert page.status_code == 200
     assert "Очередь не построена" in page.text

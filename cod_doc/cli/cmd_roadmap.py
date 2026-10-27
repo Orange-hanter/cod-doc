@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import click
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 if TYPE_CHECKING:
     from cod_doc.config import Config
@@ -130,8 +131,10 @@ def _print(payload: dict[str, Any]) -> None:
     dates = {p["scope"]: p for p in forecast["plans"]}
     for bar in payload["queue"]["plans"]:
         when = dates.get(bar["scope"], {})
+        # Данные проекта — в Text, а не строкой: ячейка Table читает строку
+        # как rich-разметку, и заголовок с «[…]» ломал бы вывод.
         plans.add_row(
-            bar["scope"],
+            Text(bar["scope"]),
             f"{bar['first_position']}–{bar['last_position']}",
             str(bar["open_count"]),
             when.get("p50_start") or "—",
@@ -149,13 +152,13 @@ def _print(payload: dict[str, Any]) -> None:
             marks += f" ради {', '.join(row['pulled_by'])}"
         rows.add_row(
             str(row["position"]),
-            f"{row['task_id']} {row['title']}",
-            row["plan_scope"],
+            Text(f"{row['task_id']} {row['title']}"),
+            Text(row["plan_scope"]),
             row["section_letter"],
             row["status"],
             row["p50"] or "—",
             row["p85"] or "—",
-            marks,
+            Text(marks),
         )
     console.print(rows)
     for warning in forecast["warnings"]:
