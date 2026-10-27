@@ -972,7 +972,7 @@ def register(mcp: FastMCP) -> None:
         """
         from cod_doc.domain.entities import TaskStatus
         from cod_doc.infra.db import transactional
-        from cod_doc.services import activity_service, task_service
+        from cod_doc.services import task_service
         from cod_doc.services.task_service import TaskNotFoundError
         from cod_doc.services.task_status_machine import StatusTransitionError
 
@@ -988,17 +988,8 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     reason=reason,
                 )
-                activity_service.emit(
-                    session,
-                    project_id,
-                    "task.status_changed",
-                    actor_kind=actor_kind_for_author(author),
-                    actor_id=author,
-                    scope_kind="task",
-                    scope_id=task_id,
-                    payload={"new_status": new_status, "reason": reason},
-                    summary=f"Task {task_id} → {new_status}",
-                )
+                # FLW-001: событие task.status_changed (с old_status) пишет сам
+                # сервис; второе отсюда дублировало переход в ленте и метриках.
                 out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -1378,7 +1369,7 @@ def register(mcp: FastMCP) -> None:
         affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import activity_service, checkout_service
+        from cod_doc.services import checkout_service
         from cod_doc.services.task_service import (
             TaskAlreadyDoneError,
             TaskBlockedError,
@@ -1402,17 +1393,8 @@ def register(mcp: FastMCP) -> None:
                     reason=reason,
                     pr=pr,
                 )
-                activity_service.emit(
-                    session,
-                    project_id,
-                    "task.completed",
-                    actor_kind=actor_kind_for_author(author),
-                    actor_id=author,
-                    scope_kind="task",
-                    scope_id=task_id,
-                    payload={"commit_sha": commit_sha},
-                    summary=f"Task {task_id} completed by {author}",
-                )
+                # FLW-001: task.completed пишет сам task_service.complete — второе
+                # событие отсюда было дублем того же вида.
                 out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
