@@ -27,12 +27,14 @@ before, no network at all.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
+from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.hlc import self_replica
 from cod_doc.infra.models import ProjectModel, TaskModel
 from cod_doc.infra.repositories.base import require_int_project_id
@@ -167,18 +169,29 @@ def checkout(
     if lease == checkout_lease.OFFLINE and m.uid:
         checkout_lease.mark_offline(session, project_id, m.uid, now)
 
-    activity_service.emit_for_write(
+    # FLW-002 (ADO-040): начало работы — переход статуса, как любой другой,
+    # поэтому ревизия op=status (формат task_service._task_diff) пишется вместе
+    # с событием task.checked_out одним вызовом. Идемпотентный путь выше
+    # возвращается раньше и ревизии не пишет.
+    activity_service.write_revision_and_emit_event(
         session,
-        m.project_id,
-        "task.checked_out",
-        agent,
-        scope_kind="task",
-        scope_id=task_id,
-        payload={
+        project_id=m.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=m.row_id,
+        author=agent,
+        diff=json.dumps(
+            {"op": "status", "old": m.expected_status_at_checkout, "new": m.status},
+            ensure_ascii=False,
+        ),
+        reason="checkout",
+        activity_kind="task.checked_out",
+        activity_scope_kind="task",
+        activity_scope_id=task_id,
+        activity_payload={
             "old_status": m.expected_status_at_checkout,
             "new_status": m.status,
         },
-        summary=f"Task {task_id} checked out by {agent}",
+        activity_summary=f"Task {task_id} checked out by {agent}",
     )
     if target is not None:
         remote = target[1]
