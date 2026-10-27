@@ -5,19 +5,23 @@ the metrics dashboard (OBI-002).
 
 Public API:
 - ``record_on_complete(session, task_id)`` — idempotent; safe to re-run.
+- ``rebuild(session, *, project_id, author, dry_run=False)`` — FLW-003 backfill:
+  recompute every closed task's row from the transition journal.
 - ``list_for_project(session, project_id, *, since=None, limit=200)``.
 - ``summary(session, project_id)`` — counts, p50/p90 by type.
 """
 
 from __future__ import annotations
 
-import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from cod_doc.infra.models import RevisionModel, TaskMetricsModel, TaskModel
+from cod_doc.domain.entities import canonical_task_status
+from cod_doc.infra.models import ActivityEventModel, RevisionModel, TaskMetricsModel, TaskModel
+from cod_doc.services import activity_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -59,67 +63,100 @@ def _percentile(values: list[float], p: float) -> float | None:
     return round(sv[lo] + (sv[hi] - sv[lo]) * frac, 4)
 
 
+#: Переходы статуса в журнале событий (RFC 33 §3.1): вид события → откуда брать
+#: новый статус. ``task.completed`` всегда ведёт в done.
+_TRANSITION_KINDS = ("task.checked_out", "task.status_changed", "task.completed")
+_IN_PROGRESS = "in_progress"
+_BLOCKED = "blocked"
+_DONE = "done"
+_SECONDS_PER_HOUR = 3600.0
+
+
+def _transitions(session: Session, task: TaskModel) -> list[tuple[str, datetime]]:
+    """Таймлайн ``(статус, с какого момента)`` задачи из ``activity_event``.
+
+    FLW-003: переходы — журнал событий, а не диффы ревизий. ``task.status_changed``
+    без ``old_status`` — дубль MCP-обёртки до FLW-001 — пропускается: он
+    повторяет переход сервиса или несёт статус без исходного. Легаси-написания
+    (``in-progress``, ``pending``) сводятся к каноническим.
+    """
+    rows = session.execute(
+        select(ActivityEventModel.kind, ActivityEventModel.ts, ActivityEventModel.payload)
+        .where(
+            ActivityEventModel.project_id == task.project_id,
+            ActivityEventModel.scope_kind == "task",
+            ActivityEventModel.scope_id == task.task_id,
+            ActivityEventModel.kind.in_(_TRANSITION_KINDS),
+        )
+        .order_by(ActivityEventModel.ts, ActivityEventModel.row_id)
+    ).all()
+    out: list[tuple[str, datetime]] = []
+    for kind, ts, payload in rows:
+        data = payload if isinstance(payload, dict) else {}
+        if kind == "task.completed":
+            status = _DONE
+        elif kind == "task.checked_out":
+            status = str(data.get("new_status") or _IN_PROGRESS)
+        elif "old_status" in data and data.get("new_status"):
+            status = str(data["new_status"])
+        else:
+            continue
+        at = _as_utc(ts)
+        if at is not None:
+            out.append((canonical_task_status(status), at))
+    return out
+
+
 def _derive_state_durations(
     session: Session,
     task: TaskModel,
 ) -> tuple[float | None, float | None]:
-    """Walk the task's status_changed revisions to compute time in
-    ``in_progress`` and ``blocked``.
+    """Часы в ``in_progress`` и ``blocked`` по журналу переходов (FLW-003).
 
-    Returns (in_progress_hours, blocked_hours). Either may be None if
-    the revision timeline is too sparse to derive.
+    Returns ``(in_progress_hours, blocked_hours)``; ``None`` — задача в этом
+    состоянии не была (или событий о ней нет: задачи старше журнала).
+    Последний интервал закрывается ``completed_at`` (или последним событием).
     """
-    revs = list(
-        session.execute(
-            select(RevisionModel)
-            .where(
-                RevisionModel.entity_kind == "task",
-                RevisionModel.entity_id == task.row_id,
-            )
-            .order_by(RevisionModel.at)
-        ).scalars()
-    )
-    if not revs:
+    transitions = _transitions(session, task)
+    if not transitions:
         return (None, None)
-
-    # Reconstruct a list of (status, entered_at) transitions from the
-    # task's diff payload. We look for `diff.op == 'update_status'`-style
-    # entries; the schema stores diff as TEXT/JSON, so be tolerant.
-    transitions: list[tuple[str, datetime]] = [
-        (task.status, _as_utc(task.created) or _as_utc(revs[0].at) or datetime.now(UTC)),
-    ]
-    for r in revs:
-        diff_raw = r.diff or ""
-        try:
-            payload = json.loads(diff_raw) if diff_raw.startswith("{") else None
-        except ValueError, json.JSONDecodeError:
-            payload = None
-        if not isinstance(payload, dict):
-            continue
-        new_status = payload.get("new_status") or payload.get("to")
-        if not new_status:
-            continue
-        transitions.append((str(new_status), _as_utc(r.at) or datetime.now(UTC)))
-
-    if len(transitions) < 2:
-        return (None, None)
-
-    # Sum durations spent in each canonical bucket. We don't replay the
-    # full state machine here — just the two states we care about.
-    end_ts = _as_utc(task.completed_at) or datetime.now(UTC)
-    in_progress = 0.0
-    blocked = 0.0
+    end_ts = _as_utc(task.completed_at) or transitions[-1][1]
+    spent = {_IN_PROGRESS: 0.0, _BLOCKED: 0.0}
     for i, (status, entered_at) in enumerate(transitions):
         exit_at = transitions[i + 1][1] if i + 1 < len(transitions) else end_ts
-        seconds = max(0.0, (exit_at - entered_at).total_seconds())
-        canonical = status.replace("-", "_")
-        if canonical == "in_progress":
-            in_progress += seconds
-        elif canonical == "blocked":
-            blocked += seconds
-    ip_h = round(in_progress / 3600.0, 4) if in_progress > 0 else None
-    bl_h = round(blocked / 3600.0, 4) if blocked > 0 else None
+        if status in spent:
+            spent[status] += max(0.0, (exit_at - entered_at).total_seconds())
+    # Было в состоянии (> 0 с) — значение, даже если округлилось до 0.0; не было — None.
+    ip_h = round(spent[_IN_PROGRESS] / _SECONDS_PER_HOUR, 4) if spent[_IN_PROGRESS] > 0 else None
+    bl_h = round(spent[_BLOCKED] / _SECONDS_PER_HOUR, 4) if spent[_BLOCKED] > 0 else None
     return (ip_h, bl_h)
+
+
+@dataclass(frozen=True, slots=True)
+class _Values:
+    completed_at: datetime
+    duration_hours: float
+    in_progress_hours: float | None
+    blocked_hours: float | None
+    revision_count: int
+    has_events: bool
+
+
+def _values(session: Session, task: TaskModel) -> _Values:
+    completed_at = _as_utc(task.completed_at) or datetime.now(UTC)
+    created = _as_utc(task.created) or completed_at  # paranoia for old rows
+    duration_h = max(0.0, round((completed_at - created).total_seconds() / _SECONDS_PER_HOUR, 4))
+    ip_h, bl_h = _derive_state_durations(session, task)
+    revisions = session.execute(
+        select(func.count(RevisionModel.row_id)).where(
+            RevisionModel.entity_kind == "task",
+            RevisionModel.entity_id == task.row_id,
+        )
+    ).scalar_one()
+    # Есть ли переходы в журнале — тот же запрос, что внутри _derive_state_durations:
+    # без событий обе длительности None по построению.
+    has_events = ip_h is not None or bl_h is not None or bool(_transitions(session, task))
+    return _Values(completed_at, duration_h, ip_h, bl_h, int(revisions), has_events)
 
 
 # ----------------------------------------------------------------- #
@@ -132,7 +169,8 @@ def record_on_complete(session: Session, task: TaskModel) -> TaskMetricsModel:
 
     Idempotent: if a row already exists for ``task.row_id``, returns it
     unchanged. The hook in ``task_service.complete`` calls this — safe
-    under re-completion / reopen-then-redo cycles.
+    under re-completion / reopen-then-redo cycles. Пересчёт существующих
+    строк — :func:`rebuild` (FLW-003).
     """
     if task.row_id is None:
         raise ValueError("task must have a row_id before recording metrics")
@@ -143,28 +181,15 @@ def record_on_complete(session: Session, task: TaskModel) -> TaskMetricsModel:
     if existing is not None:
         return existing
 
-    completed_at = _as_utc(task.completed_at) or datetime.now(UTC)
-    created = _as_utc(task.created) or completed_at  # paranoia for old rows
-    duration_h = round((completed_at - created).total_seconds() / 3600.0, 4)
-    if duration_h < 0:
-        duration_h = 0.0
-    ip_h, bl_h = _derive_state_durations(session, task)
-
-    rev_count = session.execute(
-        select(RevisionModel).where(
-            RevisionModel.entity_kind == "task",
-            RevisionModel.entity_id == task.row_id,
-        )
-    ).all()
-
+    values = _values(session, task)
     row = TaskMetricsModel(
         task_id=task.row_id,
         project_id=task.project_id,
-        completed_at=completed_at,
-        duration_hours=duration_h,
-        in_progress_hours=ip_h,
-        blocked_hours=bl_h,
-        revision_count=len(rev_count),
+        completed_at=values.completed_at,
+        duration_hours=values.duration_hours,
+        in_progress_hours=values.in_progress_hours,
+        blocked_hours=values.blocked_hours,
+        revision_count=values.revision_count,
         commit_count=0,  # OBI-010 will backfill from commit_links
         priority=task.priority,
         type=task.type,
@@ -172,6 +197,104 @@ def record_on_complete(session: Session, task: TaskModel) -> TaskMetricsModel:
     session.add(row)
     session.flush()
     return row
+
+
+@dataclass(frozen=True, slots=True)
+class RebuildReport:
+    """Итог :func:`rebuild`: что пересчитано и почему часть строк пуста."""
+
+    tasks: int  # закрытых задач проекта
+    created: int  # строк task_metrics заведено (задачи закрыты до OBI-001)
+    updated: int  # строк, у которых изменились значения
+    with_in_progress: int  # строк с непустым in_progress_hours после пересчёта
+    without_events: int  # задач без единого события-перехода (старше журнала)
+
+
+def rebuild(
+    session: Session,
+    *,
+    project_id: int,
+    author: str,
+    dry_run: bool = False,
+) -> RebuildReport:
+    """Пересчитать ``task_metrics`` всех закрытых задач проекта (FLW-003, бэкфилл).
+
+    Идемпотентно: второй прогон без новых событий ничего не меняет. Строки нет —
+    заводится, есть — значения переписываются из журнала переходов.
+    ``task_metrics`` — local-таблица (не синхронизируется), ревизии у неё нет;
+    след прогона — одно событие ``metrics.rebuilt`` со счётчиками (ADO-040,
+    ``emit_for_write``). ``dry_run`` считает отчёт, ничего не записывая.
+    """
+    tasks = session.execute(
+        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.status == _DONE)
+    ).scalars()
+    existing = {
+        row.task_id: row
+        for row in session.execute(
+            select(TaskMetricsModel).where(TaskMetricsModel.project_id == project_id)
+        ).scalars()
+    }
+    total = created = updated = with_ip = without_events = 0
+    for task in tasks:
+        total += 1
+        values = _values(session, task)
+        if values.in_progress_hours is not None:
+            with_ip += 1
+        if not values.has_events:
+            without_events += 1
+        row = existing.get(task.row_id)
+        if row is None:
+            created += 1
+            if not dry_run:
+                session.add(
+                    TaskMetricsModel(
+                        task_id=task.row_id,
+                        project_id=task.project_id,
+                        completed_at=values.completed_at,
+                        duration_hours=values.duration_hours,
+                        in_progress_hours=values.in_progress_hours,
+                        blocked_hours=values.blocked_hours,
+                        revision_count=values.revision_count,
+                        commit_count=0,
+                        priority=task.priority,
+                        type=task.type,
+                    )
+                )
+            continue
+        fresh = {
+            "duration_hours": values.duration_hours,
+            "in_progress_hours": values.in_progress_hours,
+            "blocked_hours": values.blocked_hours,
+            "revision_count": values.revision_count,
+        }
+        if any(getattr(row, k) != v for k, v in fresh.items()):
+            updated += 1
+            if not dry_run:
+                for k, v in fresh.items():
+                    setattr(row, k, v)
+    report = RebuildReport(total, created, updated, with_ip, without_events)
+    if not dry_run:
+        session.flush()
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            "metrics.rebuilt",
+            author,
+            scope_kind="project",
+            scope_id=str(project_id),
+            payload={
+                "tasks": total,
+                "created": created,
+                "updated": updated,
+                "with_in_progress": with_ip,
+                "without_events": without_events,
+            },
+            summary=(
+                f"task_metrics rebuilt: {total} tasks, {created} created, {updated} updated, "
+                f"{with_ip} with in_progress_hours"
+            ),
+        )
+    return report
 
 
 # ----------------------------------------------------------------- #

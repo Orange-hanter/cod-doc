@@ -27,6 +27,7 @@ cod-doc plan forward     — цепочка prerequisites
 cod-doc plan reverse     — цепочка dependents
 cod-doc plan move        — переставить план в очереди проекта
 cod-doc roadmap show     — порядок работ проекта и прогноз (не сроки)
+cod-doc flow rebuild-metrics — пересчёт task_metrics из журнала переходов
 cod-doc task checkout    — взять задачу в работу (pending → in-progress)
 cod-doc task release     — снять замок с задачи
 cod-doc story list       — список историй
@@ -106,6 +107,7 @@ from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_ctx import ctx
 from cod_doc.cli.cmd_embed import embed
 from cod_doc.cli.cmd_finding import finding
+from cod_doc.cli.cmd_flow import flow
 from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_hub import hub
 from cod_doc.cli.cmd_import import import_cmd
@@ -188,6 +190,7 @@ main.add_command(mcp_server)
 main.add_command(task)
 main.add_command(plan)
 main.add_command(roadmap)
+main.add_command(flow)
 main.add_command(story)
 main.add_command(scenario)
 main.add_command(question)
