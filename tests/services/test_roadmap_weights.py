@@ -136,15 +136,40 @@ def test_person_hours_forecast_consumes_weekly_hours() -> None:
     assert result.unit is QueueUnit.PERSON_HOURS
 
 
-def test_throughput_counts_actual_hours_of_closed_tasks(sf: sessionmaker[Session]) -> None:
+def test_throughput_weighs_closed_tasks_like_the_queue(sf: sessionmaker[Session]) -> None:
+    """ROAD-012: закрытая задача весит медиану своего типа, а не свой факт.
+
+    Факт ``in_progress_hours`` — wall-clock вместе с простоем; хвост в 400 ч
+    раздувал ёмкость недели, а очередь расходовала её медианами — на живой БД
+    все 153 открытые задачи уезжали в одну неделю. Медиана bug (1, 2, 400) =
+    2.0, три закрытия — 6.0 против факта 403.
+    """
     with transactional(sf) as s:
         seed = _Seed(s)
         seed.plan("p1", "A")
-        _closed_with_hours(s, seed, "D-1", "bug", 2.5)
-        _closed_with_hours(s, seed, "D-2", "bug", 4.0)
+        _closed_with_hours(s, seed, "D-1", "bug", 1.0)
+        _closed_with_hours(s, seed, "D-2", "bug", 2.0)
+        _closed_with_hours(s, seed, "D-3", "bug", 400.0)
         sample = roadmap_service.throughput(s, project_id=seed.project_id, asof=ASOF, weeks=2)
 
     assert [(w.week_start, w.closed, w.closed_weight) for w in sample] == [
         (date(2026, 10, 12), 0, 0.0),
-        (date(2026, 10, 19), 2, 6.5),
+        (date(2026, 10, 19), 3, 6.0),
     ]
+
+
+def test_throughput_uses_estimate_of_closed_task(sf: sessionmaker[Session]) -> None:
+    """Оценка закрытой задачи бьёт и эмпирику, и её собственный факт — как в очереди."""
+    with transactional(sf) as s:
+        seed = _Seed(s)
+        seed.plan("p1", "A")
+        _closed_with_hours(s, seed, "D-1", "bug", 1.0)
+        _closed_with_hours(s, seed, "D-2", "bug", 30.0)
+        model = s.get(TaskModel, seed.rows["D-2"])
+        assert model is not None
+        model.estimate_person_hours = 5.0
+        s.flush()
+        sample = roadmap_service.throughput(s, project_id=seed.project_id, asof=ASOF, weeks=1)
+
+    # D-1 — медиана bug (1, 30) = 15.5; D-2 — оценка 5.0.
+    assert [w.closed_weight for w in sample] == [20.5]

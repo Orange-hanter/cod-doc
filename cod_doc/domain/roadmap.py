@@ -105,7 +105,7 @@ class ThroughputWeek:
     week_start: date
     closed: int
     created: int
-    #: V2: закрыто за неделю в чел·ч (факт in_progress_hours, иначе оценка/эмпирика).
+    #: V2: закрыто за неделю в чел·ч — весами очереди (оценка/эмпирика), не фактом (ROAD-012).
     closed_weight: float = 0.0
 
 
