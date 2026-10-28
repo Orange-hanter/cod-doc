@@ -446,10 +446,13 @@ def throughput(
     (контракт C-09): на снимке 2026-10-19 её единственный день дал бы 8
     закрытых против медианы 39 и утащил прогноз.
 
-    V2 (ROAD-010): ``closed_weight`` — те же закрытия в чел·ч: факт
-    ``task_metrics.in_progress_hours``, иначе оценка, эмпирика по типу или
-    средняя по проекту — тот же каскад, что у весов очереди. Очередь в
-    задачах — ``closed_weight`` равен ``closed``.
+    V2 (ROAD-010): ``closed_weight`` — те же закрытия в чел·ч, взвешенные
+    тем же каскадом, что очередь: оценка, эмпирика по типу, средняя по
+    проекту. Факт ``in_progress_hours`` задачи в её вес не идёт (ROAD-012):
+    это wall-clock вместе с простоем, хвост в сотни часов раздувал ёмкость
+    недели, а очередь расходовала её медианами — на живой БД 153 открытые
+    задачи укладывались в одну неделю. Факт входит только в медианы. Очередь
+    в задачах — ``closed_weight`` равен ``closed``.
     """
     end = _week_start(asof)
     start = end - timedelta(days=_DAYS_PER_WEEK * weeks)
@@ -458,24 +461,18 @@ def throughput(
     closed: dict[date, int] = defaultdict(int)
     closed_weight: dict[date, float] = defaultdict(float)
     created: dict[date, int] = defaultdict(int)
-    for status, completed_at, task_type, estimate, actual in session.execute(
+    for status, completed_at, task_type, estimate in session.execute(
         select(
             TaskModel.status,
             TaskModel.completed_at,
             TaskModel.type,
             TaskModel.estimate_person_hours,
-            TaskMetricsModel.in_progress_hours,
-        )
-        .outerjoin(TaskMetricsModel, TaskMetricsModel.task_id == TaskModel.row_id)
-        .where(TaskModel.project_id == project_id, TaskModel.completed_at >= since)
+        ).where(TaskModel.project_id == project_id, TaskModel.completed_at >= since)
     ).all():
         if completed_at is not None and canonical_task_status(status) == TaskStatus.DONE.value:
             week = _week_start(_as_date(completed_at))
             closed[week] += 1
-            if model.unit is QueueUnit.PERSON_HOURS and actual is not None:
-                closed_weight[week] += float(actual)
-            else:
-                closed_weight[week] += _weight(model, task_type, estimate)[0]
+            closed_weight[week] += _weight(model, task_type, estimate)[0]
     for (created_at,) in session.execute(
         select(TaskModel.created).where(
             TaskModel.project_id == project_id, TaskModel.created >= since
