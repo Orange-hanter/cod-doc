@@ -30,6 +30,8 @@ HORIZON_WEEKS: Final = 26
 FORECAST_RUNS: Final = 1000
 #: V2 (ROAD-010): окно эмпирики — медиана in_progress_hours по типу за столько дней.
 EMPIRICAL_WINDOW_DAYS: Final = 60
+#: ROAD-013: факт in_progress_hours короче минуты — переход статуса скриптом, не работа.
+MIN_EMPIRICAL_HOURS: Final = 1 / 60
 
 
 class QueueUnit(StrEnum):

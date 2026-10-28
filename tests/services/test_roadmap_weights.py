@@ -85,6 +85,46 @@ def test_cascade_estimate_then_type_median_then_project(sf: sessionmaker[Session
     }
 
 
+def test_instant_status_flips_do_not_zero_the_medians(sf: sessionmaker[Session]) -> None:
+    """ROAD-013: факт короче минуты — переход статуса скриптом, а не работа.
+
+    ``_derive_state_durations`` округляет часы до 4 знаков, и checkout →
+    complete за доли секунды пишет 0.0. На снимке orakul 161 из 169 фактов —
+    0.0, медианы 0, вес каждой задачи 0, ёмкость каждой недели 0, дат нет.
+    """
+    with transactional(sf) as s:
+        seed = _Seed(s)
+        seed.plan("p1", "A")
+        for i in range(3):
+            _closed_with_hours(s, seed, f"Z-{i}", "bug", 0.0)
+        _closed_with_hours(s, seed, "D-1", "bug", 2.0)
+        _open(s, seed, "EMP", "bug")
+        _open(s, seed, "UNI", "docs")
+        queue = roadmap_service.sequence(s, project_id=seed.project_id)
+
+    assert queue.unit is QueueUnit.PERSON_HOURS
+    assert {r.task_id: (r.weight, r.duration_source) for r in queue.rows} == {
+        "EMP": (2.0, DurationSource.EMPIRICAL),
+        "UNI": (2.0, DurationSource.UNIFORM),
+    }
+
+
+def test_only_instant_flips_keep_the_queue_in_tasks(sf: sessionmaker[Session]) -> None:
+    """ROAD-013: после отсева часов нет — очередь в задачах и даты, как V1."""
+    with transactional(sf) as s:
+        seed = _Seed(s)
+        seed.plan("p1", "A")
+        _closed_with_hours(s, seed, "Z-1", "bug", 0.0)
+        _closed_with_hours(s, seed, "Z-2", "feature", 0.01)
+        _open(s, seed, "T-1", "bug")
+        queue = roadmap_service.sequence(s, project_id=seed.project_id)
+        sample = roadmap_service.throughput(s, project_id=seed.project_id, asof=ASOF, weeks=1)
+
+    assert queue.unit is QueueUnit.TASKS
+    assert [(r.weight, r.duration_source) for r in queue.rows] == [(1.0, DurationSource.UNIFORM)]
+    assert [(w.closed, w.closed_weight) for w in sample] == [(2, 2.0)]
+
+
 def test_estimates_alone_switch_to_person_hours(sf: sessionmaker[Session]) -> None:
     """Метрик нет, оценка одна — средняя по проекту из оценок."""
     with transactional(sf) as s:

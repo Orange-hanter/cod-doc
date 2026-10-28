@@ -35,6 +35,7 @@ from cod_doc.domain.roadmap import (
     FORECAST_RUNS,
     FORECAST_WINDOW_WEEKS,
     HORIZON_WEEKS,
+    MIN_EMPIRICAL_HOURS,
     MIN_SAMPLE_WEEKS,
     DurationSource,
     Forecast,
@@ -212,13 +213,16 @@ def _weight_model(session: Session, project_id: int) -> _WeightModel:
     свежей строки метрик — окно привязано к данным, не к часам) или оценки
     задач. Нет ни того ни другого — очередь в задачах, ровно как V1. Средняя
     по проекту — медиана всех известных часов: эмпирики, иначе оценок.
+
+    Факт короче ``MIN_EMPIRICAL_HOURS`` в эмпирику не идёт (ROAD-013): это
+    переход статуса скриптом или агентом за доли секунды, округлённый до 0.0.
+    На orakul такие — 161 из 169 фактов; с ними медианы были 0, вес каждой
+    задачи и ёмкость каждой недели — 0, и прогноз не давал ни одной даты.
     """
+    real_hours = TaskMetricsModel.in_progress_hours >= MIN_EMPIRICAL_HOURS  # NULL отсекает тоже
     newest = session.scalar(
         select(TaskMetricsModel.completed_at)
-        .where(
-            TaskMetricsModel.project_id == project_id,
-            TaskMetricsModel.in_progress_hours.is_not(None),
-        )
+        .where(TaskMetricsModel.project_id == project_id, real_hours)
         .order_by(TaskMetricsModel.completed_at.desc())
         .limit(1)
     )
@@ -228,7 +232,7 @@ def _weight_model(session: Session, project_id: int) -> _WeightModel:
         for task_type, hours in session.execute(
             select(TaskMetricsModel.type, TaskMetricsModel.in_progress_hours).where(
                 TaskMetricsModel.project_id == project_id,
-                TaskMetricsModel.in_progress_hours.is_not(None),
+                real_hours,
                 TaskMetricsModel.completed_at >= since,
             )
         ).all():
