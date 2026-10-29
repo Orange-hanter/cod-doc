@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.domain.frontmatter_aliases import ALIEN_STATUS_ALIASES, ALIEN_TYPE_ALIASES
 from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel
 from cod_doc.services import activity_service, search_service
@@ -135,42 +136,6 @@ class ImportReport:
             "reordered": self.reordered,
         }
 
-
-# Foreign status vocabularies met in imported corpora, mapped onto the four
-# cod-doc statuses. A table, not a chain of `if`s, so the mapping is greppable
-# and testable; every substitution still raises a warning (reason="alias") —
-# a documented rename is not a licence to stay silent.
-_ALIEN_STATUS_ALIASES: dict[str, DocumentStatus] = {
-    # «живой» / завершённый документ чужого стандарта — работающий, не черновик
-    "living": DocumentStatus.ACTIVE,
-    "final": DocumentStatus.ACTIVE,
-    "complete": DocumentStatus.ACTIVE,
-    "completed": DocumentStatus.ACTIVE,
-    # `resolved` и `done` здесь больше нет: с ADO-218 это собственные значения
-    # DocumentStatus, а не написания `active`.
-    "accepted": DocumentStatus.ACTIVE,
-    "delivered": DocumentStatus.ACTIVE,
-    "published": DocumentStatus.ACTIVE,
-    "current": DocumentStatus.ACTIVE,
-    "stable": DocumentStatus.ACTIVE,
-    "in-progress": DocumentStatus.ACTIVE,
-    "in_progress": DocumentStatus.ACTIVE,
-    # ещё не принят
-    "proposed": DocumentStatus.DRAFT,
-    "pending": DocumentStatus.DRAFT,
-    "wip": DocumentStatus.DRAFT,
-    "todo": DocumentStatus.DRAFT,
-    # на рассмотрении
-    "in-review": DocumentStatus.REVIEW,
-    "in_review": DocumentStatus.REVIEW,
-    "reviewing": DocumentStatus.REVIEW,
-    # снят с эксплуатации
-    "archived": DocumentStatus.DEPRECATED,
-    "superseded": DocumentStatus.DEPRECATED,
-    "obsolete": DocumentStatus.DEPRECATED,
-    "rejected": DocumentStatus.DEPRECATED,
-    "cancelled": DocumentStatus.DEPRECATED,
-}
 
 # ADO-060 (friction #14): foreign corpora without a `type:` key. Orakul writes
 # Russian frontmatter (`Документ`, `Версия`, `Статус`, `diataxis`, `quadrant`);
@@ -315,7 +280,12 @@ def import_markdown(
 
     title = fm.get("title") or parsed.title_h1 or fallback_title or doc_key.rsplit("/", 1)[-1]
     doc_type = _coerce_enum(
-        DocumentType, fm.get("type"), fallback_type, field_name="type", sink=warnings
+        DocumentType,
+        fm.get("type"),
+        fallback_type,
+        field_name="type",
+        sink=warnings,
+        aliases=ALIEN_TYPE_ALIASES,
     )
     if not fm.get("type"):
         # ADO-060 (friction #14): no `type:` key — try the foreign
@@ -327,7 +297,7 @@ def import_markdown(
         DocumentStatus.DRAFT,
         field_name="status",
         sink=warnings,
-        aliases=_ALIEN_STATUS_ALIASES,
+        aliases=ALIEN_STATUS_ALIASES,
     )
     sensitivity = _coerce_enum(
         Sensitivity,
@@ -786,6 +756,7 @@ def _update_existing_document_metadata(
         DocumentType(model.type),
         field_name="type",
         sink=sink,
+        aliases=ALIEN_TYPE_ALIASES,
     ).value
     model.status = _coerce_enum(
         DocumentStatus,
@@ -793,7 +764,7 @@ def _update_existing_document_metadata(
         DocumentStatus(model.status),
         field_name="status",
         sink=sink,
-        aliases=_ALIEN_STATUS_ALIASES,
+        aliases=ALIEN_STATUS_ALIASES,
     ).value
     model.sensitivity = _coerce_enum(
         Sensitivity,

@@ -293,6 +293,60 @@ def test_status_outside_the_alias_table_is_a_plain_unknown(engine_with_schema) -
         ]
 
 
+@pytest.mark.parametrize(
+    ("alien", "expected"),
+    [
+        ("specification", "module-spec"),
+        ("convention", "standard"),
+        ("requirements", "vision"),
+        ("adr", "decision"),
+    ],
+)
+def test_foreign_types_map_through_the_alias_table(  # type: ignore[no-untyped-def]
+    engine_with_schema, alien: str, expected: str
+) -> None:
+    """ZeusLogic's own vocabulary, which its `docs_check` forbids rewriting.
+
+    Before the type alias table every one of these became `module-spec` with
+    `reason: unknown`, and drift reported the document forever.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = _import(session, project_id, "t", f"---\ntype: {alien}\n---\n\n# T\n\nBody.\n")
+
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.type == expected
+        assert [w.to_dict() for w in report.warnings] == [
+            {"field": "type", "raw": alien, "applied": expected, "reason": "alias"}
+        ]
+
+
+def test_reimport_maps_a_foreign_type_over_the_old_fallback(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """The update path takes the alias too, not the type already in the row.
+
+    Rows imported before the table existed hold `module-spec`; a re-import of
+    `type: convention` must move them to `standard`.
+    """
+    raw = "---\ntype: convention\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        first = _import(session, project_id, "conv", raw)
+        model = session.get(DocumentModel, first.document.row_id)
+        assert model is not None
+        model.type = "module-spec"
+        session.flush()
+
+        second = _import(session, project_id, "conv", raw.replace("Body.", "Body, edited."))
+
+        assert second.created is False
+        assert model.type == "standard"
+        reported = {(w.field, w.raw, w.applied, w.reason) for w in second.warnings}
+        assert ("type", "convention", "standard", "alias") in reported
+
+
 def test_reimport_of_an_unstorable_type_keeps_reporting(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """The update path reports too — it was the one that made damage permanent.
 

@@ -762,3 +762,46 @@ def test_project_drift_lists_a_metadata_mismatch_even_when_content_is_in_sync(  
         # The point of the test: content agrees, metadata does not.
         assert summary.issues[0].report.status is proj.DriftStatus.IN_SYNC
         assert summary.issues[0].report.metadata_mismatch == ("status",)
+
+
+def test_foreign_spelling_agrees_with_the_alias_it_was_imported_as(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """A corpus that keeps its own vocabulary is not permanent metadata drift.
+
+    ZeusLogic's `docs_check` accepts only `specification` / `archived`, so the
+    file cannot be rewritten to `module-spec` / `deprecated`. The import stored
+    the aliases; until drift looked them up too, all nine of its documents were
+    `metadata_mismatch` with nothing left to fix.
+    """
+    from cod_doc.infra.models import DocumentModel
+    from cod_doc.services import import_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        raw = "---\ntype: specification\nstatus: archived\n---\n\n# T\n\nBody.\n"
+        report = import_service.import_markdown(
+            session,
+            project_id=project_id,
+            doc_key="spec",
+            raw_markdown=raw,
+            path="spec.md",
+            author="human:test",
+        )
+        doc_id = report.document.row_id
+        assert doc_id is not None
+        target = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        ).path
+        assert "type: specification" in target.read_text(encoding="utf-8")
+
+        assert proj.detect_drift(session, doc_id, root_path=root_path).metadata_mismatch == ()
+
+        # The row moves off the alias: now the file and the DB do disagree.
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.status = DocumentStatus.DRAFT.value
+        session.flush()
+        report_after = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report_after.metadata_mismatch == ("status",)

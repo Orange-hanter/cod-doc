@@ -10,9 +10,13 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.domain.frontmatter_aliases import ALIEN_STATUS_ALIASES, ALIEN_TYPE_ALIASES
 from cod_doc.services.markdown_parse import parse_markdown
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from enum import StrEnum
+
     from cod_doc.infra.models import DocumentModel
 
 # Reserved keys never projected into frontmatter from `frontmatter_json`.
@@ -210,6 +214,13 @@ def _apply_frontmatter_to_model(model: DocumentModel, fm: dict[str, Any]) -> Non
         model.source_of_truth = fm["source_of_truth"]
 
 
+# The foreign spellings the importer maps, per frontmatter key: a file that
+# says one of them agrees with a row holding its alias.
+_ALIASES: Mapping[str, Mapping[str, StrEnum]] = {
+    "type": ALIEN_TYPE_ALIASES,
+    "status": ALIEN_STATUS_ALIASES,
+}
+
 # ADO-092: the three enum fields a file can disagree with the DB about.
 _COMPARED_ENUM_FIELDS: tuple[tuple[str, str], ...] = (
     ("type", "type"),
@@ -238,6 +249,13 @@ def metadata_mismatches(model: DocumentModel, file_text: str) -> tuple[str, ...]
     The remedy differs and the caller should say so: a representable
     divergence is fixed by a write, an unrepresentable one by teaching cod-doc
     the value, as ADO-092 did for `authoritative`.
+
+    A foreign spelling from the alias tables (`archived`, `specification` …)
+    is the one value outside the enum that cod-doc *does* understand: the
+    import stored its alias, so the file and the row agree for as long as the
+    row still holds that alias. It is reported only once the row moves away
+    from it: `status: archived` against a `draft` row is drift, against a
+    `deprecated` row it is not.
     """
     fm = _parse_frontmatter(file_text)
     if not fm:
@@ -256,11 +274,14 @@ def metadata_mismatches(model: DocumentModel, file_text: str) -> tuple[str, ...]
         try:
             authored = enum_cls(raw).value
         except ValueError:
-            # Not representable: the DB holds a fallback and the file keeps
-            # what it said, so the two disagree for as long as the value stays
-            # unknown. Reported — silence here is what hid ADO-092.
-            out.append(key)
-            continue
+            alias = _ALIASES[key].get(raw.strip().lower()) if key in _ALIASES else None
+            if alias is None:
+                # Not representable: the DB holds a fallback and the file keeps
+                # what it said, so the two disagree for as long as the value
+                # stays unknown. Reported — silence here is what hid ADO-092.
+                out.append(key)
+                continue
+            authored = alias.value
         if authored != db_value:
             out.append(key)
     return tuple(out)
