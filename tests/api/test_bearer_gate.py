@@ -440,6 +440,33 @@ def test_require_auth_without_store_is_503(
     assert "access init" in resp.json()["error"]["message"]
 
 
+# --- /healthz: проба контейнера без токена --------------------------------------
+
+
+def test_healthz_answers_without_token(store: None, mcp_client: TestClient) -> None:
+    """Healthcheck контейнера не носит токен: раньше он бил в ``/mcp`` и логировал 401 раз в 30 с."""
+    resp = mcp_client.get("/healthz")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert _denials() == []
+
+
+def test_healthz_503_when_required_store_missing(
+    mcp_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Сломанное хранилище доступа — не «жив»: прежняя проба принимала и 503."""
+    monkeypatch.setenv("COD_DOC_REQUIRE_AUTH", "1")
+    resp = mcp_client.get("/healthz")
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "SYNC-205"
+
+
+def test_only_get_healthz_is_open(store: None, mcp_client: TestClient) -> None:
+    assert mcp_client.post("/healthz").status_code == 401
+    assert mcp_client.get("/health").status_code == 401
+    assert mcp_client.get("/healthz/x").status_code == 401
+
+
 def test_tool_names_parsing() -> None:
     from cod_doc.mcp.server import _tool_names
 

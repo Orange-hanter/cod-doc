@@ -86,6 +86,20 @@ docker compose up -d --build             # entrypoint катит миграци�
 `cod-doc access migrate` в entrypoint догоняет схему хранилища и ничего не
 создаёт: гейт включает только явный `access init`.
 
+## Рутины
+
+Рутины (`approval_stale_default`, `adr_health_daily`, …) на узле тикает systemd,
+а не демон ноутбука: `routines/` — скрипт такта и его юниты.
+
+```bash
+install -m 0755 routines/cod-doc-routines-tick /usr/local/bin/
+install -m 0644 routines/cod-doc-routines.{service,timer} /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now cod-doc-routines.timer
+journalctl -u cod-doc-routines -p err   # отказы — с текстом причины
+```
+
+Скрипт ждёт compose в `/root/cod-doc`; иначе поправьте `cd` в его начале.
+
 ## Свой Caddy уже есть
 
 Если 443 занят другим Caddy на этом хосте — сервис `caddy` из compose не
