@@ -241,6 +241,25 @@ async def _send_denial(send: Send, denial: _Denial, *, websocket: bool = False) 
     await send({"type": "http.response.body", "body": body})
 
 
+_HEALTHZ_PATH: Final = "/healthz"
+_HEALTHZ_BODY: Final = b'{"ok":true}'
+
+
+def _is_health_probe(scope: Scope) -> bool:
+    return (
+        scope["type"] == "http" and scope.get("method") == "GET" and scope["path"] == _HEALTHZ_PATH
+    )
+
+
+async def _send_ok(send: Send) -> None:
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(_HEALTHZ_BODY)).encode()),
+    ]
+    await send({"type": "http.response.start", "status": 200, "headers": headers})
+    await send({"type": "http.response.body", "body": _HEALTHZ_BODY})
+
+
 _NO_STORE: Final = _Denial(
     _HTTP_UNAVAILABLE,
     "SYNC-205",
@@ -249,7 +268,12 @@ _NO_STORE: Final = _Denial(
 
 
 class BearerGate:
-    """ASGI-middleware гейта; ``protected(path)`` решает, какие пути закрыты."""
+    """ASGI-middleware гейта; ``protected(path)`` решает, какие пути закрыты.
+
+    ``healthz=True`` отвечает на ``GET /healthz`` сам, без токена и без похода в
+    приложение: проба контейнера не носит секрет, а прежний обход (``POST /mcp``,
+    401 = «жив») писал отказ в лог каждые 30 с и считал живым и 503.
+    """
 
     def __init__(
         self,
@@ -259,10 +283,12 @@ class BearerGate:
         store_url: str | None = None,
         failures: RateLimiter | None = None,
         requests: RateLimiter | None = None,
+        healthz: bool = False,
     ) -> None:
         self.app = app
         self.protected = protected
         self.store_url = store_url
+        self.healthz = healthz
         # ``is None``, а не ``or``: у пустого лимитера ``len() == 0`` — он ложен.
         self.failures = RateLimiter(FAILURES_PER_WINDOW) if failures is None else failures
         self.requests = RateLimiter(REQUESTS_PER_WINDOW) if requests is None else requests
@@ -276,6 +302,12 @@ class BearerGate:
         from cod_doc.services import access_service
 
         factory = await anyio.to_thread.run_sync(access_service.open_store, self.store_url)
+        if self.healthz and _is_health_probe(scope):
+            if factory is None and _auth_required():
+                await _send_denial(send, _NO_STORE)
+            else:
+                await _send_ok(send)
+            return
         ws = scope["type"] == "websocket"
         if factory is None:
             if _auth_required():

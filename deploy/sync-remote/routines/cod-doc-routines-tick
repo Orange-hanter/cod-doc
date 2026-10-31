@@ -1,0 +1,26 @@
+#!/bin/bash
+# Один такт планировщика рутин cod-doc по всем проектам реестра (замена демона ноутбука).
+# Ставится в /usr/local/bin, запускается cod-doc-routines.timer раз в 5 минут.
+#
+# Каждый отказ пишет в журнал свой текст: раньше FAILURE юнита приходил без причины,
+# а `grep -v alembic` под pipefail давал код 1 и на выводе из одних строк alembic.
+set -uo pipefail
+cd /root/cod-doc
+docker inspect cod-doc >/dev/null 2>&1 || exit 0
+
+slugs=$(docker compose exec -T cod-doc python -c "from cod_doc.config import Config;print(' '.join(e.name for e in Config.load().list_projects() if e.enabled))" 2>&1) || {
+  logger -t cod-doc-routines -p user.err "FAILED to list projects: $(printf '%s\n' "$slugs" | tail -3 | tr '\n' ' ')"
+  exit 1
+}
+
+rc=0
+for p in $slugs; do
+  if raw=$(docker compose exec -T cod-doc cod-doc routine tick -p "$p" 2>&1); then
+    out=$(printf '%s\n' "$raw" | { grep -v alembic || true; } | tail -1)
+    case "$out" in ''|*"Nothing due"*) ;; *) logger -t cod-doc-routines "$p: $out" ;; esac
+  else
+    rc=1
+    logger -t cod-doc-routines -p user.err "$p: FAILED: $(printf '%s\n' "$raw" | { grep -v alembic || true; } | tail -5 | tr '\n' ' ')"
+  fi
+done
+exit $rc

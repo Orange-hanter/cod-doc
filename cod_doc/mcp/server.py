@@ -248,7 +248,7 @@ def gated_http_app() -> ASGIApp:
     """streamable-http приложение MCP за Bearer-гейтом (RFC 29 §3.8, CLO-036)."""
     from cod_doc.api.auth import BearerGate, is_mcp_path
 
-    return BearerGate(_ToolCapture(mcp.streamable_http_app()), protected=is_mcp_path)
+    return BearerGate(_ToolCapture(mcp.streamable_http_app()), protected=is_mcp_path, healthz=True)
 
 
 def _require_store_off_loopback(host: str) -> None:

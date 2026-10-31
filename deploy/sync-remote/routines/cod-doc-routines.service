@@ -1,0 +1,7 @@
+[Unit]
+Description=cod-doc: такт рутин по всем проектам
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cod-doc-routines-tick
