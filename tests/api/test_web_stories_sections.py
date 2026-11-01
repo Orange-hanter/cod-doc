@@ -156,11 +156,15 @@ def test_group_toggle_keeps_sort_and_vice_versa(stories_client) -> None:  # noqa
     client, entry, pid, _ = stories_client
     _seed(entry, pid, [("US-001", "A", RU, Priority.LOW, UserStoryStatus.DRAFT, None)])
 
+    # Group → Sort: при ?sort=priority строку несёт только ссылка Group
+    # «Persona» — у кнопок Sort в параметрах нет group_by.
     r = client.get(f"/p/{entry.name}/stories?sort=priority")
     assert "group_by=persona&amp;sort=priority" in r.text
 
+    # Sort → Group: при ?group_by=persona ту же строку даёт кнопка Sort
+    # «priority» — хелпер ставит чужие параметры первыми, затем sort (WUI-006).
     r2 = client.get(f"/p/{entry.name}/stories?group_by=persona")
-    assert "sort=priority&amp;group_by=persona" in r2.text
+    assert "group_by=persona&amp;sort=priority" in r2.text
 
 
 def test_delivered_chip_counts_a_real_status(stories_client) -> None:  # noqa: F811

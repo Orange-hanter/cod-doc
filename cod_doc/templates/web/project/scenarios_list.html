@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_frag/sort.html" as sorting %}
 {% block title %}Scenarios · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -78,11 +79,20 @@
       {% endfor %}
     </select>
   </label>
+  {% if sort.params.sort %}<input type="hidden" name="sort" value="{{ sort.params.sort }}">{% endif %}
+  {% if sort.params.dir %}<input type="hidden" name="dir" value="{{ sort.params.dir }}">{% endif %}
   <noscript><button type="submit">Apply</button></noscript>
   {% if kind_filter or group_filter or status_filter != "live" %}
     <a class="muted" href="/p/{{ project.name }}/scenarios">clear</a>
   {% endif %}
 </form>
+
+{% if blocks %}
+  <div class="list-controls">
+    {% if not sort.is_default %}<a class="view-btn" href="{{ sort.href('rank') }}">↺ Default order</a>{% endif %}
+    {{ sorting.filter(".scn-groups", "Filter scenarios… (/)") }}
+  </div>
+{% endif %}
 
 {% if not blocks %}
   <div class="tasks-empty">
@@ -113,7 +123,7 @@
 
     <div class="scn-groups">
       {% for b in blocks %}
-        <section class="task-card" id="group-{{ b.group_key }}">
+        <section class="task-card" id="group-{{ b.group_key }}" data-filter-group>
           <div class="task-card-header">
             <h2>{{ b.group_key }}</h2>
             <span class="count-chip">{{ b.rows | length }}</span>
@@ -144,15 +154,15 @@
               <table class="grid scn-table">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>Kind</th>
-                    <th>Status</th>
-                    <th>Title</th>
+                    {{ sorting.th(sort, "id", "ID") }}
+                    {{ sorting.th(sort, "kind", "Kind") }}
+                    {{ sorting.th(sort, "status", "Status") }}
+                    {{ sorting.th(sort, "title", "Title") }}
                   </tr>
                 </thead>
                 <tbody>
                   {% for it in b.rows %}
-                    <tr>
+                    <tr data-filter-row>
                       {# Ссылка в первой ячейке растягивается на строку через ::after
                          (см. .scn-table в _components.css): клик по всей строке
                          работает без JS. Заголовок остаётся отдельной ссылкой. #}

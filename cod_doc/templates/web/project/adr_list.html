@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_frag/sort.html" as sorting %}
 {% block title %}ADRs · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -66,20 +67,24 @@
     </p>
   </div>
 {% else %}
+  <div class="list-controls">
+    {% if not sort.is_default %}<a class="view-btn" href="{{ sort.href('shelf') }}" title="Действующие, затем ждущие решения (ARG-009)">↺ Default order</a>{% endif %}
+    {{ sorting.filter(".adr-table", "Filter decisions… (/)") }}
+  </div>
   <div class="table-scroll">
   <table class="grid adr-table">
     <thead>
       <tr>
-        <th class="adr-col-glyph"><span class="adr-sr">Status</span></th>
-        <th>ID</th>
-        <th>Decision</th>
-        <th class="adr-col-when">When</th>
+        {{ sorting.th(sort, "status", '<span aria-hidden="true">◇</span><span class="adr-sr">Status</span>'|safe, "adr-col-glyph") }}
+        {{ sorting.th(sort, "id", "ID") }}
+        {{ sorting.th(sort, "title", "Decision") }}
+        {{ sorting.th(sort, "date", "When", "adr-col-when") }}
       </tr>
     </thead>
     {# ARG-009 (RFC 34 §3.4): строки разложены по полкам. Пока полок нет,
        группа одна и без заголовка — список выглядит плоским. #}
     {% for shelf in shelves %}
-    <tbody>
+    <tbody data-filter-group>
       {% if shelf.name %}
         <tr class="adr-shelf-head">
           <th colspan="3" scope="rowgroup">
@@ -100,7 +105,7 @@
         </tr>
       {% endif %}
       {% for it in shelf["items"] %}
-        <tr data-adr="{{ it.adr_id }}"{% if it.closed %} class="adr-row-closed"{% endif %}>
+        <tr data-filter-row data-adr="{{ it.adr_id }}"{% if it.closed %} class="adr-row-closed"{% endif %}>
           {# Знак — единственный носитель статуса в строке; у действующего пусто,
              строка молчит. Для скринридера статус словом. #}
           <td class="adr-col-glyph {{ it.glyph_cls }}" title="{{ it.status }}">

@@ -13,6 +13,7 @@ from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.roadmap_chart import Chart, sections_chart
+from cod_doc.api.web.sorting import SortKey, SortSpec, natural_key, rank_of, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import plan_service as plans
 from cod_doc.services import roadmap_service
@@ -21,6 +22,23 @@ from cod_doc.services import task_service as tasks
 router = APIRouter()
 
 PLAN_READY_LIMIT = 7
+
+# WUI-006: дефолт — ранг плана (порядок — контракт, RFC 36); статус — от
+# живого к закрытому.
+_PLAN_STATUS_RANK: dict[str, int] = {"in-progress": 0, "pending": 1, "empty": 2, "done": 3}
+PLAN_SORT = SortSpec(
+    keys={
+        "rank": SortKey("rank", lambda p: p["rank"]),
+        "scope": SortKey("scope", lambda p: natural_key(p["scope"])),
+        "status": SortKey("status", lambda p: rank_of(_PLAN_STATUS_RANK, p["status"])),
+        "progress": SortKey("progress", lambda p: p["percent"], desc_first=True),
+        "done": SortKey("done", lambda p: p["done"], desc_first=True),
+        "total": SortKey("total", lambda p: p["total"], desc_first=True),
+        "updated": SortKey("updated", lambda p: p["last_updated"], desc_first=True),
+    },
+    default="rank",
+    tiebreak=lambda p: p["rank"],
+)
 
 
 @router.get("/p/{slug}/plans", response_class=HTMLResponse)
@@ -32,12 +50,13 @@ def plans_list(request: Request, slug: str) -> HTMLResponse:
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
-            for plan in plans.list_for_project(session, project_db_id):
+            for rank, plan in enumerate(plans.list_for_project(session, project_db_id)):
                 assert plan.row_id is not None
                 progress = plans.recalc(session, plan.row_id, project_id=project_db_id)
                 rows.append(
                     {
                         "plan_id": plan.row_id,
+                        "rank": rank,
                         "scope": plan.scope,
                         "principle": plan.principle,
                         "total": progress.total,
@@ -50,12 +69,14 @@ def plans_list(request: Request, slug: str) -> HTMLResponse:
                         "last_updated": plan.last_updated,
                     }
                 )
+    sort = sort_state(request, PLAN_SORT)
     return templates.TemplateResponse(
         request,
         "project/plans_list.html",
         {
             "project": {"name": proj.entry.name},
-            "plans": rows,
+            "plans": sort.apply(rows),
+            "sort": sort,
             "db_available": db_available,
         },
     )

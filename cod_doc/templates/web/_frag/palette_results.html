@@ -1,0 +1,38 @@
+{# WUI-006: результаты палитры поиска (GET /palette). Каждый пункт — ссылка
+   `.cmdk-item`: cod_doc_palette.js водит по ним выделение стрелками и
+   открывает Enter'ом; мышью они работают как обычные ссылки. Сниппет —
+   Markup из snippets.fts_snippet: экранирован весь, кроме <mark> подсветки. #}
+{% if index_error %}
+  <p class="cmdk-note">{{ index_error }}
+    {% if slug %}<a class="cmdk-item" href="/p/{{ slug }}/search">Rebuild the index on Search</a>{% endif %}
+  </p>
+{% endif %}
+{% for g in groups %}
+  <section class="cmdk-group">
+    <h3 class="cmdk-group-label">{{ g.label }}</h3>
+    <ul class="cmdk-list" role="listbox" aria-label="{{ g.label }}">
+      {% for it in g["items"] %}
+        <li role="presentation">
+          <a class="cmdk-item" role="option" href="{{ it.href }}">
+            {% if it.ref %}<code class="cmdk-ref">{{ it.ref }}</code>{% endif %}
+            <span class="cmdk-title">{{ it.title }}</span>
+            {% if it.snippet %}<span class="cmdk-snippet">{{ it.snippet }}</span>{% endif %}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endfor %}
+{% if q.strip() and slug %}
+  <section class="cmdk-group">
+    <ul class="cmdk-list" role="listbox" aria-label="Full search">
+      <li role="presentation">
+        <a class="cmdk-item cmdk-all" role="option" href="/p/{{ slug }}/search?q={{ q | urlencode }}">
+          <span class="cmdk-title">All results for “{{ q }}”</span>
+        </a>
+      </li>
+    </ul>
+  </section>
+{% elif not groups and not index_error %}
+  <p class="cmdk-note">Nothing found{% if q.strip() %} for “{{ q }}”{% endif %}.</p>
+{% endif %}

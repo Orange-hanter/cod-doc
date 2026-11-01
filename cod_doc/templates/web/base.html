@@ -16,7 +16,7 @@
      Порядок тот же, что был в app.css: токены → компоненты → оверрайды. #}
   {% for css in (
     'css/_base.css', 'css/_components.css', 'css/_task_detail.css', 'css/_doc_detail.css',
-    'css/_peek.css',
+    'css/_peek.css', 'css/_cmdk.css',
   ) %}
     <link rel="stylesheet" href="{{ static_url(css) }}">
   {% endfor %}
@@ -134,6 +134,7 @@
   <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
   <script defer src="{{ static_url('cod_doc_app.js') }}"></script>
   <script defer src="{{ static_url('cod_doc_peek.js') }}"></script>
+  <script defer src="{{ static_url('cod_doc_palette.js') }}"></script>
 </head>
 {% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
 <body{% if _slug %} data-project="{{ _slug }}"{% endif %}>
@@ -145,6 +146,11 @@
       <a href="/settings"{% if request and request.url.path == '/settings' %} class="active"{% endif %}>Settings</a>
     </nav>
     <span class="topbar-spacer"></span>
+    {# WUI-006: палитра поиска; хоткей — Cmd/Ctrl+K. #}
+    <button type="button" class="cmdk-open" id="cmdk-open"
+            aria-keyshortcuts="Control+K Meta+K" title="Search (Ctrl/⌘ K)">
+      <span aria-hidden="true">⌕</span><span class="cmdk-open-label">Search</span><kbd class="cmdk-kbd">⌘K</kbd>
+    </button>
     {% if _slug %}
       <span id="cod-ws-dot" class="cod-ws-dot cod-ws-disconnected"
             role="status" aria-live="polite"
@@ -180,5 +186,6 @@
     {% block content %}{% endblock %}
   </main>
   {% include "_frag/peek_shell.html" %}
+  {% include "_frag/palette_shell.html" %}
 </body>
 </html>

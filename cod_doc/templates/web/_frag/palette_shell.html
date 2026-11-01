@@ -1,0 +1,24 @@
+{# WUI-006: палитра поиска. Открывается Cmd/Ctrl+K (или `/`, если на странице
+   нет быстрого фильтра) и кнопкой в topbar. Результаты — GET /palette,
+   их вставляет cod_doc_palette.js. Нативный <dialog> + showModal(): Esc,
+   ловушка фокуса и верхний слой бесплатно, как у шторки peek.
+   Поле — combobox: фокус не уходит из него, выбранный пункт читалка узнаёт
+   из aria-activedescendant (его ставит JS). `.cmdk-mod` JS переписывает в
+   «Ctrl» вне macOS. #}
+<dialog id="cmdk" class="cmdk" aria-label="Search">
+  <form class="cmdk-form" method="dialog" role="search">
+    <span class="cmdk-icon" aria-hidden="true">⌕</span>
+    <input type="search" class="cmdk-input" name="q"
+           placeholder="{% if _slug %}Search {{ _slug }} or jump to a tab…{% else %}Jump to a project…{% endif %}"
+           role="combobox" aria-label="Search" aria-controls="cmdk-results"
+           aria-expanded="false" aria-autocomplete="list"
+           autocomplete="off" spellcheck="false">
+    <kbd class="cmdk-esc">esc</kbd>
+  </form>
+  <div id="cmdk-results" class="cmdk-results" aria-live="polite"></div>
+  <footer class="cmdk-foot muted-tiny">
+    <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+    <span><kbd>↵</kbd> open</span>
+    <span><kbd class="cmdk-mod">⌘</kbd><kbd>↵</kbd> new tab</span>
+  </footer>
+</dialog>

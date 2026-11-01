@@ -3,27 +3,29 @@
    файлом, читает ли его кто-нибудь.
 
    Пока `drift_ready` ложно, таблица дозапрашивает саму себя: обход файлов ради
-   меток дрейфа стоит 185 мс из 190, и первый экран не должен его ждать. #}
+   меток дрейфа стоит 185 мс из 190, и первый экран не должен его ждать.
+   Дозапрос несёт `sort.query`: иначе перезагрузка сбросила бы сортировку. #}
+{% import "_frag/sort.html" as sorting %}
 <table class="grid docs-table"
        id="docs-table"
        {% if not drift_ready %}
-       hx-get="/p/{{ project.name }}/docs/drift-marks?group={{ group_by }}{% if selected %}&node={{ selected }}{% endif %}{% if filters.q %}&q={{ filters.q | urlencode }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}"
+       hx-get="/p/{{ project.name }}/docs/drift-marks?group={{ group_by }}{% if selected %}&node={{ selected }}{% endif %}{% if filters.q %}&q={{ filters.q | urlencode }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if sort.query %}&{{ sort.query }}{% endif %}"
        hx-trigger="load"
        hx-swap="outerHTML"
        {% endif %}>
   <thead>
     <tr>
-      <th>Документ</th>
-      {% if not selected %}<th class="docs-col-node">Раздел</th>{% endif %}
-      <th class="docs-col-type">Тип</th>
-      <th class="docs-col-status">Статус</th>
-      <th class="docs-col-num" title="Входящие · исходящие ссылки">Связи</th>
-      <th class="docs-col-when">Обновлён</th>
+      {{ sorting.th(sort, "title", "Документ") }}
+      {% if not selected %}{{ sorting.th(sort, "node", "Раздел", "docs-col-node") }}{% endif %}
+      {{ sorting.th(sort, "type", "Тип", "docs-col-type") }}
+      {{ sorting.th(sort, "status", "Статус", "docs-col-status") }}
+      {{ sorting.th(sort, "links", "Связи", "docs-col-num") }}
+      {{ sorting.th(sort, "updated", "Обновлён", "docs-col-when") }}
     </tr>
   </thead>
   <tbody>
     {% for d in documents %}
-      <tr>
+      <tr data-filter-row>
         <td class="docs-cell-title">
           <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}" data-peek>{{ d.title }}</a>
           {%- if d.drift %} <span class="docs-drift" title="Проекция разошлась с БД — см. doc drift">⚠</span>{% endif %}
@@ -32,9 +34,9 @@
         {% if not selected %}
           <td class="docs-col-node">
             {% if d.node %}
-              <a class="docs-node-chip" href="?group=node&amp;node={{ d.node }}">{{ node_titles.get(d.node, d.node) }}</a>
+              <a class="docs-node-chip" href="?group=node&amp;node={{ d.node }}{% if sort.query %}&amp;{{ sort.query }}{% endif %}">{{ node_titles.get(d.node, d.node) }}</a>
             {% else %}
-              <a class="docs-node-chip docs-node-chip-inbox" href="?group=node&amp;node={{ inbox_key or '_none' }}">инбокс</a>
+              <a class="docs-node-chip docs-node-chip-inbox" href="?group=node&amp;node={{ inbox_key or '_none' }}{% if sort.query %}&amp;{{ sort.query }}{% endif %}">инбокс</a>
             {% endif %}
           </td>
         {% endif %}

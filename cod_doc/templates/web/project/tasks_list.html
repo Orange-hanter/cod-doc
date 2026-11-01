@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_frag/sort.html" as sorting %}
 {% block title %}Tasks · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -77,15 +78,24 @@
     </header>
 
     {# ── View toggle: Board (kanban) | Chains (dependency graph) ────────── #}
+    {# Смена вида и плана сохраняет сортировку (WUI-006). Адрес собирается
+       из списка параметров: без плана и вида ссылка не начинается с `?&`. #}
+    {% macro tasks_url(chains=False, plan='') -%}
+      {%- set parts = [] -%}
+      {%- if chains %}{% set _ = parts.append('view=chains') %}{% endif -%}
+      {%- if plan %}{% set _ = parts.append('plan=' ~ (plan | urlencode)) %}{% endif -%}
+      {%- if sort.query %}{% set _ = parts.append(sort.query) %}{% endif -%}
+      /p/{{ project.name }}/tasks{% if parts %}?{{ parts | join('&') }}{% endif %}
+    {%- endmacro %}
     <div class="tasks-view-row">
       <nav class="tasks-view-toggle" aria-label="Choose task layout">
         <a class="tasks-view-btn {% if view == 'board' %}tasks-view-btn-active{% endif %}"
-           href="/p/{{ project.name }}/tasks{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"
-           title="Status columns, priority-sorted">
+           href="{{ tasks_url(plan=selected_plan) }}"
+           title="Status columns">
           <span class="tasks-view-icon">▦</span> Board
         </a>
         <a class="tasks-view-btn {% if view == 'chains' %}tasks-view-btn-active{% endif %}"
-           href="/p/{{ project.name }}/tasks?view=chains{% if selected_plan %}&plan={{ selected_plan }}{% endif %}"
+           href="{{ tasks_url(chains=True, plan=selected_plan) }}"
            title="Dependency graph, topological levels">
           <span class="tasks-view-icon">⇄</span> Chains
         </a>
@@ -95,10 +105,10 @@
         <nav class="plan-filter" aria-label="Filter tasks by plan">
           <span class="plan-filter-label muted-tiny">Plan</span>
           <a class="plan-chip {% if not selected_plan %}plan-chip-active{% endif %}"
-             href="/p/{{ project.name }}/tasks{% if view == 'chains' %}?view=chains{% endif %}">All</a>
+             href="{{ tasks_url(chains=(view == 'chains')) }}">All</a>
           {% for p in plans %}
             <a class="plan-chip {% if selected_plan == p.scope %}plan-chip-active{% endif %}"
-               href="/p/{{ project.name }}/tasks?{% if view == 'chains' %}view=chains&{% endif %}plan={{ p.scope }}">
+               href="{{ tasks_url(chains=(view == 'chains'), plan=p.scope) }}">
               <span class="plan-chip-scope">{{ p.scope }}</span>
               {% if p.total > 0 %}
                 <span class="plan-chip-ratio">{{ p.done }}/{{ p.total }}</span>
@@ -107,6 +117,11 @@
           {% endfor %}
         </nav>
       {% endif %}
+    </div>
+
+    <div class="list-controls">
+      {{ sorting.toggle(sort) }}
+      {% if view == 'board' %}{{ sorting.filter("#tasks-body", "Filter tasks… (/)") }}{% endif %}
     </div>
 
     {% if status_invalid %}
@@ -159,12 +174,12 @@
     {% else %}
       <div class="kanban">
         {% for col in columns %}
-          <details class="kanban-col kanban-col-{{ col.key }}{% if col.highlighted %} kanban-col-highlighted{% endif %}"
+          <details class="kanban-col kanban-col-{{ col.key }}{% if col.highlighted %} kanban-col-highlighted{% endif %}" data-filter-group
                    {% if not col.collapsed_default and col.count > 0 %}open{% endif %}>
             <summary class="kanban-col-head">
               <span class="kanban-col-icon" aria-hidden="true">{{ col.icon }}</span>
               <span class="kanban-col-label">{{ col.label }}</span>
-              <span class="kanban-col-count">{{ col.count }}</span>
+              <span class="kanban-col-count" data-filter-count>{{ col.count }}</span>
             </summary>
             <div class="kanban-col-body">
               {% for t in col.tasks %}

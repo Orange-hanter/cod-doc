@@ -1,6 +1,6 @@
 {# Single user-story card. Expects `s` (enriched story dict) + `project` in context. #}
 
-<article class="story-card story-hue-{{ s.persona_hue }}" data-story-id="{{ s.story_id }}">
+<article data-filter-row class="story-card story-hue-{{ s.persona_hue }}" data-story-id="{{ s.story_id }}">
   {# Whole card is clickable via this absolute-positioned link — inner <a>/<button>
      elements (status chips, plan chips) override the overlay because their
      z-index is higher. #}

@@ -1,6 +1,6 @@
 {# Compact task card for the kanban board.  The whole card is one anchor —
    no inline status editing, just click to drill into the task detail. #}
-<a id="card-{{ t.task_id }}"
+<a id="card-{{ t.task_id }}" data-filter-row
    class="kanban-card prio-{{ t.priority }} status-{{ t.status }}"
    href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
    data-peek

@@ -35,6 +35,8 @@
   {%- if filters.q %}&amp;q={{ filters.q | urlencode }}{% endif -%}
   {%- if filters.type %}&amp;type={{ filters.type }}{% endif -%}
   {%- if s %}&amp;status={{ s }}{% endif -%}
+  {#- WUI-006: смена пункта рельса/статуса не сбрасывает сортировку. -#}
+  {%- if sort.query %}&amp;{{ sort.query | e }}{% endif -%}
 {%- endmacro %}
 
 <nav class="docs-action-bar">
@@ -106,6 +108,8 @@
   <input type="hidden" name="status" value="{{ filters.status }}">
   <input type="hidden" name="group" value="{{ group_by }}">
   <input type="hidden" name="node" value="{{ selected }}">
+  {% if sort.params.sort %}<input type="hidden" name="sort" value="{{ sort.params.sort }}">{% endif %}
+  {% if sort.params.dir %}<input type="hidden" name="dir" value="{{ sort.params.dir }}">{% endif %}
   <button type="submit">Применить</button>
   {% if filters.q or filters.type or filters.status %}
     <a class="muted" href="/p/{{ project.name }}/docs?group={{ group_by }}">сбросить</a>
@@ -153,6 +157,12 @@
       {# Обёртка живёт ЗДЕСЬ, а не во фрагменте: таблица подменяет себя по htmx
          через `hx-swap="outerHTML"`, и обёртка внутри фрагмента после первого
          же свопа вложилась бы сама в себя. #}
+      {% if not sort.is_default %}
+        <div class="list-controls">
+          <a class="view-btn" href="{{ sort.href(sort.spec.default) }}"
+             title="По ключу документа">↺ Default order</a>
+        </div>
+      {% endif %}
       <div class="table-scroll">
         {% include "_frag/docs_table.html" %}
       </div>

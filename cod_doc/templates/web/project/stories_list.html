@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_frag/sort.html" as sorting %}
 {% block title %}Stories · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -132,8 +133,7 @@
 
       {# Обе панели переносят чужой параметр: смена Group не должна сбрасывать
          Sort и наоборот (ADO-140). #}
-      {% set _sort_q = "&sort=" ~ sort if sort and sort != "id" else "" %}
-      {% set _group_q = "&group_by=" ~ group_by if group_by and group_by != "section" else "" %}
+      {% set _sort_q = ("&" ~ sort.query) if sort.query else "" %}
 
       <nav class="view-toggle stories-group-toggle" aria-label="Group stories">
         <span class="muted-tiny" style="padding: 0 var(--space-2); align-self:center;">Group:</span>
@@ -145,13 +145,10 @@
            href="/p/{{ project.name }}/stories?group_by=none{{ _sort_q }}">Flat</a>
       </nav>
 
-      <nav class="view-toggle stories-sort-toggle" aria-label="Sort stories">
-        <span class="muted-tiny" style="padding: 0 var(--space-2); align-self:center;">Sort:</span>
-        {% for key in sort_keys %}
-          <a class="view-btn {% if sort == key %}view-btn-active{% endif %}"
-             href="/p/{{ project.name }}/stories?sort={{ key }}{{ _group_q }}">{{ key }}</a>
-        {% endfor %}
-      </nav>
+      <div class="list-controls">
+        {{ sorting.toggle(sort) }}
+        {{ sorting.filter(".stories-section", "Filter stories… (/)") }}
+      </div>
     </div>
 
     {% if not stories %}
@@ -159,7 +156,7 @@
     {% else %}
       {% for grp in groups %}
         {% if grp.label %}
-          <details class="story-group" open>
+          <details class="story-group" data-filter-group open>
             <summary class="story-group-head story-hue-{{ grp.hue }}">
               <span class="story-group-chevron">▾</span>
               <span class="story-group-label">{{ grp.label }}</span>

@@ -65,7 +65,7 @@ def _unconditional(tag: str) -> str:
     return _JINJA_IF_BLOCK.sub("", tag)
 
 
-# Шаблоны, где href пришёл из Python (`_link_href`, `_DEEPLINK_BY_KIND`)
+# Шаблоны, где href пришёл из Python (`_link_href`, `navigation.hit_url`)
 # и вид цели известен только строкой: шаблон → (выражение href, вызов
 # peekable с видом именно этой ссылки). В поиске вид — ключ группы `kind`
 # из `result.by_kind`; у связей вопроса и сценария — `l.to_kind`.

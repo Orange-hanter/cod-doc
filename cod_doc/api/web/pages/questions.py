@@ -36,6 +36,14 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.markdown import autolink_adr_refs, render_markdown
+from cod_doc.api.web.sorting import (
+    PRIORITY_RANK,
+    SortKey,
+    SortSpec,
+    natural_key,
+    rank_of,
+    sort_state,
+)
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import (
     Priority,
@@ -161,6 +169,25 @@ def _mutate(
 # --------------------------------------------------------------------------- #
 
 
+#: WUI-006: дефолт — порядок сервиса (статус → приоритет → ID), его хранит `pos`.
+_Q_STATUS_RANK: dict[str, int] = {"open": 0, "resolved": 1, "dropped": 2}
+QUESTION_SORT = SortSpec(
+    keys={
+        "default": SortKey("default", lambda r: r["pos"]),
+        "id": SortKey("id", lambda r: natural_key(r["question_id"])),
+        "title": SortKey("title", lambda r: (r["title"] or "").casefold()),
+        "status": SortKey("status", lambda r: rank_of(_Q_STATUS_RANK, r["status"])),
+        "priority": SortKey("priority", lambda r: rank_of(PRIORITY_RANK, r["priority"])),
+        "owner": SortKey("owner", lambda r: (r["owner"] or "").casefold()),
+        "options": SortKey("options", lambda r: r["options"], desc_first=True),
+        "links": SortKey("links", lambda r: r["links"], desc_first=True),
+        "updated": SortKey("updated", lambda r: r["last_updated"], desc_first=True),
+    },
+    default="default",
+    tiebreak=lambda r: r["pos"],
+)
+
+
 @router.get("/p/{slug}/questions", response_class=HTMLResponse)
 def questions_list(
     request: Request,
@@ -192,9 +219,10 @@ def questions_list(
         broken_by_question[b.question_id] = broken_by_question.get(b.question_id, 0) + 1
 
     rows = []
-    for q in shown:
+    for pos, q in enumerate(shown):
         assert q.row_id is not None
         row = _row(q)
+        row["pos"] = pos
         row["broken"] = broken_by_question.get(q.question_id, 0)
         row["options"] = len(question_service.list_options(session, q.row_id))
         row["links"] = len(question_service.list_links(session, q.row_id))
@@ -203,12 +231,14 @@ def questions_list(
     counts = {s: sum(1 for q in everything if q.status.value == s) for s in STATUS_OPTIONS}
     counts["all"] = len(everything)
     tabs = [{"value": f, "label": STATUS_TAB_LABEL[f], "count": counts[f]} for f in STATUS_FILTERS]
+    sort = sort_state(request, QUESTION_SORT)
     return templates.TemplateResponse(
         request,
         "project/questions_list.html",
         {
             "project": proj.entry,
-            "rows": rows,
+            "rows": sort.apply(rows),
+            "sort": sort,
             "counts": counts,
             "broken_total": len(broken),
             "status_filter": status,

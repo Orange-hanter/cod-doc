@@ -12,6 +12,15 @@ from sqlalchemy.orm import Session
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.peek import is_peek, peek_not_found
+from cod_doc.api.web.sorting import (
+    PRIORITY_RANK,
+    SortKey,
+    SortSpec,
+    SortState,
+    natural_key,
+    rank_of,
+    sort_state,
+)
 from cod_doc.api.web.task_detail import task_detail_context
 from cod_doc.api.web.templates_env import templates
 from cod_doc.config import Config
@@ -48,8 +57,20 @@ _TYPE_GLYPHS: dict[str, str] = {
     "chore": "C",
 }
 
-# Priority sort weight (critical first).
-_PRIO_RANK: dict[str, int] = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+# WUI-006: порядок карточек внутри колонки/уровня. Дефолт — приоритет, как
+# было до сортировок; даты есть только у доски (chain_layout их не отдаёт —
+# там такие ключи кладут всё в хвост по тай-брейку).
+TASK_SORT = SortSpec(
+    keys={
+        "priority": SortKey("priority", lambda r: rank_of(PRIORITY_RANK, r.get("priority"))),
+        "id": SortKey("id", lambda r: natural_key(r["task_id"])),
+        "updated": SortKey("updated", lambda r: r.get("last_updated"), desc_first=True),
+        "created": SortKey("created", lambda r: r.get("created"), desc_first=True),
+        "title": SortKey("title", lambda r: (r.get("title") or "").casefold()),
+    },
+    default="priority",
+    tiebreak=lambda r: natural_key(r["task_id"]),
+)
 
 
 def _column_for(status: str) -> str | None:
@@ -65,6 +86,7 @@ def _enrich_chain(
     plan_id: int,
     scope: str,
     project_id: int,
+    sort: SortState,
 ) -> dict[str, Any]:
     """Wrap ``plan_service.chain_layout`` with display-only fields (scope label,
     type glyphs, priority sort) so the template stays free of computation.
@@ -75,8 +97,7 @@ def _enrich_chain(
         tasks_with_glyph = [
             {**t, "type_glyph": _TYPE_GLYPHS.get(t["type"], "?")} for t in lvl_bucket["tasks"]
         ]
-        tasks_with_glyph.sort(key=lambda c: (_PRIO_RANK.get(c["priority"], 99), c["task_id"]))
-        levels.append({"level": lvl_bucket["level"], "tasks": tasks_with_glyph})
+        levels.append({"level": lvl_bucket["level"], "tasks": sort.apply(tasks_with_glyph)})
 
     return {
         "scope": scope,
@@ -109,6 +130,7 @@ def tasks_list(
     proj = get_project(slug)
     if view not in ("board", "chains"):
         view = "board"
+    sort = sort_state(request, TASK_SORT)
 
     status_filter: TaskStatus | None = None
     status_invalid = False
@@ -169,6 +191,8 @@ def tasks_list(
                         "has_acceptance": has_ac,
                         "has_description": has_desc,
                         "blocked_reason": t.blocked_reason or "",
+                        "created": t.created,
+                        "last_updated": t.last_updated,
                     }
                 )
 
@@ -180,7 +204,7 @@ def tasks_list(
                         continue
                     if plan and p.scope != plan:
                         continue
-                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id)
+                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id, sort)
                     if chain["task_count"] > 0:
                         chains.append(chain)
 
@@ -205,11 +229,10 @@ def tasks_list(
     }
     stats["pct_done"] = int(stats["done"] / total * 100) if total else 0
 
-    # Bucket rows into kanban columns + priority-sort within each column.
+    # Bucket rows into kanban columns; order inside a column — `?sort=`.
     columns: list[dict[str, Any]] = []
     for key, label, icon, _members in _KANBAN_COLS:
-        col_tasks = [r for r in rows if _column_for(r["status"]) == key]
-        col_tasks.sort(key=lambda r: (_PRIO_RANK.get(r["priority"], 99), r["task_id"]))
+        col_tasks = sort.apply(r for r in rows if _column_for(r["status"]) == key)
         columns.append(
             {
                 "key": key,
@@ -240,6 +263,7 @@ def tasks_list(
             "status_filter": status_filter.value if status_filter else "",
             "status_invalid": status_invalid,
             "legacy_count": legacy_count,
+            "sort": sort,
         },
     )
 

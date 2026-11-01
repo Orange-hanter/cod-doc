@@ -203,6 +203,48 @@
   background: var(--accent);
   color: var(--accent-fg);
 }
+/* ── Sorting + quick filter on list pages (WUI-006) ────────────────────── */
+.list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-3);
+}
+.list-controls .view-toggle { margin: 0; }
+.sort-toggle-label { padding: 0 var(--space-2); }
+.sort-arrow {
+  display: inline-block;
+  min-width: 1em;
+  margin-left: 2px;
+  font-size: 0.85em;
+  color: var(--accent);
+}
+.grid th.sortable { padding: 0; }
+.grid th.sortable .sort-link {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.grid th.sortable .sort-link:hover { color: var(--fg); background: var(--bg-soft); }
+.grid th.sortable.sorted .sort-link { color: var(--fg-strong); }
+.grid th.num.sortable .sort-link { text-align: right; }
+.list-filter {
+  flex: 0 1 260px;
+  min-width: 160px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: calc(13px * var(--text-scale, 1));
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.list-filter:focus { outline: 2px solid var(--accent-soft-bg); border-color: var(--accent); }
+.list-filter.list-filter-empty { border-color: var(--warning-border); }
+
 /* Status-tinted accents for specific buttons when active. */
 .view-btn-blocked.view-btn-active { color: var(--danger); border-color: var(--danger-border); }
 .view-btn-blocked.view-btn-active .view-btn-count { background: var(--danger); }

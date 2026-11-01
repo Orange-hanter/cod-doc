@@ -20,6 +20,7 @@ from . import (
     index,
     metrics,
     navigator,
+    palette,
     plans,
     project,
     proposals,
@@ -70,6 +71,8 @@ router.include_router(commits.router)
 router.include_router(code_refs.router)
 # OBI-040 unified FTS5 search
 router.include_router(search.router)
+# WUI-006 search palette (Cmd/Ctrl+K) — fragment for every page
+router.include_router(palette.router)
 # `comments.router` before `docs.router`: comments routes are nested under
 # `/p/{slug}/docs/{doc_key:path}/comments` but each pins the trailing
 # `/comments…` suffix, so they would not shadow the docs catch-all on

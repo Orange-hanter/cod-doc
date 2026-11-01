@@ -2,8 +2,9 @@
 
 Verifies:
 - Live tabs render as `<a class="active|" href=...>` based on the `active` arg.
-- Not-yet-implemented tabs (Plans/Revisions/Run) render as
-  `<span class="tab-disabled">` with NO href and a "coming soon" tooltip.
+- All tabs come from `cod_doc/api/web/navigation.py::PROJECT_TABS` and are
+  live links (WUI-006 dropped the unused "coming soon" placeholder state;
+  `EXPECTED_DISABLED_TABS` stays empty).
 - All four pages that show project tabs (overview, docs, tasks, doc detail)
   emit the include — i.e. the tab strip is consistent across them.
 """

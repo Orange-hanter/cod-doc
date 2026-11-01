@@ -10,19 +10,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
+from cod_doc.api.web.navigation import hit_url
+from cod_doc.api.web.snippets import fts_snippet
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import search_service
 
 router = APIRouter()
-
-
-_DEEPLINK_BY_KIND = {
-    "task": lambda slug, ref: f"/p/{slug}/tasks/{ref}",
-    "doc": lambda slug, ref: f"/p/{slug}/docs/{ref}",
-    "story": lambda slug, ref: f"/p/{slug}/stories/{ref}",
-    "adr": lambda slug, ref: f"/p/{slug}/adr/{ref}",
-    "question": lambda slug, ref: f"/p/{slug}/questions/{ref}",
-}
 
 
 @router.get("/p/{slug}/search", response_class=HTMLResponse)
@@ -61,11 +54,12 @@ def search_page(
         except search_service.SearchIndexMissing as exc:
             error_message = str(exc)
         else:
-            # Decorate each hit with a deep link.
+            # Decorate each hit with a deep link; the snippet is raw indexed
+            # text (markdown with HTML) — escaped here, only <mark> survives.
             for kind, hits in result["by_kind"].items():
-                mk = _DEEPLINK_BY_KIND.get(kind)
                 for h in hits:
-                    h["url"] = mk(slug, h["ref"]) if mk else None
+                    h["url"] = hit_url(slug, kind, h["ref"])
+                    h["snippet"] = fts_snippet(h["snippet"])
 
     return templates.TemplateResponse(
         request,

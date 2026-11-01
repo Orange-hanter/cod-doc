@@ -56,7 +56,7 @@
                   {% else %}<code>{{ h.ref }}</code>{% endif %}
                   — {{ h.title }}
                 </div>
-                <div class="search-snippet">{{ h.snippet|safe }}</div>
+                <div class="search-snippet">{{ h.snippet }}</div>
                 <div class="muted-tiny">score: {{ h.score }}</div>
               </li>
             {% endfor %}
