@@ -10,8 +10,14 @@
  *    прячет `[data-filter-row]` внутри цели, чей текст не содержит всех слов
  *    запроса, и `[data-filter-group]` без видимых строк. Без запроса к
  *    серверу: это сужение уже отрисованной страницы.
+ *    Свёрнутая группа (колонки Done/Cancelled доски) с совпадениями
+ *    раскрывается на время запроса, счётчик `[data-filter-count]` показывает
+ *    видимые строки; пустой запрос возвращает всё как было.
  * 3. `/` вне поля ввода: фокус в быстрый фильтр, если он на странице есть,
  *    иначе — палитра.
+ *
+ * Хоткеи сверяются по `ev.code` (физической клавише), а не только по
+ * `ev.key`: в русской раскладке Ctrl+K даёт key «л», а клавиша `/` — «.».
  *
  * Пока открыта шторка peek, хоткеи молчат: у неё своя клавиатура и своя
  * защита несохранённой правки.
@@ -48,11 +54,30 @@
     });
     target.querySelectorAll('[data-filter-group]').forEach((group) => {
       const rows = group.querySelectorAll('[data-filter-row]');
-      const anyVisible = Array.prototype.some.call(rows, (r) => r.style.display !== 'none');
+      const visible = Array.prototype.filter.call(rows, (r) => r.style.display !== 'none').length;
       // Группа без строк вовсе (пустая колонка доски) прячется только под запросом.
-      group.style.display = words.length && !anyVisible ? 'none' : '';
+      group.style.display = words.length && !visible ? 'none' : '';
+      syncDetails(group, words.length > 0 && visible > 0);
+      const counter = group.querySelector('[data-filter-count]');
+      if (counter) {
+        if (counter.dataset.filterTotal === undefined) counter.dataset.filterTotal = counter.textContent;
+        counter.textContent = words.length ? String(visible) : counter.dataset.filterTotal;
+      }
     });
     input.classList.toggle('list-filter-empty', words.length > 0 && shown === 0);
+  }
+
+  // Свёрнутую группу с совпадениями раскрываем, а после очистки запроса
+  // закрываем обратно — только ту, что раскрыл фильтр, не человек.
+  function syncDetails(group, hasHits) {
+    if (group.tagName !== 'DETAILS') return;
+    if (hasHits && !group.open) {
+      group.open = true;
+      group.dataset.filterOpened = '1';
+    } else if (!hasHits && group.dataset.filterOpened) {
+      group.open = false;
+      delete group.dataset.filterOpened;
+    }
   }
 
   document.addEventListener('input', (ev) => {
@@ -77,22 +102,30 @@
   let seq = 0;
   let active = -1;
 
-  if (opener) {
-    const kbd = opener.querySelector('.cmdk-kbd');
-    if (kbd && !isMac) kbd.textContent = 'Ctrl K';
+  if (!isMac) {
+    const kbd = opener && opener.querySelector('.cmdk-kbd');
+    if (kbd) kbd.textContent = 'Ctrl K';
+    document.querySelectorAll('.cmdk-mod').forEach((el) => { el.textContent = 'Ctrl'; });
   }
 
   function items() {
     return results ? Array.from(results.querySelectorAll('.cmdk-item')) : [];
   }
 
+  // Фокус остаётся в поле ввода; выбранный пункт экранная читалка узнаёт
+  // из aria-activedescendant (паттерн combobox + listbox).
   function select(index) {
     const all = items();
-    all.forEach((a) => a.removeAttribute('aria-selected'));
-    if (!all.length) { active = -1; return; }
+    all.forEach((a) => a.setAttribute('aria-selected', 'false'));
+    if (!all.length) {
+      active = -1;
+      input.removeAttribute('aria-activedescendant');
+      return;
+    }
     active = (index + all.length) % all.length;
     const cur = all[active];
     cur.setAttribute('aria-selected', 'true');
+    input.setAttribute('aria-activedescendant', cur.id);
     cur.scrollIntoView({ block: 'nearest' });
   }
 
@@ -109,12 +142,14 @@
     // Ответ на устаревший запрос (пользователь печатал дальше) не рисуем.
     if (mine !== seq) return;
     results.innerHTML = html;
+    items().forEach((a, i) => { a.id = 'cmdk-opt-' + i; });
     select(0);
   }
 
   function open() {
     if (!dialog || dialog.open || peekOpen()) return;
     dialog.showModal();
+    input.setAttribute('aria-expanded', 'true');
     input.select();
     load(input.value);
   }
@@ -157,19 +192,33 @@
     dialog.addEventListener('click', (ev) => {
       if (ev.target === dialog) dialog.close();
     });
+    dialog.addEventListener('close', () => {
+      input.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function isPaletteKey(ev) {
+    const k = ev.code === 'KeyK' || (ev.key || '').toLowerCase() === 'k';
+    return k && (ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey;
+  }
+
+  function isSlashKey(ev) {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return false;
+    // `/` своей клавишей (US, RU — там она печатает «.») или там, где
+    // раскладка даёт `/` другой комбинацией (DE: Shift+7).
+    return (ev.code === 'Slash' && !ev.shiftKey) || ev.key === '/';
   }
 
   document.addEventListener('keydown', (ev) => {
     if (ev.defaultPrevented || peekOpen()) return;
-    const key = (ev.key || '').toLowerCase();
-    if (key === 'k' && (ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey) {
+    if (isPaletteKey(ev)) {
       if (!dialog) return;
       ev.preventDefault();
       if (dialog.open) dialog.close();
       else open();
       return;
     }
-    if (ev.key === '/' && !ev.metaKey && !ev.ctrlKey && !ev.altKey && !isEditable(ev.target)) {
+    if (isSlashKey(ev) && !isEditable(ev.target)) {
       const filter = document.querySelector('input[data-list-filter]');
       ev.preventDefault();
       if (filter) {

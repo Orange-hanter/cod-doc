@@ -15,15 +15,14 @@
 
 from __future__ import annotations
 
-import html
 from typing import Any, Final
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from markupsafe import Markup
 
 from cod_doc.api.deps import get_config, try_open_project_db
 from cod_doc.api.web.navigation import hit_url, project_tabs
+from cod_doc.api.web.snippets import fts_snippet
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import search_service
 
@@ -43,17 +42,6 @@ _KIND_LABEL: Final[dict[str, str]] = {
     "adr": "ADRs",
     "question": "Questions",
 }
-
-
-def _snippet(raw: str) -> Markup:
-    """Сниппет FTS как разметка, где живы только ``<mark>`` подсветки.
-
-    Тело документа — markdown с сырым HTML; кусок из середины тега,
-    вставленный как есть, ломал бы вёрстку палитры на любой странице.
-    """
-    escaped = html.escape(raw or "", quote=False)
-    # Всё, кроме восстановленных <mark>, экранировано строкой выше.
-    return Markup(escaped.replace("&lt;mark&gt;", "<mark>").replace("&lt;/mark&gt;", "</mark>"))
 
 
 def _matches(needle: str, *haystacks: str) -> bool:
@@ -101,7 +89,7 @@ def _search_groups(slug: str, q: str) -> tuple[list[dict[str, Any]], str | None]
                 "href": hit_url(slug, kind, h["ref"]),
                 "title": h["title"],
                 "ref": h["ref"],
-                "snippet": _snippet(h["snippet"]),
+                "snippet": fts_snippet(h["snippet"]),
                 "kind": kind,
             }
             for h in hits

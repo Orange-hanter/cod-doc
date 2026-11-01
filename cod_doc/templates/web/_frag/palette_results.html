@@ -1,7 +1,7 @@
 {# WUI-006: результаты палитры поиска (GET /palette). Каждый пункт — ссылка
    `.cmdk-item`: cod_doc_palette.js водит по ним выделение стрелками и
    открывает Enter'ом; мышью они работают как обычные ссылки. Сниппет —
-   Markup из palette._snippet: экранирован весь, кроме <mark> подсветки. #}
+   Markup из snippets.fts_snippet: экранирован весь, кроме <mark> подсветки. #}
 {% if index_error %}
   <p class="cmdk-note">{{ index_error }}
     {% if slug %}<a class="cmdk-item" href="/p/{{ slug }}/search">Rebuild the index on Search</a>{% endif %}

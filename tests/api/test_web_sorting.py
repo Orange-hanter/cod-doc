@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -20,12 +21,20 @@ from cod_doc.domain.entities import (
     DocumentStatus,
     DocumentType,
     Priority,
+    ScenarioKind,
     TaskType,
 )
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import doc_service, question_service, search_service
+from cod_doc.services import (
+    adr_service,
+    doc_service,
+    question_service,
+    scenario_service,
+    search_service,
+    story_service,
+)
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
 
@@ -161,13 +170,40 @@ def sort_client(tmp_path: Path, migrate_db: Any) -> Iterator[SimpleNamespace]:
                 priority=prio,
                 question_id=qid,
             )
+        for sid, prio in (("US-001", Priority.LOW), ("US-002", Priority.CRITICAL)):
+            story_service.create(
+                session,
+                project_id=pid,
+                story_id=sid,
+                persona="dev",
+                narrative=f"As a dev I want {sid} so that it sorts",
+                priority=prio,
+                author=AUTHOR,
+            )
+        for adr_id, title in (("ADR-001", "Zeta decision"), ("ADR-002", "Alpha decision")):
+            adr_service.create(session, project_id=pid, title=title, adr_id=adr_id, author=AUTHOR)
+        # Ранг сценария = порядок заведения: «zeta» раньше «alpha» в одной группе.
+        scenario_ids = [
+            scenario_service.create(
+                session,
+                project_id=pid,
+                title=title,
+                kind=ScenarioKind.HAPPY_PATH,
+                doc_key="docs/system/capabilities/plan-management",
+                preconditions="-",
+                expected="-",
+                steps=["do it"],
+                author=AUTHOR,
+            ).scenario_id
+            for title in ("zeta scenario", "alpha scenario")
+        ]
         search_service.reindex_all(session, pid)
     engine.dispose()
 
     from cod_doc.api.server import app
 
     with TestClient(app, raise_server_exceptions=True) as client:
-        yield SimpleNamespace(client=client, db_path=db_path)
+        yield SimpleNamespace(client=client, db_path=db_path, scenario_ids=scenario_ids)
 
 
 def _order(html: str, *needles: str) -> list[str]:
@@ -193,6 +229,40 @@ def test_tasks_board_sorts_inside_column(sort_client: SimpleNamespace) -> None:
 def test_tasks_view_links_keep_sort(sort_client: SimpleNamespace) -> None:
     html = sort_client.client.get("/p/demo/tasks?sort=id").text
     assert "/p/demo/tasks?view=chains&amp;sort=id" in html
+    # Без плана ссылка «Board» не начинается с пустого параметра (`?&`).
+    assert 'href="/p/demo/tasks?sort=id"' in html
+    assert "tasks?&amp;" not in html
+
+
+def test_tasks_column_count_marked_for_filter(sort_client: SimpleNamespace) -> None:
+    html = sort_client.client.get("/p/demo/tasks").text
+    assert 'class="kanban-col-count" data-filter-count' in html
+
+
+def test_stories_sort_by_priority_and_direction(sort_client: SimpleNamespace) -> None:
+    c = sort_client.client
+    ids = ('data-story-id="US-001"', 'data-story-id="US-002"')
+    assert _order(c.get("/p/demo/stories").text, *ids) == list(ids)
+    assert _order(c.get("/p/demo/stories?sort=priority").text, *ids) == [ids[1], ids[0]]
+    by_prio_desc = c.get("/p/demo/stories?sort=priority&dir=desc").text
+    assert _order(by_prio_desc, *ids) == list(ids)
+
+
+def test_adr_sort_by_title_inside_shelf(sort_client: SimpleNamespace) -> None:
+    c = sort_client.client
+    rows = ('data-adr="ADR-001"', 'data-adr="ADR-002"')
+    assert _order(c.get("/p/demo/adr").text, *rows) == list(rows)
+    by_title = c.get("/p/demo/adr?sort=title").text
+    assert _order(by_title, *rows) == [rows[1], rows[0]]
+    assert 'href="/p/demo/adr"' in by_title  # «↺ Default order»
+
+
+def test_scenarios_default_rank_and_title_sort(sort_client: SimpleNamespace) -> None:
+    c = sort_client.client
+    first, second = (f">{sid}</a>" for sid in sort_client.scenario_ids)
+    assert _order(c.get("/p/demo/scenarios").text, first, second) == [first, second]
+    by_title = c.get("/p/demo/scenarios?sort=title").text
+    assert _order(by_title, first, second) == [second, first]
 
 
 def test_plans_default_rank_and_scope_sort(sort_client: SimpleNamespace) -> None:
@@ -219,6 +289,16 @@ def test_docs_sort_by_title_survives_drift_reload(sort_client: SimpleNamespace) 
     assert "drift-marks?group=node&amp;sort=type" not in frag
 
 
+def test_docs_reset_link_and_node_chips_keep_sort(sort_client: SimpleNamespace) -> None:
+    html = sort_client.client.get("/p/demo/docs?sort=title").text
+    assert "Default order" in html
+    assert "group=node&amp;node=" in html
+    chip_hrefs = re.findall(r'class="docs-node-chip[^"]*" href="([^"]*)"', html)
+    assert chip_hrefs, "no node chips rendered"
+    assert all("sort=title" in h for h in chip_hrefs)
+    assert "Default order" not in sort_client.client.get("/p/demo/docs").text
+
+
 def test_questions_sort_by_id_desc(sort_client: SimpleNamespace) -> None:
     c = sort_client.client
     rows = (">Q-001</a>", ">Q-002</a>")
@@ -242,6 +322,20 @@ def test_palette_finds_entities_and_escapes_snippet(sort_client: SimpleNamespace
     assert "<mark>quokka</mark>" in html
     assert "<b>" not in html  # сырой HTML из описания задачи экранирован
     assert 'href="/p/demo/search?q=quokka"' in html
+
+
+def test_search_page_escapes_snippet(sort_client: SimpleNamespace) -> None:
+    """Сниппет FTS несёт сырой текст: HTML из описания задачи не исполняется."""
+    html = sort_client.client.get("/p/demo/search?q=quokka").text
+    assert "<mark>quokka</mark>" in html
+    assert "<b>" not in html
+    assert "&lt;b&gt;" in html
+
+
+def test_palette_marks_active_option_for_screen_readers(sort_client: SimpleNamespace) -> None:
+    html = sort_client.client.get("/p/demo/tasks").text
+    assert 'role="combobox"' in html
+    assert 'class="cmdk-mod"' in html
 
 
 def test_palette_empty_query_offers_tabs(sort_client: SimpleNamespace) -> None:

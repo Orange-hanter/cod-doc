@@ -34,9 +34,9 @@
         {% if not selected %}
           <td class="docs-col-node">
             {% if d.node %}
-              <a class="docs-node-chip" href="?group=node&amp;node={{ d.node }}">{{ node_titles.get(d.node, d.node) }}</a>
+              <a class="docs-node-chip" href="?group=node&amp;node={{ d.node }}{% if sort.query %}&amp;{{ sort.query }}{% endif %}">{{ node_titles.get(d.node, d.node) }}</a>
             {% else %}
-              <a class="docs-node-chip docs-node-chip-inbox" href="?group=node&amp;node={{ inbox_key or '_none' }}">инбокс</a>
+              <a class="docs-node-chip docs-node-chip-inbox" href="?group=node&amp;node={{ inbox_key or '_none' }}{% if sort.query %}&amp;{{ sort.query }}{% endif %}">инбокс</a>
             {% endif %}
           </td>
         {% endif %}

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.navigation import hit_url
+from cod_doc.api.web.snippets import fts_snippet
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import search_service
 
@@ -53,10 +54,12 @@ def search_page(
         except search_service.SearchIndexMissing as exc:
             error_message = str(exc)
         else:
-            # Decorate each hit with a deep link.
+            # Decorate each hit with a deep link; the snippet is raw indexed
+            # text (markdown with HTML) — escaped here, only <mark> survives.
             for kind, hits in result["by_kind"].items():
                 for h in hits:
                     h["url"] = hit_url(slug, kind, h["ref"])
+                    h["snippet"] = fts_snippet(h["snippet"])
 
     return templates.TemplateResponse(
         request,
