@@ -338,6 +338,18 @@ def test_palette_marks_active_option_for_screen_readers(sort_client: SimpleNames
     assert 'class="cmdk-mod"' in html
 
 
+def test_palette_drops_hits_without_page(
+    sort_client: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Хит вида без страницы не рендерится ссылкой `href="None"`."""
+    import cod_doc.api.web.pages.palette as palette
+
+    monkeypatch.setattr(palette, "hit_url", lambda slug, kind, ref: None)
+    html = sort_client.client.get("/palette?project=demo&q=quokka").text
+    assert 'href="None"' not in html
+    assert "ZET-002" not in html
+
+
 def test_palette_empty_query_offers_tabs(sort_client: SimpleNamespace) -> None:
     html = sort_client.client.get("/palette?project=demo&q=").text
     assert 'href="/p/demo/plans"' in html

@@ -192,8 +192,12 @@
     dialog.addEventListener('click', (ev) => {
       if (ev.target === dialog) dialog.close();
     });
+    // Закрытие отменяет и отложенный запрос (debounce), и уже летящий:
+    // `seq++` делает его ответ устаревшим — скрытый диалог не перерисуется.
     dialog.addEventListener('close', () => {
       input.setAttribute('aria-expanded', 'false');
+      clearTimeout(timer);
+      seq += 1;
     });
   }
 

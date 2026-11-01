@@ -84,15 +84,20 @@ def _search_groups(slug: str, q: str) -> tuple[list[dict[str, Any]], str | None]
     groups = []
     for kind in _KIND_ORDER:
         hits = result["by_kind"].get(kind) or []
+        # Хит без страницы (`hit_url` → None) палитре не нужен: её пункт —
+        # переход. Сейчас такие виды отсекает `_KIND_ORDER`, но защита не
+        # должна держаться только на этом списке — иначе в разметку уедет
+        # `href="None"`.
         items = [
             {
-                "href": hit_url(slug, kind, h["ref"]),
+                "href": href,
                 "title": h["title"],
                 "ref": h["ref"],
                 "snippet": fts_snippet(h["snippet"]),
                 "kind": kind,
             }
             for h in hits
+            if (href := hit_url(slug, kind, h["ref"])) is not None
         ]
         if items:
             groups.append({"label": _KIND_LABEL[kind], "items": items})
