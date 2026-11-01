@@ -226,6 +226,17 @@ def test_tasks_board_sorts_inside_column(sort_client: SimpleNamespace) -> None:
     assert _order(by_title, *cards) == [cards[1], cards[0], cards[2]]
 
 
+def test_tasks_chains_sort_by_date(sort_client: SimpleNamespace) -> None:
+    """chain_layout не отдаёт даты: без подстановки sort=updated выродился бы в ID."""
+    c = sort_client.client
+    cards = ('id="card-ZET-001"', 'id="card-ZET-002"', 'id="card-ZET-003"')
+    # Задачи заведены по порядку — свежее всех ZET-003.
+    newest_first = c.get("/p/demo/tasks?view=chains&sort=updated").text
+    assert _order(newest_first, *cards) == [cards[2], cards[1], cards[0]]
+    oldest_first = c.get("/p/demo/tasks?view=chains&sort=created&dir=asc").text
+    assert _order(oldest_first, *cards) == list(cards)
+
+
 def test_tasks_view_links_keep_sort(sort_client: SimpleNamespace) -> None:
     html = sort_client.client.get("/p/demo/tasks?sort=id").text
     assert "/p/demo/tasks?view=chains&amp;sort=id" in html

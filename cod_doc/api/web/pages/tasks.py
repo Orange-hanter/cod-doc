@@ -58,8 +58,8 @@ _TYPE_GLYPHS: dict[str, str] = {
 }
 
 # WUI-006: порядок карточек внутри колонки/уровня. Дефолт — приоритет, как
-# было до сортировок; даты есть только у доски (chain_layout их не отдаёт —
-# там такие ключи кладут всё в хвост по тай-брейку).
+# было до сортировок. chain_layout дат не отдаёт — `_enrich_chain` берёт их
+# из строк доски, иначе updated/created в цепочках молча сводились бы к ID.
 TASK_SORT = SortSpec(
     keys={
         "priority": SortKey("priority", lambda r: rank_of(PRIORITY_RANK, r.get("priority"))),
@@ -87,15 +87,23 @@ def _enrich_chain(
     scope: str,
     project_id: int,
     sort: SortState,
+    dates: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """Wrap ``plan_service.chain_layout`` with display-only fields (scope label,
-    type glyphs, priority sort) so the template stays free of computation.
+    type glyphs, dates for ``?sort=``) so the template stays free of computation.
+
+    ``dates`` — ``task_id → {created, last_updated}`` из строк доски.
     """
     raw = plans.chain_layout(session, plan_id, project_id=project_id)
     levels: list[dict[str, Any]] = []
     for lvl_bucket in raw["levels"]:
         tasks_with_glyph = [
-            {**t, "type_glyph": _TYPE_GLYPHS.get(t["type"], "?")} for t in lvl_bucket["tasks"]
+            {
+                **t,
+                **dates.get(t["task_id"], {}),
+                "type_glyph": _TYPE_GLYPHS.get(t["type"], "?"),
+            }
+            for t in lvl_bucket["tasks"]
         ]
         levels.append({"level": lvl_bucket["level"], "tasks": sort.apply(tasks_with_glyph)})
 
@@ -199,12 +207,16 @@ def tasks_list(
             # Compute per-plan chain data only when the chains view is requested
             # (it issues one extra recursive CTE per plan for critical_path).
             if view == "chains":
+                dates = {
+                    r["task_id"]: {"created": r["created"], "last_updated": r["last_updated"]}
+                    for r in all_rows
+                }
                 for p in plans_models:
                     if p.row_id is None:
                         continue
                     if plan and p.scope != plan:
                         continue
-                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id, sort)
+                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id, sort, dates)
                     if chain["task_count"] > 0:
                         chains.append(chain)
 
