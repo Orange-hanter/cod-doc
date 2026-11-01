@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_frag/sort.html" as sorting %}
 {% block title %}Questions · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -40,7 +41,8 @@
     {% for t in tabs %}
       {% set href = "/p/" ~ project.name ~ "/questions?status=" ~ t.value
          ~ ("&priority=" ~ priority_filter if priority_filter else "")
-         ~ ("&owner=" ~ owner_filter if owner_filter else "") %}
+         ~ ("&owner=" ~ owner_filter if owner_filter else "")
+         ~ ("&" ~ sort.query if sort.query else "") %}
       <a class="q-status-tab{% if status_filter == t.value %} active{% endif %}" href="{{ href }}">
         {{ t.label }} <span class="q-status-count">{{ t.count }}</span>
       </a>
@@ -48,6 +50,8 @@
   </nav>
   <form class="q-filters" method="get" action="/p/{{ project.name }}/questions">
     <input type="hidden" name="status" value="{{ status_filter }}">
+    {% if sort.params.sort %}<input type="hidden" name="sort" value="{{ sort.params.sort }}">{% endif %}
+    {% if sort.params.dir %}<input type="hidden" name="dir" value="{{ sort.params.dir }}">{% endif %}
     <label>Приоритет
       <select name="priority" onchange="this.form.submit()">
         <option value="" {% if not priority_filter %}selected{% endif %}>любой</option>
@@ -84,23 +88,27 @@
     </p>
   </div>
 {% else %}
+  <div class="list-controls">
+    {% if not sort.is_default %}<a class="view-btn" href="{{ sort.href('default') }}" title="Статус → приоритет → ID">↺ Default order</a>{% endif %}
+    {{ sorting.filter(".question-table", "Filter questions… (/)") }}
+  </div>
   <div class="table-scroll">
     <table class="grid question-table">
       <thead>
         <tr>
-          <th class="question-col-id">ID</th>
-          <th>Вопрос</th>
-          {% if status_filter != "open" %}<th>Статус</th>{% endif %}
-          <th>Приоритет</th>
-          <th>Владелец</th>
-          <th class="question-col-num" title="варианты ответа">Вар.</th>
-          <th class="question-col-num">Ссылки</th>
-          <th class="question-col-when">Изменён</th>
+          {{ sorting.th(sort, "id", "ID", "question-col-id") }}
+          {{ sorting.th(sort, "title", "Вопрос") }}
+          {% if status_filter != "open" %}{{ sorting.th(sort, "status", "Статус") }}{% endif %}
+          {{ sorting.th(sort, "priority", "Приоритет") }}
+          {{ sorting.th(sort, "owner", "Владелец") }}
+          {{ sorting.th(sort, "options", "Вар.", "question-col-num") }}
+          {{ sorting.th(sort, "links", "Ссылки", "question-col-num") }}
+          {{ sorting.th(sort, "updated", "Изменён", "question-col-when") }}
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
-          <tr class="q-row q-prio-{{ r.priority }}">
+          <tr data-filter-row class="q-row q-prio-{{ r.priority }}">
             <td class="mono question-col-id"><a class="question-row-link" href="/p/{{ project.name }}/questions/{{ r.question_id }}">{{ r.question_id }}</a></td>
             <td class="q-cell-title">
               <a class="q-title-link" href="/p/{{ project.name }}/questions/{{ r.question_id }}">{{ r.title }}</a>

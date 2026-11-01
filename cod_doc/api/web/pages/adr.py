@@ -30,6 +30,7 @@ from cod_doc.api.web.markdown import (
     outline,
     render_markdown,
 )
+from cod_doc.api.web.sorting import SortKey, SortSpec, SortState, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ActorKind, ADRStatus, EntityKind, actor_kind_for_author
 from cod_doc.services import (
@@ -160,8 +161,31 @@ def _shelf_sort_key(
     return (2, 0, adr_id)
 
 
+#: WUI-006: порядок строк внутри полки. Дефолт — ARG-009 (`_shelf_sort_key`).
+#: Статус — по жизненному циклу записи, дата — решения, а для черновика —
+#: заведения.
+_ADR_STATUS_RANK: dict[str, int] = {
+    "proposed": 0,
+    "accepted": 1,
+    "superseded": 2,
+    "deprecated": 3,
+    "rejected": 4,
+}
+ADR_SORT = SortSpec(
+    keys={
+        "shelf": SortKey("shelf", lambda it: it["sort"]),
+        "id": SortKey("id", lambda it: natural_key(it["adr_id"])),
+        "title": SortKey("title", lambda it: (it["title"] or "").casefold()),
+        "status": SortKey("status", lambda it: _ADR_STATUS_RANK.get(it["status"])),
+        "date": SortKey("date", lambda it: it["date"], desc_first=True),
+    },
+    default="shelf",
+    tiebreak=lambda it: natural_key(it["adr_id"]),
+)
+
+
 def _group_by_shelf(
-    items: list[dict[str, Any]], topics: list[dict[str, Any]]
+    items: list[dict[str, Any]], topics: list[dict[str, Any]], order: SortState
 ) -> list[dict[str, Any]]:
     """ARG-009 (RFC 34 §3.4): строки списка, разложенные по полкам.
 
@@ -171,7 +195,7 @@ def _group_by_shelf(
     без заголовка — список выглядит плоским, как до полок.
     """
     if not topics:
-        return [{"name": None, "items": sorted(items, key=lambda it: it["sort"])}]
+        return [{"name": None, "items": order.apply(items)}]
     by_topic: dict[int | None, list[dict[str, Any]]] = {}
     for it in items:
         by_topic.setdefault(it["topic_id"], []).append(it)
@@ -180,7 +204,7 @@ def _group_by_shelf(
             "name": t["name"],
             "includes": t["includes"],
             "excludes": t["excludes"],
-            "items": sorted(by_topic[t["row_id"]], key=lambda it: it["sort"]),
+            "items": order.apply(by_topic[t["row_id"]]),
         }
         for t in topics
         if by_topic.get(t["row_id"])
@@ -193,7 +217,7 @@ def _group_by_shelf(
                 "name": _NO_TOPIC,
                 "includes": "",
                 "excludes": "",
-                "items": sorted(loose, key=lambda it: it["sort"]),
+                "items": order.apply(loose),
                 "no_topic": True,
             }
         )
@@ -442,6 +466,7 @@ def adr_list(
     session, project_id = db
     status = status or None
     view = view if view in _LIST_VIEWS else None
+    sort = sort_state(request, ADR_SORT)
     all_rows = adr_service.list_for_project(session, project_id)
     graph = adr_service.graph(session, project_id)
     notes = _relation_notes(graph)
@@ -481,6 +506,7 @@ def adr_list(
                 "gaps": row_gaps,
                 "topic_id": r.topic_id,
                 "sort": _shelf_sort_key(r.status, r.decided_at, r.created.date(), r.adr_id),
+                "date": r.decided_at or r.created.date(),
             }
         )
     # Словари, а не ORM-модели: веб-слой не импортирует infra (test_web_layer_imports).
@@ -495,7 +521,8 @@ def adr_list(
         {
             "project": proj.entry,
             "items": items,
-            "shelves": _group_by_shelf(items, topics),
+            "shelves": _group_by_shelf(items, topics, sort),
+            "sort": sort,
             "status_filter": status,
             "view": view,
             "summary": {

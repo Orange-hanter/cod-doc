@@ -19,6 +19,7 @@ from cod_doc.api.deps import get_config, get_project, get_project_db
 from cod_doc.api.web.back_nav import back_nav, entity_labels, natural_key
 from cod_doc.api.web.markdown import render_inline
 from cod_doc.api.web.prose_links import ProseLinks
+from cod_doc.api.web.sorting import PRIORITY_RANK, SortKey, SortSpec, rank_of, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.config import Config
 from cod_doc.domain.entities import (
@@ -234,25 +235,20 @@ def _section_of(id_hint: str) -> str:
     return m.group(2) if m else ""
 
 
-# ADO-140: ключи сортировки списка. Ранг приоритета — тот же порядок, что в
-# tasks.py::_PRIO_RANK; неизвестное значение уезжает в конец.
-_PRIO_RANK: dict[str, int] = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+# ADO-140: ключи сортировки карточек внутри группы; с WUI-006 — общий
+# механизм `sorting` (появилось направление `dir`). Неизвестное значение
+# ранга уезжает в конец.
 _STATUS_RANK: dict[str, int] = {"draft": 0, "accepted": 1, "delivered": 2, "deferred": 3}
-_SORT_KEYS = ("id", "priority", "status", "updated")
-
-
-def _sort_stories(items: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
-    """Отсортировать карточки внутри одной группы. `story_id` — тай-брейк."""
-    if sort == "priority":
-        return sorted(items, key=lambda s: (_PRIO_RANK.get(s["priority"], 99), s["story_id"]))
-    if sort == "status":
-        return sorted(items, key=lambda s: (_STATUS_RANK.get(s["status"], 99), s["story_id"]))
-    if sort == "updated":
-        # Два прохода стабильной сортировкой, как для context-доков выше:
-        # свежие сверху, истории без даты — в конец.
-        by_date = sorted(items, key=lambda s: s["last_updated"], reverse=True)
-        return sorted(by_date, key=lambda s: s["last_updated"] == "")
-    return sorted(items, key=lambda s: s["story_id"])
+STORY_SORT = SortSpec(
+    keys={
+        "id": SortKey("id", lambda s: natural_key(s["story_id"])),
+        "priority": SortKey("priority", lambda s: rank_of(PRIORITY_RANK, s["priority"])),
+        "status": SortKey("status", lambda s: rank_of(_STATUS_RANK, s["status"])),
+        "updated": SortKey("updated", lambda s: s["last_updated"], desc_first=True),
+    },
+    default="id",
+    tiebreak=lambda s: natural_key(s["story_id"]),
+)
 
 
 @router.get("/p/{slug}/stories", response_class=HTMLResponse)
@@ -261,7 +257,6 @@ def stories_list(
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     group_by: str = "section",
-    sort: str = "id",
 ) -> HTMLResponse:
     """Stories list with parsed narratives, task counts, plan chips, grouping.
 
@@ -269,8 +264,9 @@ def stories_list(
     stored section (ADO-143), persona by literal persona name, none shows a
     single flat grid.
 
-    ``sort`` ∈ {id, priority, status, updated} orders cards **inside** each
-    group (ADO-140); an unknown value falls back to ``id``.
+    ``sort`` ∈ {id, priority, status, updated} (+ ``dir``) orders cards
+    **inside** each group (ADO-140, WUI-006); an unknown value falls back
+    to ``id``.
     """
     from cod_doc.services import doc_service as docs_svc
 
@@ -441,7 +437,7 @@ def stories_list(
     from cod_doc.services import section_summary_service as summaries
 
     summary_path = proj.entry.cod_doc_dir / "section_summaries.json"
-    sort_key = sort if sort in _SORT_KEYS else "id"
+    sort = sort_state(request, STORY_SORT)
     groups: list[dict[str, Any]] = []
     if group_by == "persona":
         persona_bucket: dict[str, list[dict[str, Any]]] = {}
@@ -453,7 +449,7 @@ def stories_list(
                     "key": key,
                     "label": key,
                     "hue": _persona_hue(key),
-                    "stories": _sort_stories(persona_bucket[key], sort_key),
+                    "stories": sort.apply(persona_bucket[key]),
                     "summary": None,
                 }
             )
@@ -463,7 +459,7 @@ def stories_list(
                 "key": "",
                 "label": "",
                 "hue": "accent",
-                "stories": _sort_stories(enriched, sort_key),
+                "stories": sort.apply(enriched),
                 "summary": None,
             }
         ]
@@ -501,7 +497,7 @@ def stories_list(
                     # это просто «ещё не разложено».
                     "analyzable": key != NO_SECTION,
                     "hue": "accent",
-                    "stories": _sort_stories(section_bucket[key], sort_key),
+                    "stories": sort.apply(section_bucket[key]),
                     "summary": (
                         {
                             "text": summary.text,
@@ -522,8 +518,7 @@ def stories_list(
             "stories": enriched,
             "groups": groups,
             "group_by": group_by if group_by in ("section", "persona", "none") else "section",
-            "sort": sort_key,
-            "sort_keys": list(_SORT_KEYS),
+            "sort": sort,
             "totals": {
                 "stories": len(enriched),
                 "draft": sum(1 for s in enriched if s["status"] == "draft"),

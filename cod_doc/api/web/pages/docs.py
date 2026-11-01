@@ -20,6 +20,7 @@ from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.errors import ValidationWebError, set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.peek import is_peek, peek_not_found
+from cod_doc.api.web.sorting import SortKey, SortSpec, SortState, natural_key, sort_state
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
 from cod_doc.domain.entities import (
     DocNode,
@@ -126,9 +127,28 @@ def _top_folder(doc_key: str) -> str:
     return head if sep else _UNGROUPED
 
 
+# WUI-006: колонки таблицы документов. Дефолт — ключ, как отдаёт репозиторий.
+DOC_SORT = SortSpec(
+    keys={
+        "key": SortKey("key", lambda d: natural_key(d["doc_key"])),
+        "title": SortKey("title", lambda d: (d["title"] or "").casefold()),
+        "node": SortKey("node", lambda d: d["node"]),
+        "type": SortKey("type", lambda d: d["type"]),
+        "status": SortKey("status", lambda d: d["status"]),
+        "links": SortKey(
+            "links", lambda d: (d["links_in"] + d["links_out"], d["links_in"]), desc_first=True
+        ),
+        "updated": SortKey("updated", lambda d: d["last_updated"], desc_first=True),
+    },
+    default="key",
+    tiebreak=lambda d: natural_key(d["doc_key"]),
+)
+
+
 def _docs_screen_context(
     slug: str,
     *,
+    sort: SortState,
     q: str,
     type_filter: str,
     status_filter: str,
@@ -256,10 +276,12 @@ def _docs_screen_context(
     # `stats.total` остаётся корпусным — он питает карточку «Документов».
     rail_total = len(filtered)
     shown = _select_rail_bucket(filtered, group_by, selected, inbox_key) if selected else filtered
+    shown = sort.apply(shown)
 
     return {
         "project": {"name": proj.entry.name},
         "documents": shown,
+        "sort": sort,
         "rail": rail,
         "rail_total": rail_total,
         "group_by": group_by,
@@ -323,6 +345,7 @@ def docs_list(
     """
     context = _docs_screen_context(
         slug,
+        sort=sort_state(request, DOC_SORT, path=f"/p/{slug}/docs"),
         q=q,
         type_filter=type.strip(),
         status_filter=status.strip(),
@@ -353,6 +376,7 @@ def docs_drift_marks(
     """
     context = _docs_screen_context(
         slug,
+        sort=sort_state(request, DOC_SORT, path=f"/p/{slug}/docs"),
         q=q,
         type_filter=type.strip(),
         status_filter=status.strip(),

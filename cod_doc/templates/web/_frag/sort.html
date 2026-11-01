@@ -1,0 +1,34 @@
+{# WUI-006: сортировка списков. `state` — cod_doc.api.web.sorting.SortState.
+
+   th(state, key, label) — заголовок таблицы-ссылка: клик по активному меняет
+   направление, по другому — включает его. Без `key` (колонка не сортируется)
+   макрос не зовут, пишут обычный <th>.
+   toggle(state) — то же для страниц с карточками: полоса кнопок в стиле
+   `.view-toggle`, как Group/Sort на stories.
+   filter(target, placeholder) — клиентский быстрый фильтр строк (cod_doc_app.js):
+   прячет `[data-filter-row]` внутри `target`, чей текст не содержит запрос, и
+   `[data-filter-group]`, где не осталось видимых строк. Клавиша `/` фокусирует
+   его. #}
+
+{% macro th(state, key, label, cls="") -%}
+<th class="sortable{% if cls %} {{ cls }}{% endif %}{% if state.key == key %} sorted{% endif %}" aria-sort="{{ state.aria(key) }}">
+  <a class="sort-link" href="{{ state.href(key) }}" title="Sort by {{ label|striptags }}">{{ label }}<span class="sort-arrow" aria-hidden="true">{{ state.arrow(key) }}</span></a>
+</th>
+{%- endmacro %}
+
+{% macro toggle(state, label="Sort") -%}
+<nav class="view-toggle sort-toggle" aria-label="{{ label }}">
+  <span class="muted-tiny sort-toggle-label">{{ label }}:</span>
+  {% for key, sk in state.spec.keys.items() %}
+    <a class="view-btn {% if state.key == key %}view-btn-active{% endif %}"
+       href="{{ state.href(key) }}"
+       {% if state.key == key %}aria-current="true"{% endif %}>{{ sk.label }}<span class="sort-arrow" aria-hidden="true">{{ state.arrow(key) }}</span></a>
+  {% endfor %}
+</nav>
+{%- endmacro %}
+
+{% macro filter(target, placeholder="Filter…") -%}
+<input type="search" class="list-filter" data-list-filter="{{ target }}"
+       placeholder="{{ placeholder }}" aria-label="{{ placeholder }}"
+       autocomplete="off" spellcheck="false">
+{%- endmacro %}

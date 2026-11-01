@@ -4,37 +4,11 @@ Variables (set via `{% with %}`):
 - slug   — project name in URL
 - active — slug of the currently-active tab (or empty for none)
 
-Tabs marked `ready=False` render as <span class="tab-disabled"> with a
-"coming soon" tooltip — pointing into nothing is worse than no link.
-The list itself is configured below; when an endpoint is implemented,
-flip `ready` to True in the tuple.
+The list lives in `cod_doc/api/web/navigation.py::PROJECT_TABS` (WUI-006):
+the search palette offers the same tabs as jump targets.
 #}
-{% set tabs = [
-  ("overview",  "Overview",  "/p/" ~ slug,             True),
-  ("run",       "Agent",     "/p/" ~ slug ~ "/run",    True),
-  ("docs",      "Docs",      "/p/" ~ slug ~ "/docs",   True),
-  ("tasks",     "Tasks",     "/p/" ~ slug ~ "/tasks",  True),
-  ("stories",   "Stories",   "/p/" ~ slug ~ "/stories", True),
-  ("plans",     "Plans",     "/p/" ~ slug ~ "/plans",  True),
-  ("roadmap",   "Roadmap",   "/p/" ~ slug ~ "/roadmap", True),
-  ("adr",       "ADRs",      "/p/" ~ slug ~ "/adr",    True),
-  ("scenarios", "Scenarios", "/p/" ~ slug ~ "/scenarios", True),
-  ("questions", "Questions", "/p/" ~ slug ~ "/questions", True),
-  ("proposals", "Proposals", "/p/" ~ slug ~ "/proposals", True),
-  ("metrics",   "Metrics",   "/p/" ~ slug ~ "/metrics", True),
-  ("commits",   "Commits",   "/p/" ~ slug ~ "/commits", True),
-  ("code_refs", "Code refs", "/p/" ~ slug ~ "/code-refs", True),
-  ("search",    "Search",    "/p/" ~ slug ~ "/search",   True),
-  ("routines",  "Routines",  "/p/" ~ slug ~ "/routines", True),
-  ("costs",     "Costs",     "/p/" ~ slug ~ "/costs",  True),
-  ("revisions", "Revisions", "/p/" ~ slug ~ "/revisions", True),
-] %}
 <nav class="tabs">
-  {%- for slug_id, label, href, ready in tabs -%}
-    {% if ready %}
-      <a class="{% if active == slug_id %}active{% endif %}" href="{{ href }}">{{ label }}</a>
-    {% else %}
-      <span class="tab-disabled" title="coming soon">{{ label }}</span>
-    {% endif %}
+  {%- for slug_id, label, href in project_tabs(slug) -%}
+    <a class="{% if active == slug_id %}active{% endif %}" href="{{ href }}">{{ label }}</a>
   {%- endfor -%}
 </nav>

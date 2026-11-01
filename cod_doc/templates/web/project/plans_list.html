@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_frag/sort.html" as sorting %}
 {% block title %}Plans · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Plans</span></nav>
@@ -12,22 +13,26 @@
 {% elif not plans %}
   <p class="muted">Планов в этом проекте пока нет.</p>
 {% else %}
+<div class="list-controls">
+  {% if not sort.is_default %}<a class="view-btn" href="{{ sort.path }}" title="Порядок плана — контракт (RFC 36)">↺ Manual order</a>{% endif %}
+  {{ sorting.filter(".plans-table", "Filter plans… (/)") }}
+</div>
 <div class="table-scroll">
 <table class="grid plans-table">
   <thead>
     <tr>
-      <th>Scope</th>
+      {{ sorting.th(sort, "scope", "Scope") }}
       <th>Principle</th>
-      <th>Status</th>
-      <th class="num">Done</th>
-      <th class="num">Total</th>
-      <th>Progress</th>
-      <th class="plans-col-when">Last&nbsp;updated</th>
+      {{ sorting.th(sort, "status", "Status") }}
+      {{ sorting.th(sort, "done", "Done", "num") }}
+      {{ sorting.th(sort, "total", "Total", "num") }}
+      {{ sorting.th(sort, "progress", "Progress") }}
+      {{ sorting.th(sort, "updated", "Last&nbsp;updated"|safe, "plans-col-when") }}
     </tr>
   </thead>
   <tbody>
     {% for p in plans %}
-    <tr>
+    <tr data-filter-row>
       <td><a href="/p/{{ project.name }}/plans/{{ p.plan_id }}" class="mono">{{ p.scope }}</a></td>
       <td class="muted">{{ p.principle }}</td>
       <td>{{ p.status }}</td>

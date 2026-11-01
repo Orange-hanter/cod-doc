@@ -193,6 +193,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | **Поиск, коммиты, code-refs, метрики, затраты**  | | | |
 | `GET /p/{slug}/search` | FTS5-поиск по tasks/docs/stories/ADRs | `search_service.search` | ✅ | OBI-040 |
 | `POST /p/{slug}/search/reindex` | Перестроение FTS-индекса проекта | `search_service.reindex_all` | ✅ | OBI-040 |
+| `GET /palette` | HTMX-фрагмент палитры поиска (Cmd/Ctrl+K на любой странице): в проекте — хиты FTS по видам + переходы на вкладки, вне проекта — проекты реестра. Списки tasks/docs/plans/stories/adr/questions/scenarios сортируются `?sort=&dir=` (`api/web/sorting.py`) и сужаются быстрым фильтром (`/`) | `search_service.search` + `Config.list_projects()` | ✅ | WUI-006 |
 | `GET /p/{slug}/commits` | Таблица commit↔task links | `commit_link_service.list_for_project` | ✅ | OBI-011 |
 | `POST /p/{slug}/commits/import` | Рескан git log и импорт task-tagged commits | `commit_link_service.import_from_git_log` | ✅ | OBI-011 |
 | `GET /p/{slug}/code-refs` | Список code-refs проекта | `link_service.list_code_refs` | ✅ | OBI-021 |

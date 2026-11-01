@@ -159,8 +159,9 @@ def test_group_toggle_keeps_sort_and_vice_versa(stories_client) -> None:  # noqa
     r = client.get(f"/p/{entry.name}/stories?sort=priority")
     assert "group_by=persona&amp;sort=priority" in r.text
 
+    # Порядок параметров — чужие сначала, затем sort (WUI-006: общий хелпер).
     r2 = client.get(f"/p/{entry.name}/stories?group_by=persona")
-    assert "sort=priority&amp;group_by=persona" in r2.text
+    assert "group_by=persona&amp;sort=priority" in r2.text
 
 
 def test_delivered_chip_counts_a_real_status(stories_client) -> None:  # noqa: F811

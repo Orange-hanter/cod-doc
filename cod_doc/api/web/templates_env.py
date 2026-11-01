@@ -10,6 +10,7 @@ from urllib.parse import unquote
 from fastapi.templating import Jinja2Templates
 
 from cod_doc.api.web.dates import fmt_date, fmt_datetime, fmt_relative, fmt_tooltip
+from cod_doc.api.web.navigation import project_tabs
 from cod_doc.domain.entities import (
     TASK_STATUS_ALIASES,
     DocumentType,
@@ -156,6 +157,7 @@ templates.env.globals["document_types"] = DOCUMENT_TYPES
 templates.env.filters["chain_done_count"] = chain_done_count
 templates.env.globals["static_url"] = static_url
 templates.env.globals["peekable"] = peekable
+templates.env.globals["project_tabs"] = project_tabs
 # ADO-233: Mermaid вендорен (static/vendor/mermaid.min.js, UMD 11.17.2) —
 # без сети схемы раньше оставались сырым текстом. Пустое значение = локальная
 # сборка через static_url; COD_DOC_MERMAID_SRC по-прежнему переопределяет

@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
+from cod_doc.api.web.sorting import SortKey, SortSpec, natural_key, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ScenarioKind, ScenarioStatus
 from cod_doc.services import projection_service, scenario_service
@@ -180,6 +181,27 @@ def _drift_by_group(
     return per_group, card
 
 
+#: WUI-006: порядок строк внутри возможности. Дефолт — ранг из репозитория
+#: (`pos`); вид и статус — в порядке enum'ов, как в фильтрах.
+SCENARIO_SORT = SortSpec(
+    keys={
+        "rank": SortKey("rank", lambda r: r["pos"]),
+        "id": SortKey("id", lambda r: natural_key(r["scenario_id"])),
+        "kind": SortKey(
+            "kind",
+            lambda r: KIND_OPTIONS.index(r["kind"]) if r["kind"] in KIND_OPTIONS else None,
+        ),
+        "status": SortKey(
+            "status",
+            lambda r: STATUS_OPTIONS.index(r["status"]) if r["status"] in STATUS_OPTIONS else None,
+        ),
+        "title": SortKey("title", lambda r: (r["title"] or "").casefold()),
+    },
+    default="rank",
+    tiebreak=lambda r: r["pos"],
+)
+
+
 @router.get("/p/{slug}/scenarios", response_class=HTMLResponse)
 def scenarios_list(
     request: Request,
@@ -192,6 +214,7 @@ def scenarios_list(
     proj = get_project(slug)
     if status not in STATUS_FILTERS:
         status = "live"
+    sort = sort_state(request, SCENARIO_SORT)
 
     blocks: list[dict[str, Any]] = []
     totals = {"scenarios": 0, "groups": 0, "confirmed": 0, "draft": 0}
@@ -209,9 +232,11 @@ def scenarios_list(
             group_options = [c.group_key for c in coverage]
 
             by_group: dict[str, list[dict[str, Any]]] = {}
-            for scenario in scenarios:
+            for pos, scenario in enumerate(scenarios):
                 if _keep(scenario, kind=kind, status=status):
-                    by_group.setdefault(scenario.group_key, []).append(_row(scenario))
+                    by_group.setdefault(scenario.group_key, []).append(
+                        {**_row(scenario), "pos": pos}
+                    )
 
             drift_per_group, drift_card = _drift_by_group(
                 session, project_db_id, Path(proj.entry.path), group_options
@@ -221,7 +246,7 @@ def scenarios_list(
             for cov in coverage:
                 if group and cov.group_key != group:
                     continue
-                rows = by_group.get(cov.group_key, [])
+                rows = sort.apply(by_group.get(cov.group_key, []))
                 if not rows and filtering:
                     continue
                 blocks.append(
@@ -258,6 +283,7 @@ def scenarios_list(
             "kind_options": KIND_OPTIONS,
             "group_options": group_options,
             "status_options": STATUS_FILTERS,
+            "sort": sort,
             "shown": sum(len(b["rows"]) for b in blocks),
         },
     )
