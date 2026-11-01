@@ -2,9 +2,9 @@
 # Регенерация — не руками:
 #   echo 'graphifyy==<ver>' | UV_NO_CONFIG=1 uv pip compile --no-config --python-version 3.13 \
 #     --generate-hashes --index-url https://pypi.org/simple - -o ops/graphify-requirements.txt
-graphifyy==0.9.94 \
-    --hash=sha256:08708a9b8fe9516e84e1fb23a5103da226a1e66107e3e41c72ea29fa2614a7a6 \
-    --hash=sha256:833322bb79ef720eb812dff0cb80f50b0b38f9cbbaa0446d546394a5dae75f27
+graphifyy==0.9.97 \
+    --hash=sha256:562a9007caa96419f33dbca007647374b6986bde486021b7475e2566d9c5904f \
+    --hash=sha256:eb24dd7f93293753c001ca36e7304e0b52e86fe4124c2f531dcdb3d64865e01a
     # via -r /Users/dakh/.claude/jobs/c0f5a049/tmp/req.in
 networkx==3.7 \
     --hash=sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0 \
