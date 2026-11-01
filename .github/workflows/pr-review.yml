@@ -301,7 +301,7 @@ jobs:
           REVIEW_LLM_REQUIRED: '0'
           REVIEW_VERIFIER: '1'
           # Вне пула specialists и не жюри: судья не подтверждает свои находки.
-          REVIEW_VERIFIER_MODEL: '~deepseek/deepseek-pro-latest'
+          REVIEW_VERIFIER_MODEL: 'xiaomi/mimo-v2.6-pro'
           REVIEW_VERIFIER_STRICT: '1'
           # eslint/ast-grep prescan видит только JS/TS; cod-doc — Python.
           REVIEW_PRESCAN: '0'
