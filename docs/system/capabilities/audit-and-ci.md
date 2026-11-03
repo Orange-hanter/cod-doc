@@ -109,8 +109,12 @@ related_docs:
 
 - `pre-commit` — формат гибридных ссылок `📁 … | 🗃️ … | 🔑 sha:…` в staged
   `.md` и строки 🔴 STALE/BROKEN в `MASTER.md`;
-- `post-merge` — `cod-doc hash update MASTER.md` и авто-коммит реестра;
-- `pre-push` — `scripts/gate.sh` (обойти — `SKIP_GATE=1`).
+- `pre-push` — `scripts/gate.sh` (обойти — `SKIP_GATE=1`); гейт идёт ~5–6
+  минут (почти всё — pytest): пушить в фоне или с таймаутом от 10 минут.
+
+Снятый ранее `post-merge` (`cod-doc hash update MASTER.md` + авто-коммит)
+удалён по DEBT-001 — хэши в ссылках `MASTER.md` больше не хранятся;
+`hooks/install.sh` убирает его старую копию из `.git/hooks`.
 
 *(planned, не реализовано)* `cod-doc hooks install` с `pre-commit: cod-doc audit
 --strict --staged`, `post-commit: task sync_from_diff` и `prepare-commit-msg` —
