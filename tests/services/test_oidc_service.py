@@ -311,6 +311,39 @@ def test_token_error_body_without_json_uses_status(monkeypatch: pytest.MonkeyPat
         oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
 
 
+def test_exchange_sends_code_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PKCE (ревью #282, раунд 3): верификатор обязан уехать в token endpoint."""
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    captured: dict = {}
+
+    def fake_post(url: str, *, data: dict, auth: object, timeout: float) -> httpx.Response:
+        captured["url"] = url
+        captured["data"] = data
+        return _fake_response(200, '{"access_token": "at"}')
+
+    monkeypatch.setattr(oidc_service.httpx, "post", fake_post)
+    assert oidc_service.exchange_code(cfg, _DISCOVERY, code="good", verifier="my-verifier") == "at"
+    assert captured["data"]["code_verifier"] == "my-verifier"
+    assert captured["data"]["code"] == "good"
+    assert captured["data"]["grant_type"] == "authorization_code"
+    assert captured["url"] == "https://idp.example/token"
+
+
+def test_list_oidc_links(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+        acc.add_member(s, handle="bob", project_uid="p1", role="admin", author=ADMIN)
+        acc.oidc_link(s, handle="bob", sub="sub-b", author=ADMIN)
+        acc.oidc_link(s, handle="alice", sub="sub-a", author=ADMIN)
+    with store() as s:
+        assert acc.list_oidc_links(s) == [("alice", "sub-a"), ("bob", "sub-b")]
+
+
 def test_non_ascii_and_broken_cookies_are_none() -> None:
     """Кука — клиентский вход: не-ASCII или мусор дают None, а не UnicodeEncodeError."""
     key = b"k" * 32

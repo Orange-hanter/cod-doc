@@ -78,6 +78,7 @@ __all__ = [
     "hash_token",
     "init_store",
     "list_members",
+    "list_oidc_links",
     "list_tokens",
     "oidc_link",
     "oidc_unlink",
@@ -686,6 +687,17 @@ def oidc_unlink(session: Session, *, handle: str, author: str) -> bool:
         payload={"sub": previous},
     )
     return True
+
+
+def list_oidc_links(session: Session) -> list[tuple[str, str]]:
+    """Актёры с OIDC-привязкой: ``(handle, sub)`` по алфавиту handle'ов."""
+    rows = session.execute(
+        select(ActorModel.handle, ActorModel.oidc_sub)
+        .where(ActorModel.oidc_sub.is_not(None))
+        .order_by(ActorModel.handle)
+    ).all()
+    # narrowing из WHERE mypy не видит — фильтр и сужает, и страхует
+    return [(handle, sub) for handle, sub in rows if sub is not None]
 
 
 def record_login(session: Session, *, handle: str, ip: str) -> None:

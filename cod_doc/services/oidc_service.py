@@ -157,6 +157,9 @@ def exchange_code(cfg: Config, discovery: dict[str, Any], *, code: str, verifier
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": cfg.oidc_redirect_uri.strip(),
+                # PKCE S256 (RFC 7636 §4.6): без верификатора провайдер
+                # отвергнет обмен — grant был выдан под challenge.
+                "code_verifier": verifier,
             },
             auth=(cfg.oidc_client_id, cfg.oidc_client_secret),
             timeout=10,

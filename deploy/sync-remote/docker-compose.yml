@@ -72,8 +72,9 @@ services:
       - "443:443"
     environment:
       COD_DOC_PUBLIC_HOST: ${COD_DOC_PUBLIC_HOST}
-      # Веб наружу только при явном COD_DOC_WEB_PUBLIC=1 (.env), см. Caddyfile.
+      # Веб наружу (см. Caddyfile): нужно ОБА — флаг и настроенный issuer.
       COD_DOC_WEB_PUBLIC: ${COD_DOC_WEB_PUBLIC:-0}
+      COD_DOC_OIDC_ISSUER: ${COD_DOC_OIDC_ISSUER:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

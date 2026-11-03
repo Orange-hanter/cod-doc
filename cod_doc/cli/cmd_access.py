@@ -497,16 +497,10 @@ def oidc_unlink(handle: str, author: str) -> None:
 @_json_opt
 def oidc_list(as_json: bool) -> None:
     """Актёры с OIDC-привязкой."""
-    from sqlalchemy import select
-
-    from cod_doc.infra.models import ActorModel
+    from cod_doc.services import access_service
 
     with _store_session() as session:
-        pairs = session.execute(
-            select(ActorModel.handle, ActorModel.oidc_sub)
-            .where(ActorModel.oidc_sub.is_not(None))
-            .order_by(ActorModel.handle)
-        ).all()
+        pairs = access_service.list_oidc_links(session)
     rows = [{"handle": h, "sub": s} for h, s in pairs]
     if as_json:
         _echo_json(rows)
