@@ -41,13 +41,21 @@ _HTTP_UNAVAILABLE: Final = 503
 #: Код закрытия websocket «policy violation» (RFC 6455 §7.4.1).
 _WS_POLICY_VIOLATION: Final = 1008
 #: Префиксы вне гейта: JSON API — у BearerGate, логин — сам гейт, статика — открыта.
-_OPEN_PREFIXES: Final = ("/api", "/auth/", "/static")
+_OPEN_SEGMENTS: Final = ("/api", "/auth", "/static")
 _LOGIN_PATH: Final = "/auth/oidc/login"
 
 
 def is_web_session_path(path: str) -> bool:
-    """Пути веба под гейтом: всё вне ``/api*``, ``/auth/*`` и ``/static``."""
-    return not path.startswith(_OPEN_PREFIXES)
+    """Пути веба под гейтом: всё вне ``/api*``, ``/auth/*`` и ``/static``.
+
+    Проверка по границе сегмента: ``/apiary`` и ``/staticfoo`` — обычные
+    веб-страницы и под гейтом, иначе будущий маршрут с таким началом молча
+    оказался бы без сессии.
+    """
+    for segment in _OPEN_SEGMENTS:
+        if path == segment or path.startswith(segment + "/"):
+            return False
+    return True
 
 
 class SessionGate:
@@ -71,7 +79,10 @@ class SessionGate:
         from cod_doc.config import Config
         from cod_doc.services import access_service
 
-        cfg = Config.load()
+        # Config.load() читает диск (mtime-кэш) — как open_store/session_key,
+        # вне event loop: HTML-страница с десятком HTMX-фрагментов не должна
+        # блокировать loop на каждом запросе.
+        cfg = await anyio.to_thread.run_sync(Config.load)
         if not oidc_service.oidc_configured(cfg):
             await self.app(scope, receive, send)
             return

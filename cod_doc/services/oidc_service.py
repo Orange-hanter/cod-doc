@@ -87,6 +87,23 @@ def oidc_configured(cfg: Config) -> bool:
     return bool(cfg.oidc_issuer and cfg.oidc_client_id and cfg.oidc_client_secret)
 
 
+def _json_body(response: httpx.Response, *, what: str) -> dict[str, Any]:
+    """Тело ответа как JSON-объект; провайдеру и прокси можно отдать HTML/пустоту.
+
+    502 от прокси перед Pocket ID не должен превращаться в необработанный
+    JSONDecodeError на пути логина — это ``OidcError`` и страница ошибки.
+    """
+    try:
+        body: Any = response.json()
+    except ValueError as exc:  # JSONDecodeError — его подкласс
+        msg = f"{what}: HTTP {response.status_code}, тело не JSON"
+        raise OidcError(msg) from exc
+    if not isinstance(body, dict):
+        msg = f"{what}: HTTP {response.status_code}, тело — не JSON-объект"
+        raise OidcError(msg)
+    return body
+
+
 def discover(cfg: Config) -> dict[str, Any]:
     """Документ ``/.well-known/openid-configuration`` провайдера."""
     url = cfg.oidc_issuer.rstrip("/") + "/.well-known/openid-configuration"
@@ -98,8 +115,7 @@ def discover(cfg: Config) -> dict[str, Any]:
     if response.status_code != _HTTP_OK:
         msg = f"discovery {url}: HTTP {response.status_code}"
         raise OidcError(msg)
-    doc: dict[str, Any] = response.json()
-    return doc
+    return _json_body(response, what="discovery")
 
 
 def authorize_url(cfg: Config, discovery: dict[str, Any], *, state: str, challenge: str) -> str:
@@ -149,10 +165,13 @@ def exchange_code(cfg: Config, discovery: dict[str, Any], *, code: str, verifier
         msg = f"token endpoint недоступен: {type(exc).__name__}"
         raise OidcError(msg) from exc
     if response.status_code != _HTTP_OK:
-        detail = response.json().get("error", response.status_code)
+        try:
+            detail = response.json().get("error", response.status_code)
+        except ValueError:  # HTML/пустота от провайдера или прокси — не JSON
+            detail = response.status_code
         msg = f"обмен кода не удался: {detail}"
         raise OidcError(msg)
-    token: str | None = response.json().get("access_token")
+    token: str | None = _json_body(response, what="token endpoint").get("access_token")
     if not token:
         msg = "в ответе token endpoint нет access_token"
         raise OidcError(msg)
@@ -175,7 +194,7 @@ def fetch_userinfo(discovery: dict[str, Any], access_token: str) -> dict[str, An
     if response.status_code != _HTTP_OK:
         msg = f"userinfo: HTTP {response.status_code}"
         raise OidcError(msg)
-    claims: dict[str, Any] = response.json()
+    claims = _json_body(response, what="userinfo")
     if not claims.get("sub"):
         msg = "в userinfo нет sub"
         raise OidcError(msg)
@@ -226,14 +245,19 @@ def issue_session_value(key: bytes, *, actor_uid: str, handle: str) -> str:
 
 
 def read_session(key: bytes, value: str | None) -> dict[str, Any] | None:
-    """Кука → payload; ``None`` — нет, битая подпись или истёкшая."""
+    """Кука → payload; ``None`` — нет, битая подпись или истёкшая.
+
+    Кука — клиентский вход: не-ASCII в ней не должен бросать
+    ``UnicodeEncodeError`` (его подкласс) наружу и давать 500 на каждый
+    запрос, а молча считаться «нет сессии».
+    """
     if not value or "." not in value:
         return None
     payload_b64, _, sig_b64 = value.rpartition(".")
-    expected = hmac.new(key, payload_b64.encode("ascii"), hashlib.sha256).digest()
     try:
+        expected = hmac.new(key, payload_b64.encode("ascii"), hashlib.sha256).digest()
         sig = _b64decode(sig_b64)
-    except ValueError:
+    except ValueError:  # UnicodeEncodeError, binascii.Error — битая кука
         return None
     if not hmac.compare_digest(sig, expected):
         return None

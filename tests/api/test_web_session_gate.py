@@ -267,3 +267,7 @@ def test_web_session_path_classification() -> None:
     assert not is_web_session_path("/api/health")
     assert not is_web_session_path("/auth/oidc/login")
     assert not is_web_session_path("/static/js/app.js")
+    # границы сегментов (ревью #282): похожий префикс — обычная веб-страница
+    assert is_web_session_path("/apiary")
+    assert is_web_session_path("/staticfoo")
+    assert is_web_session_path("/authentication")

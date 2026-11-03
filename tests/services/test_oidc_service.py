@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from typing import TYPE_CHECKING
 
+import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.config import Config
 from cod_doc.infra.db import transactional
@@ -123,6 +126,27 @@ def test_sub_taken_by_other_actor(store: sessionmaker) -> None:  # type: ignore[
         assert acc.oidc_link(s, handle="alice", sub=SUB, author=ADMIN) is None
 
 
+def test_oidc_link_race_maps_integrity_error(
+    store: sessionmaker, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[type-arg]
+    """Гонка: pre-check не видит параллельную транзакцию, UNIQUE индекс решает.
+
+    Параллельную транзакцию имитируем боем ``flush`` на UNIQUE-индексе —
+    контракт тот же: ``AccessError``, а не сырой IntegrityError (ревью #282).
+    """
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise IntegrityError("INSERT INTO actor …", {}, Exception("UNIQUE uq_actor_oidc_sub"))
+
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+    # raises снаружи transactional: проглоченное исключение внутри блока
+    # означало бы коммит, а его before_commit зовёт тот же боевой flush
+    with pytest.raises(acc.AccessError, match="уже привязан"), transactional(store) as s:
+        monkeypatch.setattr(s, "flush", boom)
+        acc.oidc_link(s, handle="alice", sub="sub-race", author=ADMIN)
+
+
 def test_record_login_writes_event(store: sessionmaker) -> None:  # type: ignore[type-arg]
     _link_alice(store)
     with transactional(store) as s:
@@ -217,3 +241,76 @@ def test_authorize_url_requires_redirect_uri() -> None:
         oidc_service.authorize_url(cfg, _DISCOVERY, state="st", challenge="ch")
     with pytest.raises(oidc_service.OidcError, match="authorization_endpoint"):
         oidc_service.authorize_url(cfg, {}, state="st", challenge="ch")
+
+
+# --- находки ИИ-ревью #282: не-JSON тела и битые куки ---------------------------
+
+
+def _fake_response(status: int, text: str) -> httpx.Response:
+    """Ответ без реальной сети: HTTP 502 от прокси — тоже реальность логина."""
+    return httpx.Response(status, content=text.encode(), request=httpx.Request("GET", "https://x"))
+
+
+def test_non_json_bodies_become_oidc_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTML/пустота от провайдера — OidcError и страница ошибки, не 500-JSONDecode."""
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    monkeypatch.setattr(
+        oidc_service.httpx, "get", lambda *a, **k: _fake_response(502, "<html>502</html>")
+    )
+    monkeypatch.setattr(
+        oidc_service.httpx, "post", lambda *a, **k: _fake_response(502, "bad gateway")
+    )
+    # 502 от прокси: discover падает раньше разбора тела — по статусу
+    with pytest.raises(oidc_service.OidcError, match="HTTP 502"):
+        oidc_service.discover(cfg)
+    with pytest.raises(oidc_service.OidcError, match="502"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+    # 200 с HTML-телом — именно разбор: OidcError «не JSON», не JSONDecodeError
+    monkeypatch.setattr(
+        oidc_service.httpx, "get", lambda *a, **k: _fake_response(200, "<html>discovery</html>")
+    )
+    with pytest.raises(oidc_service.OidcError, match="не JSON"):
+        oidc_service.discover(cfg)
+    # 200 с не-JSON телом — тот же разбор
+    monkeypatch.setattr(oidc_service.httpx, "post", lambda *a, **k: _fake_response(200, "not json"))
+    with pytest.raises(oidc_service.OidcError, match="не JSON"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+    claims = {"sub": "s"}
+    monkeypatch.setattr(
+        oidc_service.httpx,
+        "get",
+        lambda *a, **k: _fake_response(200, json.dumps(claims, ensure_ascii=False)),
+    )
+    assert oidc_service.fetch_userinfo(_DISCOVERY, "at") == claims
+    monkeypatch.setattr(oidc_service.httpx, "get", lambda *a, **k: _fake_response(200, "<html>"))
+    with pytest.raises(oidc_service.OidcError, match="не JSON"):
+        oidc_service.fetch_userinfo(_DISCOVERY, "at")
+
+
+def test_token_error_body_without_json_uses_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Отказ token endpoint без JSON в теле — в сообщении остаётся статус."""
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    monkeypatch.setattr(
+        oidc_service.httpx, "post", lambda *a, **k: _fake_response(502, "<html>502</html>")
+    )
+    with pytest.raises(oidc_service.OidcError, match="502"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+
+
+def test_non_ascii_and_broken_cookies_are_none() -> None:
+    """Кука — клиентский вход: не-ASCII или мусор дают None, а не UnicodeEncodeError."""
+    key = b"k" * 32
+    value = oidc_service.issue_session_value(key, actor_uid="u1", handle="alice")
+    for garbage in ("кириллица.ещё-кириллица", "π.include", "π", "％％.％％"):
+        assert oidc_service.read_session(key, garbage) is None, garbage
+    assert oidc_service.read_session(key, value) is not None  # живая кука цела

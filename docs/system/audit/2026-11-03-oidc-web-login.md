@@ -74,6 +74,33 @@ authorization code flow (PKCE S256 + state) через Pocket ID. Личност
   UNIQUE ключа (get-then-add) — проигравший получает 500 и повторяет запрос;
   для одного-двух людей не стоит обработки.
 
+## 4.1. Раунд ИИ-ревью #282 (2026-11-03, после пуша)
+
+Verdict «💬 есть замечания»: 🔴0 🟠0 🟡10, мерж не блокируется (MoA: security
+glm-5.3-flash, correctness/architecture deepseek-v4.1-flash, агрегатор
+claude-haiku-5.5, верификатор mimo-v2.6-pro, 453k токенов). Триаж:
+
+- **Починено в ветке** (4 реальных): не-JSON тело провайдера/прокси →
+  `OidcError`/страница ошибки вместо 500 (`_json_body` во всех трёх вызовах);
+  не-ASCII кука → «нет сессии», не `UnicodeEncodeError` (подкласс ValueError,
+  поднят под try); границы сегментов в `is_web_session_path` (`/apiary`,
+  `/staticfoo` — под гейтом); гонка `oidc_link` → `AccessError` вместо сырого
+  IntegrityError. Плюс `Config.load()` гейта — в `to_thread`, вне event loop.
+- **Ложные** (3): `claims["sub"]` KeyError — `fetch_userinfo` уже гарды sub;
+  sync-httpx «блокирует воркер» — маршруты `def` → threadpool FastAPI;
+  async-тест без маркера — `asyncio_mode = auto` в pyproject.
+- **Совпали с F-находками**: неотзываемая сессия ≤12ч (F3), гонка ключа (F4),
+  per-request `open_store`/`session_key` (сознательно, engines кэшируются —
+  тот же рисунок, что у BearerGate).
+- **Взято в деплой-заметку**: за TLS-терминирующим прокси кука может ставиться
+  без `Secure` — uvicorn доверяет `X-Forwarded-Proto` только с
+  `forwarded-allow-ips` (по умолчанию loopback); при выносе прокси с хоста —
+  настроить `--forwarded-allow-ips`. Allowlist `cod_doc.api.auth` в
+  web-слое — осознанно (общий RateLimiter); вынос в нейтральный модуль —
+  по потребности.
+
+## 5. Next step
+
 ## 5. Next step
 
 Ручной E2E на hermes: поднять Pocket ID, зарегистрировать приложение

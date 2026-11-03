@@ -45,6 +45,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra.models import ActorModel, ApiTokenModel, ProjectMemberModel, ProjectModel
 from cod_doc.services import activity_service, request_identity
@@ -650,7 +651,13 @@ def oidc_link(session: Session, *, handle: str, sub: str, author: str) -> str | 
     if actor.oidc_sub == sub:
         return None
     actor.oidc_sub = sub
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        # Гонка: pre-check выше не видит параллельную транзакцию, UNIQUE-индекс
+        # решает за нас — наружу тот же контракт AccessError, что и без гонки.
+        msg = f"sub {sub!r} уже привязан к другому актёру"
+        raise AccessError(msg) from exc
     _emit(
         session,
         "access.oidc_linked",
