@@ -30,6 +30,7 @@ from cod_doc.api.v1.routes import router as v1_router
 from cod_doc.api.web import fragments_router, pages_router
 from cod_doc.api.web.errors import WebError, _safe_back_url, set_flash_cookie
 from cod_doc.api.web.templates_env import STATIC_DIR, templates
+from cod_doc.api.web_session import SessionGate, is_web_session_path
 from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.api.websocket import router as websocket_router
 from cod_doc.config import Config
@@ -78,6 +79,9 @@ app = FastAPI(
 app.add_middleware(BearerGate, protected=is_web_protected_path)
 # CLO-035: потолок тела /api/sync/v1 снаружи гейта — до разбора JSON и проверки роли.
 app.add_middleware(SyncBodyCap)
+# 0056: веб-сессия за OIDC-логином (Pocket ID); выключена без COD_DOC_OIDC_ISSUER.
+# Добавлен последним — снаружи всех: до SyncBodyCap и до BearerGate (пути не пересекаются).
+app.add_middleware(SessionGate, protected=is_web_session_path)
 
 app.include_router(core_router)
 app.include_router(v1_router)  # SYM-006C: /api/v1 — под Bearer-гейтом (CLO-036)

@@ -1,6 +1,9 @@
 # TLS от Let's Encrypt и прокси на MCP (RFC 29 §3.8, CLO-039).
-# Наружу — только /mcp, /api/v1 и /api/sync/v1: все за Bearer-гейтом cod-doc. Всё остальное
-# (веб-UI, legacy /api/*, POST /settings) гейта не имеет и получает 404.
+# /mcp, /api/v1 и /api/sync/v1 — за Bearer-гейтом cod-doc. Остальной /api/*
+# (legacy, POST /settings) гейта не имеет и наружу не выходит — 404.
+# Веб-UI (миграция 0056) — за OIDC-логином (Pocket ID): его SessionGate
+# в cod-doc включён, только когда заданы COD_DOC_OIDC_*; без них наружу
+# открывать веб нельзя — на cod-doc тогда нет ни логина, ни гейта.
 {$COD_DOC_PUBLIC_HOST} {
 	encode zstd gzip
 
@@ -23,7 +26,22 @@
 		reverse_proxy cod-doc:8765
 	}
 
-	handle {
+	# Legacy /api/* (включая POST /settings) — только loopback на узле.
+	handle /api/* {
 		respond 404
+	}
+
+	# Веб за OIDC-логином: маршруты логина, статика, live-обновления и страницы.
+	handle /auth/* {
+		reverse_proxy cod-doc:8765
+	}
+	handle /static/* {
+		reverse_proxy cod-doc:8765
+	}
+	handle /ws* {
+		reverse_proxy cod-doc:8765
+	}
+	handle {
+		reverse_proxy cod-doc:8765
 	}
 }

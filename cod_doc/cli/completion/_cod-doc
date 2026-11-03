@@ -397,6 +397,7 @@ _cod-doc() {
         (mcp)        _cod_doc_mcp && ret=0 ;;
         (member)     _cod_doc_member && ret=0 ;;
         (obligation) _cod_doc_obligation && ret=0 ;;
+        (oidc)       _cod_doc_oidc && ret=0 ;;
         (plan)       _cod_doc_plan && ret=0 ;;
         (project)    _cod_doc_project && ret=0 ;;
         (pull)       _cod_doc_pull && ret=0 ;;
@@ -454,6 +455,7 @@ _cod-doc() {
     'mcp:Запустить MCP-сервер поверх COD-DOC.'
     'member:Участники проектов и их роли (reader / writer / admin).'
     'obligation:Documented obligations for the structure protocol.'
+    'oidc:OIDC-привязки веб-логина (Pocket ID); sub → human-actor.'
     'plan:Inspect and query plans (progress, ready tasks, audit, export).'
     'project:Управление проектами.'
     'pull:Fetch + fast-forward; применить чужие changeset'\''ы.'
@@ -2545,6 +2547,71 @@ _cod-doc() {
     '(--json --no-json)'{--json,--no-json} \
     '(--with-property-drafts)--with-property-drafts' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_oidc] )) || _cod_doc_oidc() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_oidc_commands' \
+    '*:: :->cod_doc_oidc_cmd' && ret=0
+
+  case $state in
+    (cod_doc_oidc_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-oidc-$words[1]:"
+      case $words[1] in
+        (link)   _cod_doc_oidc_link && ret=0 ;;
+        (list)   _cod_doc_oidc_list && ret=0 ;;
+        (unlink) _cod_doc_oidc_unlink && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_oidc_commands] )) || _cod_doc_oidc_commands() {
+  local -a cmds
+  cmds=(
+    'link:Привязать SUB провайдера к HANDLE; без привязки вход — отказ, регис…'
+    'list:Актёры с OIDC-привязкой.'
+    'unlink:Снять OIDC-привязку HANDLE; вход через провайдера перестаёт работат…'
+  )
+  _describe -t cod-doc-oidc-commands 'cod-doc oidc command' cmds
+}
+
+(( $+functions[_cod_doc_oidc_link] )) || _cod_doc_oidc_link() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:handle' \
+    '2:sub' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_oidc_list] )) || _cod_doc_oidc_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[JSON на stdout]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_oidc_unlink] )) || _cod_doc_oidc_unlink() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--author)--author=[Кто выдаёт доступ]:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:handle' && ret=0
   return ret
 }
 

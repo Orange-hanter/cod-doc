@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from . import (
     adr,
+    auth,
     code_refs,
     comments,
     commits,
@@ -39,6 +40,9 @@ from . import (
 
 router = APIRouter()
 router.include_router(index.router)
+# 0056: OIDC-вход веба (/auth/oidc/login|callback, /auth/logout) — ранний,
+# хоть пути и не пересекаются с docs catch-all, для читаемости.
+router.include_router(auth.router)
 router.include_router(project.router)
 router.include_router(plans.router)
 # RFC 36 / ROAD-007: дорожная карта — очередь проекта и прогноз, перестановка планов.

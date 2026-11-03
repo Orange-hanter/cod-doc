@@ -240,6 +240,8 @@ def test_registry_classifies_tables_per_rfc() -> None:
         "actor",
         "api_token",
         "project_member",
+        # настройки веб-логина (0056): ключ подписи сессии сервера
+        "oidc_meta",
     }
     assert {"link", "link_suggestion", "doc_node_suggestion", "doc_code_claim"} <= by_cls[
         SyncClass.DERIVED

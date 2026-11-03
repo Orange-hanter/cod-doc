@@ -157,7 +157,12 @@ class ProjectEntry(BaseSettings):
         return self.root / self.master_md
 
 
-SECRET_FIELDS: tuple[str, ...] = ("api_key", "anthropic_api_key", "embedding_api_key")
+SECRET_FIELDS: tuple[str, ...] = (
+    "api_key",
+    "anthropic_api_key",
+    "embedding_api_key",
+    "oidc_client_secret",
+)
 """Поля-секреты. Единый список: `GET /api/config` отдаёт конфиг целиком, и
 забытое здесь поле утекает наружу (ADO-096 добавил второй ключ — эмбеддера)."""
 
@@ -307,6 +312,14 @@ class Config(BaseSettings):
     # RFC 29 §3.5 (CLO-035): каталог объектов умного remote этого сервера
     # (``/api/sync/v1``). Пусто — ``$COD_DOC_HOME/remotes``.
     sync_remote_root: str = Field(default="")
+    # OIDC веб-логина (миграция 0056): вход в веб через внешний провайдер
+    # (Pocket ID, пасскей). ``oidc_issuer`` пуст — фича выключена, веб как
+    # раньше. redirect_uri — полный URL колбэка, известный провайдеру:
+    # за прокси (Caddy) схема запроса внутри — http, из request её не собрать.
+    oidc_issuer: str = Field(default="")
+    oidc_client_id: str = Field(default="")
+    oidc_client_secret: str = Field(default="")
+    oidc_redirect_uri: str = Field(default="")
 
     @field_validator("api_key", "embedding_api_key", mode="before")
     @classmethod

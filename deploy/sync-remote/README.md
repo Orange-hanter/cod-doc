@@ -6,13 +6,13 @@ Cursor / CI: один узел, данные в нём, доступ — Bearer-
 ```text
 клиент ──https──▶ Caddy :443 ──▶ cod-doc-mcp :8801 (/mcp)      ┐ Bearer-гейт,
                                 └▶ cod-doc     :8765 (/api/v1)  ┘ хранилище доступа
-                  веб-UI, legacy /api/* — только 127.0.0.1:8765, наружу 404
+                  веб-UI — за OIDC-логином (Pocket ID, пасскей); legacy /api/* — наружу 404
 ```
 
 | Файл | Что |
 |---|---|
-| `docker-compose.yml` | `cod-doc` (веб, loopback), `cod-doc-mcp` (тот же образ, `cod-doc-mcp --transport streamable-http`), `caddy` |
-| `Caddyfile` | TLS от Let's Encrypt; наружу только `/mcp*` и `/api/v1/*` |
+| `docker-compose.yml` | `cod-doc` (веб + API), `cod-doc-mcp` (тот же образ, `cod-doc-mcp --transport streamable-http`), `caddy` |
+| `Caddyfile` | TLS от Let's Encrypt; `/mcp*`, `/api/v1*`, `/api/sync/v1*` и веб-UI наружу; legacy `/api/*` — 404 |
 
 ## Что защищает
 
@@ -27,8 +27,10 @@ Cursor / CI: один узел, данные в нём, доступ — Bearer-
 - **Частота** — 10 неудачных попыток с адреса и 600 запросов на токен в минуту,
   затем 429. Отказы — `auth.denied` в журнале хранилища:
   `sqlite3 home/access.db "select ts, payload from activity_event where kind='auth.denied' order by ts desc limit 20"`.
-- **Наружу** — только 443 (и 80 для выпуска сертификата). Веб-UI, legacy
-  `/api/*` и `POST /settings` гейта не имеют и через Caddy недоступны.
+- **Наружу** — только 443 (и 80 для выпуска сертификата). Legacy `/api/*`
+  (включая `POST /settings`) гейта не имеют и через Caddy отдают 404. Веб-UI
+  — за OIDC-логином (см. ниже): пока `COD_DOC_OIDC_ISSUER` не задан, SessionGate
+  cod-doc выключен, и открывать веб наружу нельзя.
 
 ## Первый запуск
 
@@ -107,6 +109,48 @@ journalctl -u cod-doc-routines -p err   # отказы — с текстом п�
 (`networks: {edge: {external: true, name: <сеть>}}`), допишите в его Caddyfile
 блок из `Caddyfile` этого каталога и выставьте `COD_DOC_TRUSTED_PROXIES` на
 подсеть этой сети.
+
+## Веб-UI: вход через Pocket ID (пасскей)
+
+Миграция 0056. Caddy отдаёт наружу веб-UI (`/`, `/p/*`, `/settings`, …); вход —
+authorization code flow через внешний OIDC-провайдер [Pocket ID](https://pocket-id.org)
+(passkey-only, self-hosted). Машины остаются на Bearer-токенах: провайдер
+пасскеев программным клиентам не подходит.
+
+### Один раз: приложение в Pocket ID
+
+1. Поднять Pocket ID (у себя, не в этом compose) и завести пользователя —
+   пасскей он добавит сам при первом входе.
+2. Administration → Applications → Add: получить **Client ID** и **Client Secret**;
+   Callback URL — `https://<COD_DOC_PUBLIC_HOST>/auth/oidc/callback`;
+   scopes — `openid profile email`.
+
+### Включить на узле
+
+```bash
+cat >> .env <<'EOF'
+COD_DOC_OIDC_ISSUER=https://<хост pocket-id>           # без /well-known, просто origin
+COD_DOC_OIDC_CLIENT_ID=<client id>
+COD_DOC_OIDC_CLIENT_SECRET=<client secret>
+COD_DOC_OIDC_REDIRECT_URI=https://cod-doc.example.dev/auth/oidc/callback
+EOF
+
+docker compose up -d --build cod-doc caddy
+docker compose exec cod-doc cod-doc access init       # если ещё нет
+```
+
+### Кого пускать: явная привязка, регистрации нет
+
+```bash
+# sub — «Subject» из Pocket ID: Users → пользователь → поле Subject ID
+docker compose exec cod-doc cod-doc oidc link alice <sub>
+docker compose exec cod-doc cod-doc oidc list          # кто уже привязан
+docker compose exec cod-doc cod-doc oidc unlink alice  # вход через провайдера закрыт
+```
+
+Вход без привязки — отказ (`SYNC-201` в журнале хранилища). Отключение актёра
+(`actor disable`) тоже закрывает веб-вход сразу. Сессия — подписанная кука на
+12 часов; `cod-doc access init` обязателен: без хранилища гейт отвечает 503.
 
 ## Чего здесь нет
 

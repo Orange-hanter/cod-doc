@@ -860,6 +860,8 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec("actor", _L),
     TableSpec("api_token", _L),
     TableSpec("project_member", _L),
+    # --- local: настройки веб-логина (0056) — ключ подписи сессии сервера
+    TableSpec("oidc_meta", _L),
 )
 
 

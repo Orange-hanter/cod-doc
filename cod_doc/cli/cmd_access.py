@@ -455,3 +455,64 @@ def actor_disable(handle: str, author: str) -> None:
     with _store_session() as session:
         access_service.disable_actor(session, handle=handle, author=author)
     console.print(f"[green]✓[/green] отключён: {handle}")
+
+
+# --- oidc ---------------------------------------------------------------------
+
+
+@click.group()
+def oidc() -> None:
+    """OIDC-привязки веб-логина (Pocket ID): sub → human-actor."""
+
+
+@oidc.command("link")
+@click.argument("handle")
+@click.argument("sub")
+@_author_opt
+def oidc_link(handle: str, sub: str, author: str) -> None:
+    """Привязать SUB провайдера к HANDLE: без привязки вход — отказ, регистрации нет."""
+    from cod_doc.services import access_service
+
+    with _store_session() as session:
+        access_service.oidc_link(session, handle=handle, sub=sub, author=author)
+    console.print(f"[green]✓[/green] {handle} ← sub {sub}")
+
+
+@oidc.command("unlink")
+@click.argument("handle")
+@_author_opt
+def oidc_unlink(handle: str, author: str) -> None:
+    """Снять OIDC-привязку HANDLE: вход через провайдера перестаёт работать."""
+    from cod_doc.services import access_service
+
+    with _store_session() as session:
+        removed = access_service.oidc_unlink(session, handle=handle, author=author)
+    if removed:
+        console.print(f"[green]✓[/green] снята привязка: {handle}")
+    else:
+        console.print(f"привязки нет: {handle}")
+
+
+@oidc.command("list")
+@_json_opt
+def oidc_list(as_json: bool) -> None:
+    """Актёры с OIDC-привязкой."""
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import ActorModel
+
+    with _store_session() as session:
+        pairs = session.execute(
+            select(ActorModel.handle, ActorModel.oidc_sub)
+            .where(ActorModel.oidc_sub.is_not(None))
+            .order_by(ActorModel.handle)
+        ).all()
+    rows = [{"handle": h, "sub": s} for h, s in pairs]
+    if as_json:
+        _echo_json(rows)
+        return
+    if not rows:
+        console.print("привязок нет")
+        return
+    for row in rows:
+        console.print(f"{row['handle']}  {row['sub']}")

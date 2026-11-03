@@ -146,6 +146,13 @@
       <a href="/settings"{% if request and request.url.path == '/settings' %} class="active"{% endif %}>Settings</a>
     </nav>
     <span class="topbar-spacer"></span>
+    {# 0056: хендл кладёт SessionGate в scope["state"]; без OIDC-фичи атрибута
+       нет — Jinja даёт Undefined, блок исчезает (веб как до входа). #}
+    {% set _web_handle = request.state.web_handle if request is defined else None %}
+    {% if _web_handle %}
+      <span class="cod-user" title="Вход через OIDC">{{ _web_handle }}</span>
+      <a href="/auth/logout">Выйти</a>
+    {% endif %}
     {# WUI-006: палитра поиска; хоткей — Cmd/Ctrl+K. #}
     <button type="button" class="cmdk-open" id="cmdk-open"
             aria-keyshortcuts="Control+K Meta+K" title="Search (Ctrl/⌘ K)">

@@ -20,7 +20,7 @@ from __future__ import annotations
 from sqlalchemy import Index as _Index
 from sqlalchemy import Table as _Table
 
-from .access import ActorModel, ApiTokenModel, ProjectMemberModel
+from .access import ActorModel, ApiTokenModel, OidcMetaModel, ProjectMemberModel
 from .activity import ActivityEventModel
 from .adrs import (
     ADRDiagramModel,
@@ -139,6 +139,7 @@ __all__ = [
     "ModuleCodeModel",
     "ModuleDependencyModel",
     "ModuleModel",
+    "OidcMetaModel",
     "OpenQuestionModel",
     "PlanModel",
     "PlanSectionModel",

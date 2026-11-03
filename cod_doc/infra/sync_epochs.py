@@ -65,6 +65,8 @@ MIGRATIONS: Mapping[str, bool] = MappingProxyType(
         "0054_plan_rank": True,
         # task.estimate_person_hours — уезжающая колонка (RFC 36 §3.2.3, ROAD-009).
         "0055_task_estimate": True,
+        # actor.oidc_sub и oidc_meta — local (миграция 0056): уезжающих колонок нет.
+        "0056_oidc_web_login": False,
     }
 )
 

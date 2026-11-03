@@ -4,7 +4,7 @@
 один человек с одним токеном видит все проекты, в которых он участник.
 Поэтому строки живут в отдельном хранилище доступа сервера
 (``services/access_service``), а не в БД проекта; таблицы есть в общей схеме
-ради одной цепочки миграций. Все три — ``local`` в ``sync_registry``: не
+ради одной цепочки миграций. Все они — ``local`` в ``sync_registry``: не
 уезжают никогда, токен чужой реплике незачем.
 
 ``project_member.project_uid`` — ``project.uid`` проекта, без FK: проект живёт
@@ -54,6 +54,9 @@ class ActorModel(Base):
     disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    #: ``sub`` из claims внешнего OIDC-провайдера (миграция 0056): по нему веб
+    #: находит актёра при входе через пасскей. NULL — привязки нет.
+    oidc_sub: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
 
 
 class ApiTokenModel(Base):
@@ -88,3 +91,12 @@ class ProjectMemberModel(Base):
         Text, ForeignKey(_ACTOR_FK, ondelete="CASCADE"), primary_key=True
     )
     role: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class OidcMetaModel(Base):
+    """Локальные настройки веб-логина сервера: ключ подписи сессии и т.п."""
+
+    __tablename__ = "oidc_meta"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
