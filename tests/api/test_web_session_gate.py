@@ -131,7 +131,7 @@ def test_gate_redirects_web_and_leaves_auth_static_api(
 ) -> None:
     r = web_client.get("/")
     assert r.status_code == 303
-    assert r.headers["location"] == "/auth/oidc/login?next=/"
+    assert r.headers["location"] == "/auth/oidc/login?next=%2F"
     # маршруты логина открыты, статика — тоже
     login = web_client.get("/auth/oidc/login")
     assert login.status_code == 303  # → провайдер
@@ -160,7 +160,7 @@ def test_full_login_flow_page_and_header(
     other = TestClient(web_client.app, follow_redirects=False)  # свежий клиент без кук
     r = other.get("/p/demo", follow_redirects=False)
     assert r.status_code == 303
-    assert "next=/p/demo" in r.headers["location"]
+    assert "next=%2Fp%2Fdemo" in r.headers["location"]
 
 
 def test_logout_clears_session(
@@ -220,6 +220,60 @@ def test_login_attempts_rate_limited(
     blocked = web_client.get("/auth/oidc/callback", params={"code": "good-code", "state": "forged"})
     assert blocked.status_code == 429
     assert int(blocked.headers["retry-after"]) > 0
+
+
+def test_gate_next_preserves_query(
+    store: None, linked: None, oidc_env: None, idp: None, web_client: TestClient
+) -> None:
+    """``&`` внутри query не режет ``next``: значение — urlencode-параметр."""
+    r = web_client.get("/p/demo?tag=a&b=2", follow_redirects=False)
+    assert r.status_code == 303
+    location = r.headers["location"]
+    assert location == "/auth/oidc/login?next=%2Fp%2Fdemo%3Ftag%3Da%26b%3D2"
+    # полный вход возвращает ровно на исходный адрес с query
+    r = web_client.get(location, follow_redirects=False)
+    assert r.status_code == 303  # → провайдер
+    state = web_client.cookies[oidc_service.STATE_COOKIE]
+    r = web_client.get("/auth/oidc/callback", params={"code": "good-code", "state": state})
+    assert r.status_code == 303, r.text
+    assert r.headers["location"] == "/p/demo?tag=a&b=2"
+
+
+def test_non_ascii_state_cookie_denied_not_500(
+    store: None, linked: None, oidc_env: None, idp: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """compare_digest на байтах: кука с не-ASCII — отказ, не TypeError/500.
+
+    httpx2-клиент не пускает не-ASCII в заголовки, поэтому хендлер зовётся
+    напрямую с сырым scope: настоящий браузер шлёт байты, приложение
+    декодирует их латин-1 — в строке куки не-ASCII.
+    """
+    from starlette.requests import Request
+
+    from cod_doc.api.web.pages import auth as auth_page
+    from cod_doc.config import Config
+
+    monkeypatch.setattr(
+        auth_page,
+        "get_config",
+        lambda: Config(
+            oidc_issuer="https://idp.example",
+            oidc_client_id="cid",
+            oidc_client_secret="sec",
+            oidc_redirect_uri="https://cod-doc.example.dev/auth/oidc/callback",
+        ),
+    )
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/auth/oidc/callback",
+        "query_string": b"code=good-code&state=x",
+        "headers": [(b"cookie", f"{oidc_service.STATE_COOKIE}=ññ".encode("latin-1"))],
+        "client": ("1.2.3.4", 1),
+    }
+    response = auth_page.oidc_callback(Request(scope), code="good-code", state="x")
+    assert response.status_code == 403
+    assert [d["code"] for d in _denials()] == ["SYNC-201"]
 
 
 async def test_websocket_without_session_closed(monkeypatch: pytest.MonkeyPatch) -> None:

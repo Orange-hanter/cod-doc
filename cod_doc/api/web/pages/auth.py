@@ -111,11 +111,14 @@ def oidc_callback(request: Request, code: str = "", state: str = "", error: str 
         return _deny_login(request, ip=ip, path=path, message=f"провайдер вернул отказ: {error}")
     cookie_state = request.cookies.get(oidc_service.STATE_COOKIE, "")
     verifier = request.cookies.get(oidc_service.VERIFIER_COOKIE, "")
+    # Кука — клиентский вход: байты, не str. compare_digest на str с
+    # не-ASCII (латин-1 декод заголовка) бросил бы TypeError → 500 (ревью #282,
+    # раунд 2); на bytes допустим любой ввод.
     state_ok = (
         bool(code)
         and bool(state)
         and bool(cookie_state)
-        and hmac.compare_digest(cookie_state, state)
+        and hmac.compare_digest(cookie_state.encode("utf-8"), state.encode("utf-8"))
     )
     if not state_ok or not verifier:
         return _deny_login(

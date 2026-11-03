@@ -305,6 +305,10 @@ def test_token_error_body_without_json_uses_status(monkeypatch: pytest.MonkeyPat
     )
     with pytest.raises(oidc_service.OidcError, match="502"):
         oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+    # JSON-массив (валидный JSON, но не объект) — статус, а не AttributeError
+    monkeypatch.setattr(oidc_service.httpx, "post", lambda *a, **k: _fake_response(400, "[1, 2]"))
+    with pytest.raises(oidc_service.OidcError, match="400"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
 
 
 def test_non_ascii_and_broken_cookies_are_none() -> None:

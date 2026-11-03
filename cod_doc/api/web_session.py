@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Final
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 import anyio.to_thread
 
@@ -119,16 +119,21 @@ def _cookie(scope: Scope, name: str) -> str | None:
 
 
 async def _send_login(send: Send, scope: Scope) -> None:
-    """303 на страницу логина; ``next`` — путь+query запроса (свой ASGI scope)."""
-    nxt = quote(scope["path"], safe="/")
+    """303 на страницу логина; ``next`` — путь+query запроса (свой ASGI scope).
+
+    ``next`` кладётся как значение параметра через urlencode: сырой ``&``
+    внутри query обрезал бы адрес возврата (ревью #282, раунд 2), а
+    percent-кодировка оставляет заголовок latin-1-безопасным.
+    """
+    nxt = scope["path"]
     query = scope.get("query_string")
     if query:
-        nxt += "?" + quote(bytes(query).decode("utf-8", "replace"), safe="=&")
+        nxt += "?" + bytes(query).decode("utf-8", "replace")
     body = b""
     headers = [
         (b"content-type", b"text/plain; charset=utf-8"),
         (b"content-length", str(len(body)).encode()),
-        (b"location", f"{_LOGIN_PATH}?next={nxt}".encode("latin-1")),
+        (b"location", (_LOGIN_PATH + "?" + urlencode({"next": nxt})).encode("latin-1")),
     ]
     await send({"type": "http.response.start", "status": _HTTP_SEE_OTHER, "headers": headers})
     await send({"type": "http.response.body", "body": body})

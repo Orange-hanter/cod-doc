@@ -165,10 +165,16 @@ def exchange_code(cfg: Config, discovery: dict[str, Any], *, code: str, verifier
         msg = f"token endpoint недоступен: {type(exc).__name__}"
         raise OidcError(msg) from exc
     if response.status_code != _HTTP_OK:
+        # Тело отказа — что угодно: HTML прокси, JSON-массив, пустота.
         try:
-            detail = response.json().get("error", response.status_code)
-        except ValueError:  # HTML/пустота от провайдера или прокси — не JSON
-            detail = response.status_code
+            body: Any = response.json()
+        except ValueError:
+            body = None
+        detail = (
+            body.get("error", response.status_code)
+            if isinstance(body, dict)
+            else response.status_code
+        )
         msg = f"обмен кода не удался: {detail}"
         raise OidcError(msg)
     token: str | None = _json_body(response, what="token endpoint").get("access_token")

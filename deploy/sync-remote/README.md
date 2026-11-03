@@ -29,8 +29,9 @@ Cursor / CI: один узел, данные в нём, доступ — Bearer-
   `sqlite3 home/access.db "select ts, payload from activity_event where kind='auth.denied' order by ts desc limit 20"`.
 - **Наружу** — только 443 (и 80 для выпуска сертификата). Legacy `/api/*`
   (включая `POST /settings`) гейта не имеют и через Caddy отдают 404. Веб-UI
-  — за OIDC-логином (см. ниже): пока `COD_DOC_OIDC_ISSUER` не задан, SessionGate
-  cod-doc выключен, и открывать веб наружу нельзя.
+  — за OIDC-логином (см. ниже) и только при явном `COD_DOC_WEB_PUBLIC=1`:
+  без переменной Caddy отвечает на веб 404, потому что SessionGate cod-doc
+  включён лишь тогда, когда заданы `COD_DOC_OIDC_*` (ревью #282, раунд 2).
 
 ## Первый запуск
 
@@ -133,6 +134,7 @@ COD_DOC_OIDC_ISSUER=https://<хост pocket-id>           # без /well-known,
 COD_DOC_OIDC_CLIENT_ID=<client id>
 COD_DOC_OIDC_CLIENT_SECRET=<client secret>
 COD_DOC_OIDC_REDIRECT_URI=https://cod-doc.example.dev/auth/oidc/callback
+COD_DOC_WEB_PUBLIC=1                                   # открыть веб через Caddy; нет — веб 404
 EOF
 
 docker compose up -d --build cod-doc caddy
