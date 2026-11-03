@@ -32,6 +32,7 @@ from cod_doc.services import oidc_service
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sqlalchemy.orm import Session, sessionmaker
     from starlette.types import ASGIApp, Receive, Scope, Send
 
 __all__ = ["SessionGate", "is_web_session_path"]
@@ -43,6 +44,8 @@ _WS_POLICY_VIOLATION: Final = 1008
 #: Префиксы вне гейта: JSON API — у BearerGate, логин — сам гейт, статика — открыта.
 _OPEN_SEGMENTS: Final = ("/api", "/auth", "/static")
 _LOGIN_PATH: Final = "/auth/oidc/login"
+#: ``store_url → (factory, ключ)`` после первого успешного резолва (см. SessionGate).
+_GATE_CACHE: dict[str | None, tuple[sessionmaker[Session], bytes]] = {}
 
 
 def is_web_session_path(path: str) -> bool:
@@ -59,7 +62,15 @@ def is_web_session_path(path: str) -> bool:
 
 
 class SessionGate:
-    """ASGI-middleware веб-сессии; ``protected(path)`` решает, какие пути закрыты."""
+    """ASGI-middleware веб-сессии; ``protected(path)`` решает, какие пути закрыты.
+
+    Хранилище и ключ подписи резолвятся один раз и живут в модульном
+    ``_GATE_CACHE`` по ``store_url`` (ревью #282, раунд 4): до включения
+    фичи (issuer пуст или хранилища нет) проверка остаётся на каждый запрос,
+    чтобы ``access init`` включал гейт без рестарта, а горячий путь не платил
+    за диски. Гейт у приложения один, но кэш — модульный: экземпляр
+    middleware живёт на модульном ``app``, и тесты сбрасывают кэш фикстурой.
+    """
 
     def __init__(
         self,
@@ -76,24 +87,13 @@ class SessionGate:
         if scope["type"] not in ("http", "websocket") or not self.protected(scope["path"]):
             await self.app(scope, receive, send)
             return
-        from cod_doc.config import Config
-        from cod_doc.services import access_service
-
-        # Config.load() читает диск (mtime-кэш) — как open_store/session_key,
-        # вне event loop: HTML-страница с десятком HTMX-фрагментов не должна
-        # блокировать loop на каждом запросе.
-        cfg = await anyio.to_thread.run_sync(Config.load)
-        if not oidc_service.oidc_configured(cfg):
-            await self.app(scope, receive, send)
-            return
-        factory = await anyio.to_thread.run_sync(access_service.open_store, self.store_url)
-        if factory is None:
-            if scope["type"] == "websocket":
-                await _send_close(send)
-                return
-            await _send_unavailable(send)
-            return
-        key = await anyio.to_thread.run_sync(oidc_service.session_key, factory)
+        resolved = _GATE_CACHE.get(self.store_url)
+        if resolved is None:
+            resolved = await self._resolve(scope, receive, send)
+            if resolved is None:
+                return  # либо пропущено (фича выключена), либо отказ уже отправлен
+            _GATE_CACHE[self.store_url] = resolved
+        factory, key = resolved
         payload = oidc_service.read_session(key, _cookie(scope, oidc_service.SESSION_COOKIE))
         ws = scope["type"] == "websocket"
         if payload is None:
@@ -102,9 +102,42 @@ class SessionGate:
                 return
             await _send_login(send, scope)
             return
+        # F3 аудита (ревью #282, раунд 4): stateless-кука не отзывается сама —
+        # гейт сверяет актёра, disable/unlink закрывают вход сразу, не дожидаясь TTL.
+        actor_uid = str(payload.get("actor_uid", ""))
+        alive = await anyio.to_thread.run_sync(oidc_service.session_actor_alive, factory, actor_uid)
+        if not alive:
+            if ws:
+                await _send_close(send)
+                return
+            await _send_login(send, scope)
+            return
         # Хендл для шапки шаблонов; identity не биндим — авторизация веба не менялась.
         scope.setdefault("state", {})["web_handle"] = str(payload.get("handle", ""))
         await self.app(scope, receive, send)
+
+    async def _resolve(
+        self, scope: Scope, receive: Receive, send: Send
+    ) -> tuple[sessionmaker[Session], bytes] | None:
+        """Конфиг → хранилище → ключ; ``None`` — пропуск или отказ уже отправлены."""
+        from cod_doc.config import Config
+        from cod_doc.services import access_service
+
+        # Config.load() читает диск (mtime-кэш) — вне event loop, как и
+        # open_store/session_key ниже.
+        cfg = await anyio.to_thread.run_sync(Config.load)
+        if not oidc_service.oidc_configured(cfg):
+            await self.app(scope, receive, send)
+            return None
+        factory = await anyio.to_thread.run_sync(access_service.open_store, self.store_url)
+        if factory is None:
+            if scope["type"] == "websocket":
+                await _send_close(send)
+            else:
+                await _send_unavailable(send)
+            return None
+        key = await anyio.to_thread.run_sync(oidc_service.session_key, factory)
+        return (factory, key)
 
 
 def _cookie(scope: Scope, name: str) -> str | None:

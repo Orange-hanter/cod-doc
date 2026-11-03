@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlencode
 
 import httpx
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra.models import OidcMetaModel
 
@@ -59,6 +60,7 @@ __all__ = [
     "oidc_configured",
     "pkce_pair",
     "read_session",
+    "session_actor_alive",
     "session_key",
 ]
 
@@ -76,6 +78,10 @@ _SCOPES: Final = "openid profile email"
 _SESSION_KEY_NAME: Final = "session_key"
 _KEY_BYTES: Final = 32
 _HTTP_OK: Final = 200
+#: Discovery-кэш: url → (monotonic-время, документ). Провайдер меняет документ
+#: редко; TTL держит и login, и callback одного входа в одном снимке.
+_DISCOVERY_TTL: Final = 600.0
+_DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 class OidcError(ValueError):
@@ -105,8 +111,16 @@ def _json_body(response: httpx.Response, *, what: str) -> dict[str, Any]:
 
 
 def discover(cfg: Config) -> dict[str, Any]:
-    """Документ ``/.well-known/openid-configuration`` провайдера."""
+    """Документ ``/.well-known/openid-configuration`` провайдера.
+
+    Кэш на TTL: логин ходит в discovery дважды (login и callback), а меняется
+    документ у провайдера редко (ревью #282, раунд 4).
+    """
     url = cfg.oidc_issuer.rstrip("/") + "/.well-known/openid-configuration"
+    now = time.monotonic()
+    hit = _DISCOVERY_CACHE.get(url)
+    if hit is not None and now - hit[0] < _DISCOVERY_TTL:
+        return hit[1]
     try:
         response = httpx.get(url, timeout=10)
     except httpx.HTTPError as exc:
@@ -115,7 +129,9 @@ def discover(cfg: Config) -> dict[str, Any]:
     if response.status_code != _HTTP_OK:
         msg = f"discovery {url}: HTTP {response.status_code}"
         raise OidcError(msg)
-    return _json_body(response, what="discovery")
+    doc = _json_body(response, what="discovery")
+    _DISCOVERY_CACHE[url] = (now, doc)
+    return doc
 
 
 def authorize_url(cfg: Config, discovery: dict[str, Any], *, state: str, challenge: str) -> str:
@@ -271,12 +287,16 @@ def read_session(key: bytes, value: str | None) -> dict[str, Any] | None:
     if not hmac.compare_digest(sig, expected):
         return None
     try:
-        payload: dict[str, Any] = json.loads(_b64decode(payload_b64))
+        payload: Any = json.loads(_b64decode(payload_b64))
     except ValueError:  # JSONDecodeError и binascii.Error — оба его подклассы
         return None
-    if not isinstance(payload.get("exp"), int) or payload["exp"] < time.time():
+    # JSON может быть невалидной формы: null, число, массив — не сессия.
+    if not isinstance(payload, dict):
         return None
-    return payload
+    typed: dict[str, Any] = payload
+    if not isinstance(typed.get("exp"), int) or typed["exp"] < time.time():
+        return None
+    return typed
 
 
 # --- ключ подписи -------------------------------------------------------------
@@ -286,7 +306,8 @@ def session_key(factory: sessionmaker[Session]) -> bytes:
     """Ключ подписи кукисессии из ``oidc_meta``; генерируется при первом входе.
 
     Хранилище обязано быть: гейт при ``factory is None`` закрывает узел сам
-    (SYNC-205), а не зовёт сюда.
+    (SYNC-205), а не зовёт сюда. Гонка первых входов (get-then-add, ревью #282
+    раунд 4) решается PK: проигравший перечитывает ключ победителя.
     """
     with factory() as session:
         row = session.get(OidcMetaModel, _SESSION_KEY_NAME)
@@ -294,8 +315,29 @@ def session_key(factory: sessionmaker[Session]) -> bytes:
             return bytes.fromhex(row.value)
         key = secrets.token_bytes(_KEY_BYTES)
         session.add(OidcMetaModel(key=_SESSION_KEY_NAME, value=key.hex()))
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            row = session.get(OidcMetaModel, _SESSION_KEY_NAME)
+            if row is None:  # pragma: no cover — INSERT проигран, но строки нет
+                raise
+            return bytes.fromhex(row.value)
         return key
+
+
+def session_actor_alive(factory: sessionmaker[Session], actor_uid: str) -> bool:
+    """Жив ли актёр сессии: существует, не отключён, привязка на месте.
+
+    Ревью #282, раунд 4 (F3 аудита): stateless-кука сама не отзывается —
+    гейт сверяет актёра на каждый запрос, и ``actor disable``/``oidc unlink``
+    закрывают веб-вход сразу, не дожидаясь TTL.
+    """
+    from cod_doc.infra.models import ActorModel
+
+    with factory() as session:
+        actor = session.get(ActorModel, actor_uid)
+        return actor is not None and not actor.disabled and actor.oidc_sub is not None
 
 
 # --- транзакционные обёртки для маршрута ---------------------------------------

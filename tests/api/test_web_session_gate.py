@@ -34,12 +34,17 @@ _IDP_DISCOVERY = {
 
 @pytest.fixture(autouse=True)
 def _reset_login_limiter() -> Iterator[None]:
-    """Лимитер логина — модульная переменная: между тестами чистим окно."""
+    """Модульное состояние между тестами: лимитер логина, кэш гейта, discovery."""
     from cod_doc.api.web.pages import auth as auth_page
+    from cod_doc.api.web_session import _GATE_CACHE
 
     auth_page._FAILS._hits.clear()
+    _GATE_CACHE.clear()
+    oidc_service._DISCOVERY_CACHE.clear()
     yield
     auth_page._FAILS._hits.clear()
+    _GATE_CACHE.clear()
+    oidc_service._DISCOVERY_CACHE.clear()
 
 
 @pytest.fixture
@@ -170,6 +175,19 @@ def test_logout_clears_session(
     r = web_client.get("/auth/logout")
     assert r.status_code == 303
     assert web_client.get("/").status_code == 303  # сессии больше нет
+
+
+def test_disabled_actor_session_dies_immediately(
+    store: None, linked: None, oidc_env: None, idp: None, web_client: TestClient
+) -> None:
+    """F3 (ревью #282, раунд 4): actor disable закрывает веб-вход сразу, не дожидаясь TTL."""
+    _login(web_client)
+    assert web_client.get("/").status_code == 200  # сессия жива
+    factory = acc.open_store()
+    assert factory is not None
+    with transactional(factory) as s:
+        acc.disable_actor(s, handle="alice", author=ADMIN)
+    assert web_client.get("/").status_code == 303  # сессия умерла вместе с актёром
 
 
 def test_unknown_sub_denied_and_logged(

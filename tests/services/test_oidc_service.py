@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
+import secrets
 from typing import TYPE_CHECKING
 
 import httpx
@@ -201,6 +203,91 @@ def test_session_key_stable_per_store(tmp_path: Path) -> None:
         assert oidc_service.session_key(factory2) != key
     finally:
         acc._ENGINES.clear()
+
+
+def test_session_key_race_reads_winner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Гонка первых входов (ревью #282, раунд 4): PK решает — проигравший
+    перечитывает ключ победителя, а не падает на IntegrityError.
+
+    «Параллельная транзакция» закоммитила ключ раньше; наша сессия делает
+    одно stale-чтение (get → None), идёт вставлять — и бьётся о PK.
+    """
+    from sqlalchemy.orm import Session as OrmSession
+
+    from cod_doc.infra.models import OidcMetaModel
+
+    url = f"sqlite:///{tmp_path / 'access.db'}"
+    acc.init_store(url)
+    factory = acc.open_store(url)
+    assert factory is not None
+    winner = secrets.token_bytes(32)
+    with factory() as s:
+        s.add(OidcMetaModel(key=oidc_service._SESSION_KEY_NAME, value=winner.hex()))
+        s.commit()
+    real_get = OrmSession.get
+    stale_seen: list[object] = []
+
+    def stale_first(self: OrmSession, entity: object, key: object) -> object:
+        if (
+            entity is OidcMetaModel
+            and key == oidc_service._SESSION_KEY_NAME
+            and key not in stale_seen
+        ):
+            stale_seen.append(key)
+            return None  # гонка: строка в БД уже есть, мы её ещё не видим
+        return real_get(self, entity, key)  # type: ignore[arg-type,return-value]
+
+    monkeypatch.setattr(OrmSession, "get", stale_first)
+    try:
+        assert oidc_service.session_key(factory) == winner
+    finally:
+        acc._ENGINES.clear()
+
+
+def test_discovery_cached_per_issuer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Кэш discovery (ревью #282, раунд 4): второй логин не ходит в сеть."""
+    calls = {"n": 0}
+
+    def fake_get(url: str, timeout: float = 0) -> httpx.Response:
+        calls["n"] += 1
+        return _fake_response(200, json.dumps(dict(_DISCOVERY)))
+
+    cfg = Config(oidc_issuer="https://idp.example")
+    oidc_service._DISCOVERY_CACHE.clear()
+    monkeypatch.setattr(oidc_service.httpx, "get", fake_get)
+    try:
+        assert oidc_service.discover(cfg) == _DISCOVERY
+        assert oidc_service.discover(cfg) == _DISCOVERY
+        assert calls["n"] == 1  # второй вызов — из кэша
+        # другой issuer — свой снимок
+        cfg2 = Config(oidc_issuer="https://other.example")
+        assert oidc_service.discover(cfg2) == _DISCOVERY
+        assert calls["n"] == 2
+    finally:
+        oidc_service._DISCOVERY_CACHE.clear()
+
+
+def test_signed_garbage_payload_rejected() -> None:
+    """Валидная подпись над мусорным payload — не сессия (ревью #282, раунд 4)."""
+    key = b"k" * 32
+    for payload_b64 in ("Z2FyYmFnZQ", "bnVsbA", "WzM"):  # b64: "garbage", "null", "[3"
+        sig = hmac.new(key, payload_b64.encode(), hashlib.sha256).digest()
+        value = payload_b64 + "." + base64.urlsafe_b64encode(sig).rstrip(b"=").decode()
+        assert oidc_service.read_session(key, value) is None, payload_b64
+
+
+def test_session_actor_alive_tracks_disable_and_unlink(
+    store: sessionmaker,  # type: ignore[type-arg]
+) -> None:
+    """F3 (ревью #282, раунд 4): сессия умирает вместе с актёром."""
+    _link_alice(store)
+    with store() as s:
+        uid = s.scalar(select(acc.ActorModel.uid).where(acc.ActorModel.handle == "alice"))
+    assert uid is not None
+    assert oidc_service.session_actor_alive(store, uid)
+    with transactional(store) as s:
+        acc.disable_actor(s, handle="alice", author=ADMIN)
+    assert not oidc_service.session_actor_alive(store, uid)
 
 
 # --- PKCE и authorize URL --------------------------------------------------------

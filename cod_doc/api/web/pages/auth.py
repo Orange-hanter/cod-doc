@@ -135,7 +135,12 @@ def oidc_callback(request: Request, code: str = "", state: str = "", error: str 
         return _deny_login(
             request, ip=ip, path=path, message="хранилища доступа нет: cod-doc access init"
         )
-    sub = str(claims["sub"])
+    # fetch_userinfo уже гарантует sub, но контракт коллаборатора дешевле
+    # не доверять: пропуск/не-строка — штатный отказ, не KeyError → 500.
+    raw_sub = claims.get("sub")
+    if not isinstance(raw_sub, str) or not raw_sub:
+        return _deny_login(request, ip=ip, path=path, message="вход не выполнен: нет sub")
+    sub = raw_sub
     identity = oidc_service.login_with_store(factory, sub=sub, ip=ip)
     if identity is None:
         return _deny_login(
