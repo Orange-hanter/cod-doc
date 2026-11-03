@@ -140,7 +140,7 @@ def test_gate_redirects_web_and_leaves_auth_static_api(
     # маршруты логина открыты, статика — тоже
     login = web_client.get("/auth/oidc/login")
     assert login.status_code == 303  # → провайдер
-    assert web_client.get("/static/favicon.svg").status_code != 303
+    assert web_client.get("/static/favicon.svg").status_code == 200
     # /api/v1 остаётся за Bearer-гейтом; legacy API — как раньше
     assert web_client.get("/api/v1/projects").status_code == 401
     assert web_client.get("/api/health").status_code == 200
