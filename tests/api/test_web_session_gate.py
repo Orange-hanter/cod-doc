@@ -216,11 +216,16 @@ def test_state_mismatch_denied(
 def test_idp_error_param_denied(
     store: None, linked: None, oidc_env: None, idp: None, web_client: TestClient
 ) -> None:
+    """Отмена входа у провайдера — страница ошибки, но не «перебор»:
+    лимитер и журнал auth.denied не трогаем (ревью #282, раунд 5)."""
     web_client.get("/auth/oidc/login", follow_redirects=False)
     state = web_client.cookies[oidc_service.STATE_COOKIE]
     r = web_client.get("/auth/oidc/callback", params={"error": "access_denied", "state": state})
     assert r.status_code == 403
     assert "access_denied" in r.text
+    assert _denials() == []  # отмена — не атака
+    # и лимитер цел: следующая попытка логина не встречает 429
+    assert web_client.get("/auth/oidc/login", follow_redirects=False).status_code == 303
 
 
 def test_login_attempts_rate_limited(

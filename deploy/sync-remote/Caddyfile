@@ -32,10 +32,11 @@
 	}
 
 	# Веб за OIDC-логином: маршруты логина, статика, live-обновления и страницы.
-	# Дефолт закрытый вдвойне (ревью #282, раунды 2–3): нужен и явный
-	# COD_DOC_WEB_PUBLIC=1, и настроенный COD_DOC_OIDC_ISSUER — без обоих веб
-	# отвечает 404, потому что SessionGate cod-doc без OIDC-переменных выключен.
-	@web_off expression `{env.COD_DOC_WEB_PUBLIC} != "1" || {env.COD_DOC_OIDC_ISSUER} == ""`
+	# Дефолт закрытый (ревью #282, раунды 2–5): веб открывается только при
+	# явном COD_DOC_WEB_PUBLIC=1 И полной OIDC-конфигурации — ровно те три
+	# переменные, по которым SessionGate cod-doc считает себя включённым.
+	# Любая неполная — 404: гейт выключен, открывать нечего (fail-closed).
+	@web_off expression `{env.COD_DOC_WEB_PUBLIC} != "1" || {env.COD_DOC_OIDC_ISSUER} == "" || {env.COD_DOC_OIDC_CLIENT_ID} == "" || {env.COD_DOC_OIDC_CLIENT_SECRET} == ""`
 	handle /auth/* {
 		respond @web_off 404
 		reverse_proxy cod-doc:8765

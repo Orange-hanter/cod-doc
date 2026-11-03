@@ -104,8 +104,15 @@ class SessionGate:
             return
         # F3 аудита (ревью #282, раунд 4): stateless-кука не отзывается сама —
         # гейт сверяет актёра, disable/unlink закрывают вход сразу, не дожидаясь TTL.
+        # Сбой проверки (хранилище мигнуло) — fail-closed на логин, не 500:
+        # незнакомое состояние доступа не должно открывать веб (ревью #282, раунд 5).
         actor_uid = str(payload.get("actor_uid", ""))
-        alive = await anyio.to_thread.run_sync(oidc_service.session_actor_alive, factory, actor_uid)
+        try:
+            alive = await anyio.to_thread.run_sync(
+                oidc_service.session_actor_alive, factory, actor_uid
+            )
+        except Exception:
+            alive = False
         if not alive:
             if ws:
                 await _send_close(send)

@@ -141,9 +141,10 @@ docker compose up -d --build cod-doc caddy
 docker compose exec cod-doc cod-doc access init       # если ещё нет
 ```
 
-Caddy открывает веб только при **обеих** условиях: `COD_DOC_WEB_PUBLIC=1`
-и непустой `COD_DOC_OIDC_ISSUER` — без логина наружу не откроется
-(ревью #282, раунд 3).
+Caddy открывает веб только при **полной** конфигурации: `COD_DOC_WEB_PUBLIC=1`
+и все три `COD_DOC_OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET` непустые — ровно те,
+по которым SessionGate cod-doc считает себя включённым. Любая неполная —
+веб 404 (fail-closed, ревью #282, раунды 2–5).
 
 ### Кого пускать: явная привязка, регистрации нет
 

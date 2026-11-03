@@ -196,11 +196,12 @@ def exchange_code(cfg: Config, discovery: dict[str, Any], *, code: str, verifier
         )
         msg = f"обмен кода не удался: {detail}"
         raise OidcError(msg)
-    token: str | None = _json_body(response, what="token endpoint").get("access_token")
-    if not token:
+    raw_token: Any = _json_body(response, what="token endpoint").get("access_token")
+    # Не-строка (число, объект) — кривой провайдер, а не токен (ревью #282, раунд 5).
+    if not isinstance(raw_token, str) or not raw_token:
         msg = "в ответе token endpoint нет access_token"
         raise OidcError(msg)
-    return token
+    return raw_token
 
 
 def fetch_userinfo(discovery: dict[str, Any], access_token: str) -> dict[str, Any]:

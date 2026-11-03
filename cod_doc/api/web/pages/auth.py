@@ -108,7 +108,10 @@ def oidc_callback(request: Request, code: str = "", state: str = "", error: str 
     if (retry := _FAILS.retry_after(ip)) > 0:
         return _too_many(retry)
     if error:
-        return _deny_login(request, ip=ip, path=path, message=f"провайдер вернул отказ: {error}")
+        # Пользователь отменил вход у провайдера (access_denied) — это не
+        # перебор: лимитер и журнал не трогаем, только страница ошибки
+        # (ревью #282, раунд 5).
+        return _error_page(request, f"провайдер вернул отказ: {error}")
     cookie_state = request.cookies.get(oidc_service.STATE_COOKIE, "")
     verifier = request.cookies.get(oidc_service.VERIFIER_COOKIE, "")
     # Кука — клиентский вход: байты, не str. compare_digest на str с

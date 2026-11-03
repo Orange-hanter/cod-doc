@@ -72,9 +72,12 @@ services:
       - "443:443"
     environment:
       COD_DOC_PUBLIC_HOST: ${COD_DOC_PUBLIC_HOST}
-      # Веб наружу (см. Caddyfile): нужно ОБА — флаг и настроенный issuer.
+      # Веб наружу (см. Caddyfile): нужен флаг И полная OIDC-конфигурация —
+      # та же тройка, по которой SessionGate cod-doc считает себя включённым.
       COD_DOC_WEB_PUBLIC: ${COD_DOC_WEB_PUBLIC:-0}
       COD_DOC_OIDC_ISSUER: ${COD_DOC_OIDC_ISSUER:-}
+      COD_DOC_OIDC_CLIENT_ID: ${COD_DOC_OIDC_CLIENT_ID:-}
+      COD_DOC_OIDC_CLIENT_SECRET: ${COD_DOC_OIDC_CLIENT_SECRET:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
