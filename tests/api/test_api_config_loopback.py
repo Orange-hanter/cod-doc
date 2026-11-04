@@ -70,6 +70,7 @@ def test_read_config_never_leaks_secrets(monkeypatch: pytest.MonkeyPatch) -> Non
         api_key="sk-llm-secret",
         anthropic_api_key="sk-ant-secret",
         embedding_api_key="sk-or-secret",
+        oidc_client_secret="sk-oidc-secret",  # 0056: веб-логин Pocket ID
     )
     monkeypatch.setattr(routes, "get_config", lambda: cfg)
 

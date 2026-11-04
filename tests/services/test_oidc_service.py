@@ -1,0 +1,440 @@
+"""0056: OIDC веб-логин — привязка sub→actor, кукисессия, ключ подписи.
+
+Сеть (discovery/обмен/userinfo) не мокается — её не зовут: тестируются
+чистые функции (`authorize_url`, `pkce_pair`, sign/verify) и доступ к
+хранилищу (`oidc_link`, `authenticate_by_sub`, `session_key`).
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import secrets
+from typing import TYPE_CHECKING
+
+import httpx
+import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from cod_doc.config import Config
+from cod_doc.infra.db import transactional
+from cod_doc.infra.models import ActivityEventModel
+from cod_doc.services import access_service as acc
+from cod_doc.services import oidc_service
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+    from sqlalchemy.orm import sessionmaker
+
+ADMIN = "human:root"
+SUB = "sub-alice-1"
+
+_DISCOVERY = {
+    "authorization_endpoint": "https://idp.example/authorize",
+    "token_endpoint": "https://idp.example/token",
+    "userinfo_endpoint": "https://idp.example/userinfo",
+}
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> Iterator[sessionmaker]:  # type: ignore[type-arg]
+    url = f"sqlite:///{tmp_path / 'access.db'}"
+    acc.init_store(url)
+    factory = acc.open_store(url)
+    assert factory is not None
+    yield factory
+    acc._ENGINES.clear()
+
+
+def _link_alice(factory: sessionmaker) -> None:  # type: ignore[type-arg]
+    with transactional(factory) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+        acc.oidc_link(s, handle="alice", sub=SUB, author=ADMIN)
+
+
+# --- конфиг -------------------------------------------------------------------
+
+
+def test_configured_requires_all_three() -> None:
+    assert not oidc_service.oidc_configured(Config())
+    assert oidc_service.oidc_configured(
+        Config(oidc_issuer="https://i", oidc_client_id="c", oidc_client_secret="s")
+    )
+    assert not oidc_service.oidc_configured(
+        Config(oidc_issuer="https://i", oidc_client_id="c", oidc_client_secret="")
+    )
+
+
+def test_client_secret_is_declared_secret() -> None:
+    from cod_doc.config import SECRET_FIELDS
+
+    assert "oidc_client_secret" in SECRET_FIELDS
+
+
+# --- привязка и вход -----------------------------------------------------------
+
+
+def test_link_then_login_by_sub(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    _link_alice(store)
+    with store() as s:
+        identity = acc.authenticate_by_sub(s, SUB)
+    assert identity is not None
+    assert identity.handle == "alice"
+    assert identity.kind == acc.KIND_HUMAN
+    assert identity.token_label == acc.OIDC_LABEL
+    assert identity.roles.get("p1") == "admin"
+    assert identity.authors["alice"] == acc.KIND_HUMAN
+
+
+def test_unknown_and_unlinked_sub_rejected(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    _link_alice(store)
+    with store() as s:
+        assert acc.authenticate_by_sub(s, "nobody") is None
+        acc.oidc_unlink(s, handle="alice", author=ADMIN)
+        assert acc.authenticate_by_sub(s, SUB) is None
+
+
+def test_disabled_actor_rejected(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    _link_alice(store)
+    with transactional(store) as s:
+        acc.disable_actor(s, handle="alice", author=ADMIN)
+    with store() as s:
+        assert acc.authenticate_by_sub(s, SUB) is None
+
+
+def test_agent_cannot_be_linked(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+        acc.add_agent(s, owner="alice", name="bot", author=ADMIN)
+        with pytest.raises(acc.AccessError, match="только человеку"):
+            acc.oidc_link(s, handle="alice/bot", sub=SUB, author=ADMIN)
+        with pytest.raises(acc.AccessError, match="пробел"):
+            acc.oidc_link(s, handle="alice", sub="two words", author=ADMIN)
+
+
+def test_sub_taken_by_other_actor(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+        acc.add_member(s, handle="bob", project_uid="p1", role="admin", author=ADMIN)
+        acc.oidc_link(s, handle="alice", sub=SUB, author=ADMIN)
+        with pytest.raises(acc.AccessError, match="уже привязан"):
+            acc.oidc_link(s, handle="bob", sub=SUB, author=ADMIN)
+        # тот же актёр, тот же sub — идемпотентно
+        assert acc.oidc_link(s, handle="alice", sub=SUB, author=ADMIN) is None
+
+
+def test_oidc_link_race_maps_integrity_error(
+    store: sessionmaker, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[type-arg]
+    """Гонка: pre-check не видит параллельную транзакцию, UNIQUE индекс решает.
+
+    Параллельную транзакцию имитируем боем ``flush`` на UNIQUE-индексе —
+    контракт тот же: ``AccessError``, а не сырой IntegrityError (ревью #282).
+    """
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise IntegrityError("INSERT INTO actor …", {}, Exception("UNIQUE uq_actor_oidc_sub"))
+
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+    # raises снаружи transactional: проглоченное исключение внутри блока
+    # означало бы коммит, а его before_commit зовёт тот же боевой flush
+    with pytest.raises(acc.AccessError, match="уже привязан"), transactional(store) as s:
+        monkeypatch.setattr(s, "flush", boom)
+        acc.oidc_link(s, handle="alice", sub="sub-race", author=ADMIN)
+
+
+def test_record_login_writes_event(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    _link_alice(store)
+    with transactional(store) as s:
+        acc.record_login(s, handle="alice", ip="203.0.113.5")
+    with store() as s:
+        events = s.scalars(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "access.login")
+        ).all()
+    assert [e.payload for e in events] == [{"ip": "203.0.113.5"}]
+
+
+# --- кукисессия ----------------------------------------------------------------
+
+
+def test_session_roundtrip_and_tamper() -> None:
+    key = b"k" * 32
+    value = oidc_service.issue_session_value(key, actor_uid="u1", handle="alice")
+    payload = oidc_service.read_session(key, value)
+    assert payload is not None
+    assert payload["handle"] == "alice"
+    assert payload["actor_uid"] == "u1"
+    assert payload["exp"] > 0
+    assert oidc_service.read_session(b"other-key".ljust(32, b"-"), value) is None
+    assert oidc_service.read_session(key, value[:-2] + "xx") is None
+    assert oidc_service.read_session(key, None) is None
+    assert oidc_service.read_session(key, "garbage") is None
+
+
+def test_expired_session_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(oidc_service, "SESSION_TTL", -10)
+    value = oidc_service.issue_session_value(b"k" * 32, actor_uid="u", handle="h")
+    assert oidc_service.read_session(b"k" * 32, value) is None
+
+
+def test_session_key_stable_per_store(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'access.db'}"
+    acc.init_store(url)
+    factory = acc.open_store(url)
+    assert factory is not None
+    try:
+        key = oidc_service.session_key(factory)
+        assert len(key) == 32
+        assert oidc_service.session_key(factory) == key
+    finally:
+        acc._ENGINES.clear()
+    # новое хранилище — новый ключ
+    url2 = f"sqlite:///{tmp_path / 'other.db'}"
+    acc.init_store(url2)
+    factory2 = acc.open_store(url2)
+    assert factory2 is not None
+    try:
+        assert oidc_service.session_key(factory2) != key
+    finally:
+        acc._ENGINES.clear()
+
+
+def test_session_key_race_reads_winner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Гонка первых входов (ревью #282, раунд 4): PK решает — проигравший
+    перечитывает ключ победителя, а не падает на IntegrityError.
+
+    «Параллельная транзакция» закоммитила ключ раньше; наша сессия делает
+    одно stale-чтение (get → None), идёт вставлять — и бьётся о PK.
+    """
+    from sqlalchemy.orm import Session as OrmSession
+
+    from cod_doc.infra.models import OidcMetaModel
+
+    url = f"sqlite:///{tmp_path / 'access.db'}"
+    acc.init_store(url)
+    factory = acc.open_store(url)
+    assert factory is not None
+    winner = secrets.token_bytes(32)
+    with factory() as s:
+        s.add(OidcMetaModel(key=oidc_service._SESSION_KEY_NAME, value=winner.hex()))
+        s.commit()
+    real_get = OrmSession.get
+    stale_seen: list[object] = []
+
+    def stale_first(self: OrmSession, entity: object, key: object) -> object:
+        if (
+            entity is OidcMetaModel
+            and key == oidc_service._SESSION_KEY_NAME
+            and key not in stale_seen
+        ):
+            stale_seen.append(key)
+            return None  # гонка: строка в БД уже есть, мы её ещё не видим
+        return real_get(self, entity, key)  # type: ignore[arg-type,return-value]
+
+    monkeypatch.setattr(OrmSession, "get", stale_first)
+    try:
+        assert oidc_service.session_key(factory) == winner
+    finally:
+        acc._ENGINES.clear()
+
+
+def test_discovery_cached_per_issuer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Кэш discovery (ревью #282, раунд 4): второй логин не ходит в сеть."""
+    calls = {"n": 0}
+
+    def fake_get(url: str, timeout: float = 0) -> httpx.Response:
+        calls["n"] += 1
+        return _fake_response(200, json.dumps(dict(_DISCOVERY)))
+
+    cfg = Config(oidc_issuer="https://idp.example")
+    oidc_service._DISCOVERY_CACHE.clear()
+    monkeypatch.setattr(oidc_service.httpx, "get", fake_get)
+    try:
+        assert oidc_service.discover(cfg) == _DISCOVERY
+        assert oidc_service.discover(cfg) == _DISCOVERY
+        assert calls["n"] == 1  # второй вызов — из кэша
+        # другой issuer — свой снимок
+        cfg2 = Config(oidc_issuer="https://other.example")
+        assert oidc_service.discover(cfg2) == _DISCOVERY
+        assert calls["n"] == 2
+    finally:
+        oidc_service._DISCOVERY_CACHE.clear()
+
+
+def test_signed_garbage_payload_rejected() -> None:
+    """Валидная подпись над мусорным payload — не сессия (ревью #282, раунд 4)."""
+    key = b"k" * 32
+    for payload_b64 in ("Z2FyYmFnZQ", "bnVsbA", "WzM"):  # b64: "garbage", "null", "[3"
+        sig = hmac.new(key, payload_b64.encode(), hashlib.sha256).digest()
+        value = payload_b64 + "." + base64.urlsafe_b64encode(sig).rstrip(b"=").decode()
+        assert oidc_service.read_session(key, value) is None, payload_b64
+
+
+def test_session_actor_alive_tracks_disable_and_unlink(
+    store: sessionmaker,  # type: ignore[type-arg]
+) -> None:
+    """F3 (ревью #282, раунд 4): сессия умирает вместе с актёром."""
+    _link_alice(store)
+    with store() as s:
+        uid = s.scalar(select(acc.ActorModel.uid).where(acc.ActorModel.handle == "alice"))
+    assert uid is not None
+    assert oidc_service.session_actor_alive(store, uid)
+    with transactional(store) as s:
+        acc.disable_actor(s, handle="alice", author=ADMIN)
+    assert not oidc_service.session_actor_alive(store, uid)
+
+
+# --- PKCE и authorize URL --------------------------------------------------------
+
+
+def test_pkce_pair_matches_s256() -> None:
+    verifier, challenge = oidc_service.pkce_pair()
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    expected = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    assert challenge == expected
+    assert oidc_service.pkce_pair()[0] != verifier
+
+
+def test_authorize_url_contains_oidc_params() -> None:
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    url = oidc_service.authorize_url(cfg, _DISCOVERY, state="st", challenge="ch")
+    assert url.startswith("https://idp.example/authorize?")
+    for part in (
+        "response_type=code",
+        "client_id=cid",
+        "redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Foidc%2Fcallback",
+        "scope=openid+profile+email",
+        "state=st",
+        "code_challenge=ch",
+        "code_challenge_method=S256",
+    ):
+        assert part in url
+
+
+def test_authorize_url_requires_redirect_uri() -> None:
+    cfg = Config(oidc_issuer="https://i", oidc_client_id="c", oidc_client_secret="s")
+    with pytest.raises(oidc_service.OidcError, match="REDIRECT_URI"):
+        oidc_service.authorize_url(cfg, _DISCOVERY, state="st", challenge="ch")
+    with pytest.raises(oidc_service.OidcError, match="authorization_endpoint"):
+        oidc_service.authorize_url(cfg, {}, state="st", challenge="ch")
+
+
+# --- находки ИИ-ревью #282: не-JSON тела и битые куки ---------------------------
+
+
+def _fake_response(status: int, text: str) -> httpx.Response:
+    """Ответ без реальной сети: HTTP 502 от прокси — тоже реальность логина."""
+    return httpx.Response(status, content=text.encode(), request=httpx.Request("GET", "https://x"))
+
+
+def test_non_json_bodies_become_oidc_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTML/пустота от провайдера — OidcError и страница ошибки, не 500-JSONDecode."""
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    monkeypatch.setattr(
+        oidc_service.httpx, "get", lambda *a, **k: _fake_response(502, "<html>502</html>")
+    )
+    monkeypatch.setattr(
+        oidc_service.httpx, "post", lambda *a, **k: _fake_response(502, "bad gateway")
+    )
+    # 502 от прокси: discover падает раньше разбора тела — по статусу
+    with pytest.raises(oidc_service.OidcError, match="HTTP 502"):
+        oidc_service.discover(cfg)
+    with pytest.raises(oidc_service.OidcError, match="502"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+    # 200 с HTML-телом — именно разбор: OidcError «не JSON», не JSONDecodeError
+    monkeypatch.setattr(
+        oidc_service.httpx, "get", lambda *a, **k: _fake_response(200, "<html>discovery</html>")
+    )
+    with pytest.raises(oidc_service.OidcError, match="не JSON"):
+        oidc_service.discover(cfg)
+    # 200 с не-JSON телом — тот же разбор
+    monkeypatch.setattr(oidc_service.httpx, "post", lambda *a, **k: _fake_response(200, "not json"))
+    with pytest.raises(oidc_service.OidcError, match="не JSON"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+    claims = {"sub": "s"}
+    monkeypatch.setattr(
+        oidc_service.httpx,
+        "get",
+        lambda *a, **k: _fake_response(200, json.dumps(claims, ensure_ascii=False)),
+    )
+    assert oidc_service.fetch_userinfo(_DISCOVERY, "at") == claims
+    monkeypatch.setattr(oidc_service.httpx, "get", lambda *a, **k: _fake_response(200, "<html>"))
+    with pytest.raises(oidc_service.OidcError, match="не JSON"):
+        oidc_service.fetch_userinfo(_DISCOVERY, "at")
+
+
+def test_token_error_body_without_json_uses_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Отказ token endpoint без JSON в теле — в сообщении остаётся статус."""
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    monkeypatch.setattr(
+        oidc_service.httpx, "post", lambda *a, **k: _fake_response(502, "<html>502</html>")
+    )
+    with pytest.raises(oidc_service.OidcError, match="502"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+    # JSON-массив (валидный JSON, но не объект) — статус, а не AttributeError
+    monkeypatch.setattr(oidc_service.httpx, "post", lambda *a, **k: _fake_response(400, "[1, 2]"))
+    with pytest.raises(oidc_service.OidcError, match="400"):
+        oidc_service.exchange_code(cfg, _DISCOVERY, code="c", verifier="v")
+
+
+def test_exchange_sends_code_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PKCE (ревью #282, раунд 3): верификатор обязан уехать в token endpoint."""
+    cfg = Config(
+        oidc_issuer="https://idp.example",
+        oidc_client_id="cid",
+        oidc_client_secret="sec",
+        oidc_redirect_uri="https://app.example/auth/oidc/callback",
+    )
+    captured: dict = {}
+
+    def fake_post(url: str, *, data: dict, auth: object, timeout: float) -> httpx.Response:
+        captured["url"] = url
+        captured["data"] = data
+        return _fake_response(200, '{"access_token": "at"}')
+
+    monkeypatch.setattr(oidc_service.httpx, "post", fake_post)
+    assert oidc_service.exchange_code(cfg, _DISCOVERY, code="good", verifier="my-verifier") == "at"
+    assert captured["data"]["code_verifier"] == "my-verifier"
+    assert captured["data"]["code"] == "good"
+    assert captured["data"]["grant_type"] == "authorization_code"
+    assert captured["url"] == "https://idp.example/token"
+
+
+def test_list_oidc_links(store: sessionmaker) -> None:  # type: ignore[type-arg]
+    with transactional(store) as s:
+        acc.add_member(s, handle="alice", project_uid="p1", role="admin", author=ADMIN)
+        acc.add_member(s, handle="bob", project_uid="p1", role="admin", author=ADMIN)
+        acc.oidc_link(s, handle="bob", sub="sub-b", author=ADMIN)
+        acc.oidc_link(s, handle="alice", sub="sub-a", author=ADMIN)
+    with store() as s:
+        assert acc.list_oidc_links(s) == [("alice", "sub-a"), ("bob", "sub-b")]
+
+
+def test_non_ascii_and_broken_cookies_are_none() -> None:
+    """Кука — клиентский вход: не-ASCII или мусор дают None, а не UnicodeEncodeError."""
+    key = b"k" * 32
+    value = oidc_service.issue_session_value(key, actor_uid="u1", handle="alice")
+    for garbage in ("кириллица.ещё-кириллица", "π.include", "π", "％％.％％"):
+        assert oidc_service.read_session(key, garbage) is None, garbage
+    assert oidc_service.read_session(key, value) is not None  # живая кука цела

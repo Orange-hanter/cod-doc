@@ -21,6 +21,7 @@ ALLOWED_PREFIXES = (
     "cod_doc.services",
     "cod_doc.api.deps",
     "cod_doc.api.web",
+    "cod_doc.api.auth",  # 0056: общий RateLimiter/_client_ip Bearer-гейта — тот же слой api
     "cod_doc.config",
     "cod_doc.core",  # Project class is used by index page
     "cod_doc.domain.entities",

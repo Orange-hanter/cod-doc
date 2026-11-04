@@ -24,6 +24,10 @@ CLO-036. ``init_store`` создаёт файл, и с этого момента
 Агент — actor с владельцем, ``handle`` — ``<владелец>/<имя>``. Роль агента в
 проекте — роль владельца, суженная собственным членством агента, если оно
 есть; выше владельца агент не поднимается никогда.
+
+**OIDC веб-логин** (миграция 0056). Человек входит в веб через внешний
+провайдер (Pocket ID, вход пасскеем): привязка ``actor.oidc_sub`` ставится
+заранее (`oidc_link`), вход без неё — отказ, регистрации нет.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra.models import ActorModel, ApiTokenModel, ProjectMemberModel, ProjectModel
 from cod_doc.services import activity_service, request_identity
@@ -67,15 +72,20 @@ __all__ = [
     "add_agent",
     "add_member",
     "authenticate",
+    "authenticate_by_sub",
     "create_token",
     "disable_actor",
     "hash_token",
     "init_store",
     "list_members",
+    "list_oidc_links",
     "list_tokens",
+    "oidc_link",
+    "oidc_unlink",
     "open_store",
     "project_uid_for",
     "record_denied",
+    "record_login",
     "remove_member",
     "revoke_token",
     "store_session",
@@ -592,6 +602,114 @@ def _roles(session: Session, actor: ActorModel) -> dict[str, str]:
         narrowed = own.get(project_uid, owner_role)
         roles[project_uid] = narrowed if role_at_least(owner_role, narrowed) else owner_role
     return roles
+
+
+# --- OIDC веб-логин -----------------------------------------------------------
+
+
+#: ``token_label`` сессии, пришедшей через OIDC: у неё нет строки в ``api_token``.
+OIDC_LABEL: Final = "oidc"
+
+
+def authenticate_by_sub(session: Session, sub: str) -> Identity | None:
+    """``sub`` внешнего OIDC-провайдера → владелец привязки; ``None`` — не пускать.
+
+    Привязка ставится заранее (`oidc_link`): логин без неё — отказ, а не
+    регистрация. Не пускает: неизвестный ``sub``, отключённый актёр, не-человек
+    (пасскей-вход — для людей, агенты ходят по токенам).
+    """
+    actor = session.scalar(select(ActorModel).where(ActorModel.oidc_sub == sub))
+    if actor is None or actor.disabled or actor.kind != KIND_HUMAN:
+        return None
+    return Identity(
+        actor_uid=actor.uid,
+        handle=actor.handle,
+        kind=actor.kind,
+        token_label=OIDC_LABEL,
+        authors=_authors(session, actor),
+        roles=MappingProxyType(_roles(session, actor)),
+    )
+
+
+def oidc_link(session: Session, *, handle: str, sub: str, author: str) -> str | None:
+    """Привязать ``sub`` провайдера к human-актёру; ``None`` — привязка уже такая.
+
+    Регистрации нет: актёр заводится заранее (`_ensure_human` здесь не зовётся),
+    у одного ``sub`` — один актёр (UNIQUE-индекс), актёр — только человек.
+    """
+    actor = _actor(session, handle)
+    if actor.kind != KIND_HUMAN:
+        msg = f"OIDC-привязка — только человеку, а {handle!r} — {actor.kind}"
+        raise AccessError(msg)
+    sub = sub.strip()
+    if not sub or any(ch.isspace() for ch in sub):
+        msg = "sub обязателен и без пробелов: он придёт в claims провайдера"
+        raise AccessError(msg)
+    other = session.scalar(select(ActorModel).where(ActorModel.oidc_sub == sub))
+    if other is not None and other.uid != actor.uid:
+        msg = f"sub {sub!r} уже привязан к {other.handle!r}"
+        raise AccessError(msg)
+    if actor.oidc_sub == sub:
+        return None
+    actor.oidc_sub = sub
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        # Гонка: pre-check выше не видит параллельную транзакцию, UNIQUE-индекс
+        # решает за нас — наружу тот же контракт AccessError, что и без гонки.
+        msg = f"sub {sub!r} уже привязан к другому актёру"
+        raise AccessError(msg) from exc
+    _emit(
+        session,
+        "access.oidc_linked",
+        author,
+        scope_kind="actor",
+        scope_id=handle,
+        payload={"sub": sub},
+    )
+    return sub
+
+
+def oidc_unlink(session: Session, *, handle: str, author: str) -> bool:
+    """Снять OIDC-привязку; ``False`` — её не было."""
+    actor = _actor(session, handle)
+    if actor.oidc_sub is None:
+        return False
+    previous = actor.oidc_sub
+    actor.oidc_sub = None
+    session.flush()
+    _emit(
+        session,
+        "access.oidc_unlinked",
+        author,
+        scope_kind="actor",
+        scope_id=handle,
+        payload={"sub": previous},
+    )
+    return True
+
+
+def list_oidc_links(session: Session) -> list[tuple[str, str]]:
+    """Актёры с OIDC-привязкой: ``(handle, sub)`` по алфавиту handle'ов."""
+    rows = session.execute(
+        select(ActorModel.handle, ActorModel.oidc_sub)
+        .where(ActorModel.oidc_sub.is_not(None))
+        .order_by(ActorModel.handle)
+    ).all()
+    # narrowing из WHERE mypy не видит — фильтр и сужает, и страхует
+    return [(handle, sub) for handle, sub in rows if sub is not None]
+
+
+def record_login(session: Session, *, handle: str, ip: str) -> None:
+    """``access.login`` — раз на церемонию входа (OIDC callback), не на запрос."""
+    _emit(
+        session,
+        "access.login",
+        f"{KIND_HUMAN}:{handle}",
+        scope_kind="actor",
+        scope_id=handle,
+        payload={"ip": ip},
+    )
 
 
 # --- отказы -------------------------------------------------------------------

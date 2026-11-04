@@ -1,6 +1,9 @@
 # TLS от Let's Encrypt и прокси на MCP (RFC 29 §3.8, CLO-039).
-# Наружу — только /mcp, /api/v1 и /api/sync/v1: все за Bearer-гейтом cod-doc. Всё остальное
-# (веб-UI, legacy /api/*, POST /settings) гейта не имеет и получает 404.
+# /mcp, /api/v1 и /api/sync/v1 — за Bearer-гейтом cod-doc. Остальной /api/*
+# (legacy, POST /settings) гейта не имеет и наружу не выходит — 404.
+# Веб-UI (миграция 0056) — за OIDC-логином (Pocket ID) и ТОЛЬКО при явном
+# COD_DOC_WEB_PUBLIC=1: SessionGate cod-doc включён, лишь когда заданы
+# COD_DOC_OIDC_*, а без логина открывать веб нельзя. Нет переменной — 404.
 {$COD_DOC_PUBLIC_HOST} {
 	encode zstd gzip
 
@@ -23,7 +26,31 @@
 		reverse_proxy cod-doc:8765
 	}
 
-	handle {
+	# Legacy /api/* (включая POST /settings) — только loopback на узле.
+	handle /api/* {
 		respond 404
+	}
+
+	# Веб за OIDC-логином: маршруты логина, статика, live-обновления и страницы.
+	# Дефолт закрытый (ревью #282, раунды 2–5): веб открывается только при
+	# явном COD_DOC_WEB_PUBLIC=1 И полной OIDC-конфигурации — ровно те три
+	# переменные, по которым SessionGate cod-doc считает себя включённым.
+	# Любая неполная — 404: гейт выключен, открывать нечего (fail-closed).
+	@web_off expression `{env.COD_DOC_WEB_PUBLIC} != "1" || {env.COD_DOC_OIDC_ISSUER} == "" || {env.COD_DOC_OIDC_CLIENT_ID} == "" || {env.COD_DOC_OIDC_CLIENT_SECRET} == ""`
+	handle /auth/* {
+		respond @web_off 404
+		reverse_proxy cod-doc:8765
+	}
+	handle /static/* {
+		respond @web_off 404
+		reverse_proxy cod-doc:8765
+	}
+	handle /ws* {
+		respond @web_off 404
+		reverse_proxy cod-doc:8765
+	}
+	handle {
+		respond @web_off 404
+		reverse_proxy cod-doc:8765
 	}
 }

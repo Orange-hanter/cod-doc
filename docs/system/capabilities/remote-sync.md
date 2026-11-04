@@ -275,6 +275,7 @@ remote куратор видит пунктом очереди `curator_next`. �
 |---|---|---|
 | `file://`, `s3://` | права ФС / S3-креды | нет: один владелец или доверенная группа |
 | `https://` (`cod-doc serve`) | Bearer-токен (sha256 на сервере, отзываемый, на устройство или агента) | роль на проект: reader (fetch), writer (+ push, аренда ID), admin (+ участники, токены) |
+| `https://` веб-UI (0056) | кукисессия после OIDC-входа (Pocket ID, пасскей); привязка `actor.oidc_sub` — `cod-doc oidc link` | аутентификация: гейт не биндит identity, авторизация веба прежняя |
 
 Умный remote штампует changeset аутентифицированным actor'ом и отвергает
 операции с чужим `author`. Агентский actor принадлежит человеку и не
@@ -314,7 +315,9 @@ reverse proxy (Caddy) с TLS на 443. Сервер ограничивает ч�
 ## 6. Non-goals
 
 - Ветки и PR-flow внутри БД; realtime и посимвольные CRDT.
-- Multi-tenant, SaaS, регистрация, организации (proposals/README).
+- Multi-tenant, SaaS, регистрация, организации (proposals/README). OIDC-вход
+  веба (0056) регистрации не добавляет: актёр заводится и привязывается
+  (`cod-doc oidc link`) заранее администратором, вход без привязки — отказ.
 - Синхронизация derived-данных и markdown.
 - E2E-шифрование, partial clone, P2P без remote, подписи changeset'ов (v1).
 - Права ниже проекта (на документ / sensitivity) — ARCHITECTURE §12.3.

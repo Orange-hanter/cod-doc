@@ -100,7 +100,7 @@ import click
 from cod_doc.cli.activity import activity
 from cod_doc.cli.adr import adr
 from cod_doc.cli.approval import approval
-from cod_doc.cli.cmd_access import access, actor, member, token
+from cod_doc.cli.cmd_access import access, actor, member, oidc, token
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
@@ -223,6 +223,7 @@ main.add_command(access)
 main.add_command(member)
 main.add_command(token)
 main.add_command(actor)
+main.add_command(oidc)
 main.add_command(sync)
 main.add_command(update)
 # Тот же объект под вторым именем: `upgrade` — привычка из

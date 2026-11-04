@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Вход — COD-DOC{% endblock %}
+{% block content %}
+  <h1>Вход не выполнен</h1>
+  <div class="alert alert-error">{{ message }}</div>
+  <p>
+    <a href="/auth/oidc/login">Войти снова</a> ·
+    <a href="/">На главную</a>
+  </p>
+{% endblock %}
