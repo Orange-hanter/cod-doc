@@ -386,10 +386,11 @@ def test_mcp_public_bind_with_store_and_allowed_host(
 
 
 def test_reader_tools_exist() -> None:
-    from cod_doc.mcp.access_policy import READER_TOOLS
+    from cod_doc.mcp.access_policy import QUESTION_ANSWER_TOOLS, READER_TOOLS
     from cod_doc.mcp.profile_counts import catalog
 
     assert READER_TOOLS - catalog() == set()
+    assert QUESTION_ANSWER_TOOLS - catalog() == set()
     assert "tool_call_safe" not in READER_TOOLS
 
 
@@ -414,6 +415,143 @@ def test_reader_denied_tools_outside_read_list(
     # tool_call_safe заворачивает отказ в свой конверт (ok=false), а не в isError
     _is_error, text = _tool_result(_call(mcp_client, tool, token, **arguments))
     assert "не из списка чтения" in text
+
+
+# --- ответ на вопрос слабой ролью (0057) ---------------------------------------
+
+
+def _question_args(author: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "project": "demo",
+        "title": "T",
+        "question": "Как?",
+        "author": author,
+        **extra,
+    }
+
+
+def _question_status(db_path: Path, qid: str) -> tuple[str | None, str | None]:
+    from cod_doc.infra.models import OpenQuestionModel
+
+    engine = make_engine(f"sqlite:///{db_path}")
+    try:
+        with make_session_factory(engine)() as s:
+            row = s.scalar(select(OpenQuestionModel).where(OpenQuestionModel.question_id == qid))
+            return (row.status if row else None), (row.resolution if row else None)
+    finally:
+        engine.dispose()
+
+
+def test_reader_answers_addressed_question(
+    project: tuple[str, Path], store: None, mcp_client: TestClient
+) -> None:
+    uid, db_path = project
+    writer = _issue("walt", uid, "writer")
+    reader = _issue("r", uid, "reader")
+    is_error, text = _tool_result(
+        _call(mcp_client, "question_create", writer, **_question_args("human:walt", owner="r"))
+    )
+    assert not is_error, text
+    is_error, text = _tool_result(
+        _call(
+            mcp_client,
+            "question_resolve",
+            reader,
+            project="demo",
+            question_id="Q-001",
+            resolution="Адресован — можно",
+            author="human:r",
+        )
+    )
+    assert not is_error, text
+    assert _question_status(db_path, "Q-001") == ("resolved", "Адресован — можно")
+
+
+@pytest.mark.parametrize("owner", [None, "someone-else"])
+def test_reader_cannot_answer_unaddressed_question(
+    project: tuple[str, Path], store: None, mcp_client: TestClient, owner: str | None
+) -> None:
+    uid, _db = project
+    writer = _issue("walt", uid, "writer")
+    reader = _issue("r", uid, "reader")
+    is_error, text = _tool_result(
+        _call(mcp_client, "question_create", writer, **_question_args("human:walt", owner=owner))
+    )
+    assert not is_error, text
+    is_error, text = _tool_result(
+        _call(
+            mcp_client,
+            "question_resolve",
+            reader,
+            project="demo",
+            question_id="Q-001",
+            resolution="попытка",
+            author="human:r",
+        )
+    )
+    assert is_error
+    assert "не адресован" in text
+    assert _question_status(_db, "Q-001")[0] == "open"
+
+
+def test_reader_cannot_still_edit_or_address_questions(
+    project: tuple[str, Path], store: None, mcp_client: TestClient
+) -> None:
+    """Право на ответ не открывает правку вопроса и переадресацию."""
+    uid, _db = project
+    token = _issue("r", uid, "reader")
+    for tool, extra in (
+        ("question_update", {"question_id": "Q-001", "owner": "r"}),
+        ("question_create", {}),
+    ):
+        args = _question_args("human:r", **extra)
+        is_error, text = _tool_result(_call(mcp_client, tool, token, **args))
+        assert is_error, tool
+        assert "не из списка чтения/ответов" in text
+
+
+def test_responder_answers_any_question(
+    project: tuple[str, Path], store: None, mcp_client: TestClient
+) -> None:
+    uid, db_path = project
+    writer = _issue("walt", uid, "writer")
+    responder = _issue("po", uid, "responder")
+    for owner in (None, "someone-else"):
+        is_error, text = _tool_result(
+            _call(
+                mcp_client, "question_create", writer, **_question_args("human:walt", owner=owner)
+            )
+        )
+        assert not is_error, text
+    for qid in ("Q-001", "Q-002"):
+        is_error, text = _tool_result(
+            _call(
+                mcp_client,
+                "question_resolve",
+                responder,
+                project="demo",
+                question_id=qid,
+                resolution="PO отвечает",
+                author="human:po",
+            )
+        )
+        assert not is_error, text
+        assert _question_status(db_path, qid) == ("resolved", "PO отвечает")
+
+
+def test_responder_cannot_write_docs(
+    project: tuple[str, Path], store: None, mcp_client: TestClient
+) -> None:
+    uid, _db = project
+    token = _issue("po", uid, "responder")
+    is_error, _ = _tool_result(_call(mcp_client, "doc_list", token, project="demo"))
+    assert not is_error
+    is_error, text = _tool_result(
+        _call(mcp_client, "doc_create", token, **_doc_args("r", "human:po"))
+    )
+    assert is_error
+    assert "роль 'responder' не позволяет запись" in text
+    assert "r" not in _doc_keys(_db)
 
 
 def test_kind_prefix_must_match_handle(

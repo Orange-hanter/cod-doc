@@ -61,7 +61,7 @@ Open Questions = сущность БД `open_question` (`Q-NNN`, миграци�
 | `title`, `question` | заголовок и сама формулировка (markdown) |
 | `context` | предыстория, ограничения, матрица — markdown |
 | `status` | `open` → `resolved` / `dropped`; `reopen` возвращает в `open` и стирает ответ (он остаётся в ревизиях) |
-| `priority`, `owner` | срочность и кто отвечает за ответ |
+| `priority`, `owner` | срочность и кто отвечает за ответ; `owner` — голый handle (`pavel`, не `human:pavel`) и с 0057 авторизует ответ: роль `responder` отвечает на любой вопрос проекта, `reader` — только на вопрос со своим handle в `owner` (`question_resolve` / `question_option_add`, проверка `request_identity.check_question_answer`) |
 | `options[]` | варианты `{position, title, body, chosen}`; позиция — стабильный id, удаление оставляет дырку |
 | `resolution`, `resolved_by_adr` | ответ текстом и/или ADR; при `by_adr` пишется ссылка `resolved_by` |
 | `source_doc_key` | из какого документа импортирован |

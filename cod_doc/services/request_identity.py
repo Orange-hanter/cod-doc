@@ -12,8 +12,11 @@ Bearer-гейт (``api/auth.py``) резолвит токен в :class:`Identit
 - :func:`enter_project` — вход в проект (MCP ``session_factory``, маршруты
   ``/api/v1/projects/{slug}``): не участник — ``AccessDeniedError`` (SYNC-202).
 - :func:`check_write` — запись (``activity_service.emit``, через него проходит
-  каждый write-путь, ADO-040): роль ``reader`` или чужой ``author`` —
-  ``AccessDeniedError``; исключение рушит транзакцию мутации целиком.
+  каждый write-путь, ADO-040): роль ``reader``/``responder`` или чужой
+  ``author`` — ``AccessDeniedError``; исключение рушит транзакцию мутации целиком.
+- :func:`check_question_answer` — ответ на вопрос (``question_service.resolve``
+  / ``add_option``): единственная запись, доступная роли ``reader`` — на вопрос,
+  адресованный ему (``owner``), и роли ``responder`` — на любой вопрос проекта.
 
 Модуль — stdlib: его импортирует ``activity_service``, а тот — почти всё.
 """
@@ -33,12 +36,14 @@ __all__ = [
     "ROLES",
     "ROLE_ADMIN",
     "ROLE_READER",
+    "ROLE_RESPONDER",
     "ROLE_WRITER",
     "AccessDeniedError",
     "Identity",
     "allowed_authors",
     "author_allowed",
     "bind",
+    "check_question_answer",
     "check_write",
     "current",
     "current_tools",
@@ -50,10 +55,12 @@ __all__ = [
 ]
 
 ROLE_READER: Final = "reader"
+ROLE_RESPONDER: Final = "responder"
 ROLE_WRITER: Final = "writer"
 ROLE_ADMIN: Final = "admin"
-#: По возрастанию прав: индекс — сила роли.
-ROLES: Final = (ROLE_READER, ROLE_WRITER, ROLE_ADMIN)
+#: По возрастанию прав: индекс — сила роли. ``responder`` — читает всё, пишет
+#: только ответы на вопросы (``check_question_answer``).
+ROLES: Final = (ROLE_READER, ROLE_RESPONDER, ROLE_WRITER, ROLE_ADMIN)
 
 
 class AccessDeniedError(PermissionError):
@@ -204,6 +211,45 @@ def author_allowed(identity: Identity, author: str | None) -> bool:
     # Без префикса actor_kind_for_author выводит human (legacy-форма): агенту
     # без ``agent:`` это дало бы в журнале роль человека.
     return expected is not None and (kind or "human") == expected
+
+
+def check_question_answer(author: str | None, owner: str | None, question_id: str) -> bool:
+    """Ответ на вопрос: чья запись разрешена и нужна ли ``emit`` поблажка.
+
+    Возвращает ``preauthorized`` для ``activity_service.emit``: ``True`` —
+    объектная проверка здесь пройдена и общий ``check_write`` (роль ≥ writer)
+    для этой мутации пропускается; ``False`` — обычный путь, ``emit`` проверит
+    как всегда. Отказ — ``AccessDeniedError`` (SYNC-202).
+
+    - нет привязки или роль неизвестна — ``False``: локальный путь как у
+      ``check_write``, а «запись без входа в проект» отклонит ``emit``;
+    - роль ≥ writer — ``False``: отвечает как всякая запись;
+    - роль ``responder`` — ``True``: может отвечить на любой вопрос проекта;
+    - роль ``reader`` — ``True`` только если вопрос адресован ему: ``owner``
+      непуст и совпадает с handle владельца токена или его агента (ключи
+      ``identity.authors`` — голые handle, без префикса вида).
+    """
+    binding = _BINDING.get()
+    if binding is None or binding.role is None:
+        return False
+    identity = binding.identity
+    if role_at_least(binding.role, ROLE_WRITER):
+        return False
+    if not author_allowed(identity, author):
+        msg = (
+            f"author {author!r} не принадлежит токену {identity.handle!r}; "
+            f"допустимо: {allowed_authors(identity)}"
+        )
+        raise AccessDeniedError(msg)
+    if binding.role == ROLE_RESPONDER:
+        return True
+    if owner and owner in identity.authors:
+        return True
+    msg = (
+        f"роль 'reader': вопрос {question_id!r} не адресован {identity.handle!r} "
+        f"(owner={owner!r}); ответить может только владелец, на кого вопрос заведён"
+    )
+    raise AccessDeniedError(msg)
 
 
 def allowed_authors(identity: Identity) -> str:

@@ -248,7 +248,8 @@ claude mcp add --transport http cod-doc https://cod-doc.example.dev/mcp -s user 
 |---|---|
 | токен жив, владелец не отключён | 401 `SYNC-201` |
 | владелец — участник проекта из `project` | ошибка тула `SYNC-202 … не участник проекта` |
-| роль `reader`: только тулы чтения (`cod_doc/mcp/access_policy.py`, deny по умолчанию) | ошибка тула `SYNC-202 … не из списка чтения` |
+| роль `reader`: только тулы чтения (`cod_doc/mcp/access_policy.py`, deny по умолчанию) плюс «ответ на вопрос» (`question_resolve`, `question_option_add`) | ошибка тула `SYNC-202 … не из списка чтения/ответов` |
+| ответ на вопрос слабой ролью: `responder` отвечает на любой вопрос проекта, `reader` — только на адресованный ему (вопрос заведён с `owner` = его handle, голым — без префикса вида) | ошибка тула `SYNC-202 … не адресован <handle>` |
 | запись: роль `writer`/`admin` | ошибка тула `SYNC-202 … роль 'reader' не позволяет запись` |
 | `author` — свой handle или handle своего агента, вид в префиксе совпадает (`human:alice`, `agent:alice/claude-code`) | ошибка тула `SYNC-202 author … не принадлежит токену`; запись откатывается целиком |
 | частота: 10 неудачных попыток с адреса, 600 запросов на токен в минуту | 429 `SYNC-204` + `Retry-After` |
@@ -257,12 +258,17 @@ claude mcp add --transport http cod-doc https://cod-doc.example.dev/mcp -s user 
 передавать свой handle явно. Legacy YAML-тулы (профиль `full`) удалённому
 вызывающему закрыты.
 
+Роль `responder` (0057) — между `reader` и `writer`: читает всё, пишет только
+ответы на вопросы. Для PO/бизнес-аналитика, который закрывает вопросы, но не
+трогает документы и задачи; либо адресуйте вопросы reader'у через
+`question_update(owner=...)` — отвечать сможет только он.
+
 **Администратору** — команды на сервере (в контейнере — через `docker compose
 exec`), в MCP их нет намеренно:
 
 ```bash
 cod-doc access init                                   # включить гейт
-cod-doc member add alice -p cod-doc --role writer     # роль: reader | writer | admin
+cod-doc member add alice -p cod-doc --role writer     # роль: reader | responder | writer | admin
 cod-doc actor agent alice claude-code                 # агент alice/claude-code, не выше владельца
 cod-doc token create alice --label macbook            # печатает токен один раз
 cod-doc token list | cod-doc token revoke <uid>       # отзыв действует на следующем запросе

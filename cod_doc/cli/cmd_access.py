@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 console = Console()
 
-_ROLES = ("reader", "writer", "admin")
+_ROLES = ("reader", "responder", "writer", "admin")
 
 
 def _default_author() -> str:
@@ -195,7 +195,7 @@ def access_status(as_json: bool) -> None:
 
 @click.group()
 def member() -> None:
-    """Участники проектов и их роли (reader / writer / admin)."""
+    """Участники проектов и их роли (reader / responder / writer / admin)."""
 
 
 @member.command("add")

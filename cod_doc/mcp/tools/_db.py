@@ -64,12 +64,16 @@ def _enter_project(factory: sessionmaker[Session], slug: str) -> None:
     role = request_identity.enter_project(uid, slug)
     if role != request_identity.ROLE_READER:
         return
-    from cod_doc.mcp.access_policy import READER_TOOLS
+    from cod_doc.mcp.access_policy import QUESTION_ANSWER_TOOLS, READER_TOOLS
 
     tools = request_identity.current_tools()
-    if tools is None or not tools <= READER_TOOLS:
+    # Поверх чтения reader пускается в «ответ на вопрос»: право на конкретный
+    # вопрос решает объектная проверка в question_service (check_question_answer),
+    # здесь — только имя тула.
+    allowed = READER_TOOLS | QUESTION_ANSWER_TOOLS
+    if tools is None or not tools <= allowed:
         names = ", ".join(sorted(tools or ())) or "?"
-        msg = f"роль 'reader' в {slug!r}: тул {names} не из списка чтения"
+        msg = f"роль 'reader' в {slug!r}: тул {names} не из списка чтения/ответов"
         raise request_identity.AccessDeniedError(msg)
 
 

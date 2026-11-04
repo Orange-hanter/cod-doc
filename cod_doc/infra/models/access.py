@@ -79,11 +79,13 @@ class ApiTokenModel(Base):
 
 
 class ProjectMemberModel(Base):
-    """Роль actor'а в проекте: ``reader`` | ``writer`` | ``admin``."""
+    """Роль actor'а в проекте: ``reader`` | ``responder`` | ``writer`` | ``admin``."""
 
     __tablename__ = "project_member"
     __table_args__ = (
-        CheckConstraint("role IN ('reader','writer','admin')", name="ck_project_member_role"),
+        CheckConstraint(
+            "role IN ('reader','responder','writer','admin')", name="ck_project_member_role"
+        ),
     )
 
     project_uid: Mapped[str] = mapped_column(Text, primary_key=True)

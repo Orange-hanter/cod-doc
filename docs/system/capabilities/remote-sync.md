@@ -180,7 +180,7 @@ CLO-039) — Bearer-токены на MCP и `/api/v1`:
 - **Развёртывание** — `deploy/sync-remote/` (compose + Caddy).
 
 Умный `https://` remote (CLO-035/037/038): `/api/sync/v1` на `cod-doc serve`
-поверх `FileRemote` сервера, клиент `HttpRemote`, роли reader/writer/admin на
+поверх `FileRemote` сервера, клиент `HttpRemote`, роли reader/responder/writer/admin на
 каждом маршруте, проверка `actor`/`author` changeset'а на push (`SYNC-203`),
 `remote login` (Keychain или файл кредов), `member`/`token --remote` для admin
 проекта.
@@ -274,7 +274,7 @@ remote куратор видит пунктом очереди `curator_next`. �
 | Remote | Кто пускает | Разграничение |
 |---|---|---|
 | `file://`, `s3://` | права ФС / S3-креды | нет: один владелец или доверенная группа |
-| `https://` (`cod-doc serve`) | Bearer-токен (sha256 на сервере, отзываемый, на устройство или агента) | роль на проект: reader (fetch), writer (+ push, аренда ID), admin (+ участники, токены) |
+| `https://` (`cod-doc serve`) | Bearer-токен (sha256 на сервере, отзываемый, на устройство или агента) | роль на проект: reader (fetch), responder (+ ответы на вопросы: свои адресованные — у reader'а, любые — у responder'а), writer (+ push, аренда ID), admin (+ участники, токены) |
 | `https://` веб-UI (0056) | кукисессия после OIDC-входа (Pocket ID, пасскей); привязка `actor.oidc_sub` — `cod-doc oidc link` | аутентификация: гейт не биндит identity, авторизация веба прежняя |
 
 Умный remote штампует changeset аутентифицированным actor'ом и отвергает
