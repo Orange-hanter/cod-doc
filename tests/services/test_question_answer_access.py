@@ -273,3 +273,22 @@ def test_reader_still_cannot_write_docs(factory: sessionmaker[Session], project_
             title="X",
             author="human:pavel",
         )
+
+
+def test_preauthorized_still_checks_author(factory: sessionmaker[Session], project_id: int) -> None:
+    """preauthorized снимает только требование к роли: чужой author отклонён."""
+    from cod_doc.services import activity_service
+
+    with (
+        transactional(factory) as session,
+        _as_member("pavel", "responder"),
+        pytest.raises(AccessDeniedError, match="не принадлежит токену"),
+    ):
+        activity_service.emit(
+            session,
+            project_id,
+            "question.resolved",
+            actor_kind="human",
+            actor_id="human:не-pavel",
+            preauthorized=True,
+        )

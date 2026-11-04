@@ -62,18 +62,20 @@ def _enter_project(factory: sessionmaker[Session], slug: str) -> None:
     with factory() as session:
         uid = session.scalar(select(ProjectModel.uid).where(ProjectModel.slug == slug))
     role = request_identity.enter_project(uid, slug)
-    if role != request_identity.ROLE_READER:
+    if role not in (request_identity.ROLE_READER, request_identity.ROLE_RESPONDER):
         return
     from cod_doc.mcp.access_policy import QUESTION_ANSWER_TOOLS, READER_TOOLS
 
     tools = request_identity.current_tools()
-    # Поверх чтения reader пускается в «ответ на вопрос»: право на конкретный
-    # вопрос решает объектная проверка в question_service (check_question_answer),
-    # здесь — только имя тула.
+    # Поверх чтения слабые роли пускаются в «ответ на вопрос»: право на
+    # конкретный вопрос решает объектная проверка в question_service
+    # (check_question_answer), здесь — только имя тула. Гейт обязан стоять и
+    # для responder'а: проверка в emit откатит запись, но не побочные эффекты
+    # до неё (doc_export пишет файлы, sync_* ходит в сеть, *_analyze зовёт LLM).
     allowed = READER_TOOLS | QUESTION_ANSWER_TOOLS
     if tools is None or not tools <= allowed:
         names = ", ".join(sorted(tools or ())) or "?"
-        msg = f"роль 'reader' в {slug!r}: тул {names} не из списка чтения/ответов"
+        msg = f"роль {role!r} в {slug!r}: тул {names} не из списка чтения/ответов"
         raise request_identity.AccessDeniedError(msg)
 
 

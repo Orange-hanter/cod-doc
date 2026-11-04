@@ -549,9 +549,35 @@ def test_responder_cannot_write_docs(
     is_error, text = _tool_result(
         _call(mcp_client, "doc_create", token, **_doc_args("r", "human:po"))
     )
+    # режется тул-гейтом, до check_write: иначе тул бы уже отработал
     assert is_error
-    assert "роль 'responder' не позволяет запись" in text
+    assert "роль 'responder' в 'demo': тул doc_create не из списка чтения/ответов" in text
     assert "r" not in _doc_keys(_db)
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        # пишет файлы проекции до emit — гейт обязан стоять до запуска тула
+        ("doc_export", {"project": "demo", "doc_key": "x"}),
+        # прокси к любому тулу по имени
+        ("tool_call_safe", {"tool_name": "doc_list", "args": {"project": "demo"}}),
+    ],
+)
+def test_responder_denied_tools_outside_read_list(
+    project: tuple[str, Path],
+    store: None,
+    mcp_client: TestClient,
+    tool: str,
+    arguments: dict[str, Any],
+) -> None:
+    """Гейт по имени тула стоит и для responder'а: emit откатит запись, но не
+    побочные эффекты до неё (файлы, сеть, LLM)."""
+    uid, _db = project
+    token = _issue("po", uid, "responder")
+    _is_error, text = _tool_result(_call(mcp_client, tool, token, **arguments))
+    assert "роль 'responder' в 'demo'" in text
+    assert "не из списка чтения/ответов" in text
 
 
 def test_kind_prefix_must_match_handle(

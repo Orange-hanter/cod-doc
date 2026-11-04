@@ -123,11 +123,15 @@ def emit(
     ``preauthorized`` — поблажка общего ``check_write`` для записи, право на
     которую уже проверено на уровне объекта: только путь «ответ на вопрос»
     ставит её после :func:`request_identity.check_question_answer`. Из чужого
-    кода не ставить.
+    кода не ставить. Поблажка снимает только требование к роли: сверка
+    ``author`` с владельцем токена (:func:`request_identity.check_author`)
+    проходит всегда.
     """
     # RFC 29 §3.8 (CLO-036): удалённый владелец токена пишет только своим
     # author'ом и с ролью не ниже writer; локально (привязки нет) — no-op.
-    if not preauthorized:
+    if preauthorized:
+        request_identity.check_author(actor_id)
+    else:
         request_identity.check_write(actor_id)
     if actor_id:
         # RFC 29 §10.3 (CLO-006): каждый write-путь проходит здесь (ADO-040) —

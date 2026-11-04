@@ -43,6 +43,7 @@ __all__ = [
     "allowed_authors",
     "author_allowed",
     "bind",
+    "check_author",
     "check_question_answer",
     "check_write",
     "current",
@@ -194,8 +195,28 @@ def check_write(author: str | None) -> None:
     if binding.role is None or not role_at_least(binding.role, ROLE_WRITER):
         msg = f"{identity.handle!r}: роль {binding.role or 'нет'!r} не позволяет запись"
         raise AccessDeniedError(msg)
+    _check_author(identity, author)
+
+
+def check_author(author: str | None) -> None:
+    """Половина ``check_write``: только сверка ``author`` с владельцем токена.
+
+    Для пути ``preauthorized`` (``activity_service.emit``): роль уже проверена
+    на уровне объекта (``check_question_answer``), а author сверяется всегда —
+    поблажка снимает требование к роли, но не к тому, кто её зовёт.
+    """
+    binding = _BINDING.get()
+    if binding is None:
+        return
+    _check_author(binding.identity, author)
+
+
+def _check_author(identity: Identity, author: str | None) -> None:
     if not author_allowed(identity, author):
-        msg = f"author {author!r} не принадлежит токену {identity.handle!r}; допустимо: {allowed_authors(identity)}"
+        msg = (
+            f"author {author!r} не принадлежит токену {identity.handle!r}; "
+            f"допустимо: {allowed_authors(identity)}"
+        )
         raise AccessDeniedError(msg)
 
 
