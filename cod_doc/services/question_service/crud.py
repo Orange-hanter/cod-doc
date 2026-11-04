@@ -25,7 +25,7 @@ from cod_doc.domain.entities import (
 )
 from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel, QuestionOptionModel
 from cod_doc.infra.repositories import OpenQuestionRepository
-from cod_doc.services import activity_service, search_service
+from cod_doc.services import activity_service, request_identity, search_service
 from cod_doc.services.sync_service import leases
 
 from ._internals import (
@@ -57,6 +57,7 @@ def _record(
     reason: str | None,
     summary: str,
     payload: dict[str, object],
+    preauthorized: bool = False,
 ) -> None:
     """Revision + activity event + FTS refresh — один вызов на мутацию (ADO-040)."""
     session.flush()
@@ -65,6 +66,7 @@ def _record(
         **audit_kwargs(
             model, author=author, op=op, reason=reason, summary=summary, payload=payload
         ),
+        preauthorized=preauthorized,
     )
     search_service.index_question(session, model)
     session.flush()
@@ -267,6 +269,10 @@ def resolve(
     ``resolve``. ``by_adr`` also records a ``resolved_by`` edge to the ADR so
     the answer is reachable from the link list and ``question list
     --linked-to adr:ADR-NNN``.
+
+    Это единственная запись, открытая слабым ролям: ``responder`` отвечает на
+    любой вопрос проекта, ``reader`` — только на адресованный ему (``owner`` —
+    его handle); остальных отклоняет ``request_identity.check_question_answer``.
     """
     model = _require_question(session, project_id, question_id)
     if model.status != QuestionStatus.OPEN.value:
@@ -275,6 +281,7 @@ def resolve(
         raise QuestionStateError("resolve needs a resolution text, an ADR or a chosen option")
     if by_adr is not None:
         validate_ref(QuestionLinkKind.ADR, by_adr)
+    preauthorized = request_identity.check_question_answer(author, model.owner, question_id)
 
     _mark_chosen(model, chosen_option)
     now = datetime.now(UTC)
@@ -305,6 +312,7 @@ def resolve(
         reason=reason,
         summary=f"Question {question_id} resolved" + (f" by {by_adr}" if by_adr else ""),
         payload={"by_adr": by_adr, "chosen_option": chosen_option, "resolution": resolution},
+        preauthorized=preauthorized,
     )
     resolved = get(session, project_id, question_id)
     assert resolved is not None

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from cod_doc.infra import ordering
 from cod_doc.infra.models import QuestionOptionModel
 from cod_doc.infra.repositories import QuestionOptionRepository
-from cod_doc.services import activity_service, search_service
+from cod_doc.services import activity_service, request_identity, search_service
 
 from ._internals import _require_question, audit_kwargs, validate_text
 from ._types import QuestionOptionNotFoundError
@@ -34,6 +34,7 @@ def _record(
     reason: str | None,
     summary: str,
     payload: dict[str, object],
+    preauthorized: bool = False,
 ) -> None:
     """Revision + activity event + FTS refresh — один вызов на мутацию (ADO-040)."""
     session.flush()
@@ -42,6 +43,7 @@ def _record(
         **audit_kwargs(
             model, author=author, op=op, reason=reason, summary=summary, payload=payload
         ),
+        preauthorized=preauthorized,
     )
     search_service.index_question(session, model)
     session.flush()
@@ -68,9 +70,15 @@ def add_option(
     body: str | None = None,
     reason: str | None = None,
 ) -> QuestionOption:
-    """Append an option; its position is max+1 (never reuses a removed slot)."""
+    """Append an option; its position is max+1 (never reuses a removed slot).
+
+    Как и ``resolve``, открыта слабым ролям: ``responder`` — к любому вопросу
+    проекта, ``reader`` — только к адресованному ему; проверка —
+    ``request_identity.check_question_answer``.
+    """
     validate_text("option title", title)
     model = _require_question(session, project_id, question_id)
+    preauthorized = request_identity.check_question_answer(author, model.owner, question_id)
     position = max((o.position for o in model.options), default=0) + 1
     # CLO-004: ранг после последней опции; position — номер опции (адрес в
     # CLI/MCP), остаётся max+1 и не пересчитывается.
@@ -92,6 +100,7 @@ def add_option(
         reason=reason,
         summary=f"Question {question_id}: option #{position} {title}",
         payload={"position": position, "title": title},
+        preauthorized=preauthorized,
     )
     return QuestionOptionRepository(session)._to_domain(opt)
 

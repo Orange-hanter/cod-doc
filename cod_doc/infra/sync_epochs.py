@@ -67,6 +67,8 @@ MIGRATIONS: Mapping[str, bool] = MappingProxyType(
         "0055_task_estimate": True,
         # actor.oidc_sub и oidc_meta — local (миграция 0056): уезжающих колонок нет.
         "0056_oidc_web_login": False,
+        # project_member.role — колонка local-таблицы хранилища доступа (0057).
+        "0057_responder_role": False,
     }
 )
 

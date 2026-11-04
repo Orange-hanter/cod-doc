@@ -198,3 +198,17 @@ def test_handle_validation(store: sessionmaker[Session], bad: str) -> None:
 def test_unknown_role_rejected(store: sessionmaker[Session]) -> None:
     with transactional(store) as s, pytest.raises(AccessError, match="роль"):
         acc.add_member(s, handle="alice", project_uid=P1, role="owner", author=ADMIN)
+
+
+def test_responder_role_round_trips(store: sessionmaker[Session]) -> None:
+    """0057: responder между reader и writer — принимается и читается обратно."""
+    from cod_doc.services.request_identity import ROLE_RESPONDER, ROLES
+
+    assert ROLES.index(ROLE_RESPONDER) == ROLES.index("reader") + 1
+    assert ROLES.index(ROLE_RESPONDER) < ROLES.index("writer")
+    with transactional(store) as s:
+        acc.add_member(s, handle="po", project_uid=P1, role=ROLE_RESPONDER, author=ADMIN)
+        actor_uid = s.scalar(select(acc.ActorModel.uid).where(acc.ActorModel.handle == "po"))
+        row = s.get(acc.ProjectMemberModel, (P1, actor_uid))
+        assert row is not None
+        assert row.role == "responder"

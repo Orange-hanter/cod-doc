@@ -863,7 +863,7 @@ CREATE INDEX ix_api_token_actor ON api_token(actor_uid);
 CREATE TABLE project_member (
   project_uid TEXT NOT NULL,                   -- project.uid; без FK — проект в своей БД
   actor_uid   TEXT NOT NULL REFERENCES actor(uid) ON DELETE CASCADE,
-  role        TEXT NOT NULL CHECK (role IN ('reader','writer','admin')),
+  role        TEXT NOT NULL CHECK (role IN ('reader','responder','writer','admin')),
   PRIMARY KEY (project_uid, actor_uid)
 );
 ```

@@ -106,6 +106,7 @@ def emit(
     payload: dict[str, Any] | None = None,
     summary: str | None = None,
     ts: datetime | None = None,
+    preauthorized: bool = False,
 ) -> ActivityEventModel:
     """Insert a single activity event in the current session/transaction.
 
@@ -118,10 +119,20 @@ def emit(
     встроенного оркестратора). Для мутаций через MCP / CLI / REST скоуп
     не открывается, поэтому колонка остаётся NULL — это ожидаемое
     состояние, а не пропущенная запись (ADR-012).
+
+    ``preauthorized`` — поблажка общего ``check_write`` для записи, право на
+    которую уже проверено на уровне объекта: только путь «ответ на вопрос»
+    ставит её после :func:`request_identity.check_question_answer`. Из чужого
+    кода не ставить. Поблажка снимает только требование к роли: сверка
+    ``author`` с владельцем токена (:func:`request_identity.check_author`)
+    проходит всегда.
     """
     # RFC 29 §3.8 (CLO-036): удалённый владелец токена пишет только своим
     # author'ом и с ролью не ниже writer; локально (привязки нет) — no-op.
-    request_identity.check_write(actor_id)
+    if preauthorized:
+        request_identity.check_author(actor_id)
+    else:
+        request_identity.check_write(actor_id)
     if actor_id:
         # RFC 29 §10.3 (CLO-006): каждый write-путь проходит здесь (ADO-040) —
         # отсюда захват берёт автора операций ``sync_op``.
@@ -163,6 +174,7 @@ def emit_for_write(
     scope_id: str | None = None,
     payload: dict[str, Any] | None = None,
     summary: str | None = None,
+    preauthorized: bool = False,
 ) -> ActivityEventModel:
     """Emit an activity event for a write mutation.
 
@@ -180,6 +192,7 @@ def emit_for_write(
         scope_id=scope_id,
         payload=payload,
         summary=summary,
+        preauthorized=preauthorized,
     )
 
 
@@ -199,6 +212,7 @@ def write_revision_and_emit_event(
     activity_scope_id: str | None = None,
     activity_payload: dict[str, Any] | None = None,
     activity_summary: str | None = None,
+    preauthorized: bool = False,
 ) -> tuple[Revision, ActivityEventModel]:
     """Append a revision and emit an activity event in one atomic unit.
 
@@ -226,6 +240,7 @@ def write_revision_and_emit_event(
         scope_id=activity_scope_id,
         payload=activity_payload,
         summary=activity_summary,
+        preauthorized=preauthorized,
     )
     return revision, event
 

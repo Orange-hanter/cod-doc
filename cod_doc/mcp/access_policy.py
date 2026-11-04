@@ -10,15 +10,21 @@
 ``tool_call_safe`` в списке нет намеренно: он вызывает другой тул по имени, и
 пустить его — значит пустить reader'а в любой тул каталога.
 
+``QUESTION_ANSWER_TOOLS`` — единственное исключение из «только чтение»:
+ответ на вопрос. По имени тула право ещё не дано — объектная проверка в
+``question_service`` (``request_identity.check_question_answer``): reader
+отвечает только на вопрос, адресованный ему (``owner``), роль ``responder`` —
+на любой вопрос проекта.
+
 Гейт тест ``tests/api/test_bearer_gate.py::test_reader_tools_exist`` держит
-список честным: каждое имя — живой тул полного каталога.
+оба списка честными: каждое имя — живой тул полного каталога.
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-__all__ = ["READER_TOOLS"]
+__all__ = ["QUESTION_ANSWER_TOOLS", "READER_TOOLS"]
 
 READER_TOOLS: Final = frozenset(
     {
@@ -98,3 +104,8 @@ READER_TOOLS: Final = frozenset(
         "tools_diff",
     }
 )
+
+#: Письменные тулы, доступные слабым ролям поверх чтения: ответ на вопрос.
+#: Право решает не имя тула, а объектная проверка в ``question_service``
+#: (``resolve`` / ``add_option``), поэтому тулов здесь ровно два.
+QUESTION_ANSWER_TOOLS: Final = frozenset({"question_resolve", "question_option_add"})
