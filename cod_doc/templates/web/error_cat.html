@@ -1,0 +1,352 @@
+<!doctype html>
+{#- Страница 403/404/415 для браузера: рыжий кот скребётся в закрытую дверь.
+    Самодостаточна — без base.html и его скриптов: ошибка может прилететь
+    из любой точки, в том числе до того, как собран контекст страницы.
+    Сцена — inline SVG + CSS-анимации; маленький скрипт внизу крутит реплики
+    и в случайный момент даёт коту рацию («<код>, ответьте!»). Без JS остаётся
+    первая реплика. Сетевых запросов нет.
+    403: за дверью горит свет и висит замок — там кто-то есть, но не пускают.
+    404: под дверью темно — за ней никого.
+    415: мем «415, база, ответьте» — кот вызывает базу, база молчит. -#}
+{%- set lines = {
+  403: ["ну пусти!", "открывай!", "я свой, честно", "я знаю, ты там"],
+  404: ["мяу?", "мяу. громко.", "есть кто дома?", "кормить будем?"],
+  415: ["415, приём!", "мяу?", "база, ответьте!", "я на связи"],
+}[status_code] -%}
+{%- set radio_call = "415, база, ответьте!" if status_code == 415 else status_code ~ ", ответьте!" -%}
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ status_code }} — COD-DOC</title>
+  <script>
+    // Та же тема, что у остального веба (base.html): localStorage > системная.
+    (function () {
+      try {
+        var t = localStorage.getItem('cod-doc-theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { /* без localStorage — светлая */ }
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #f6f4fb; --fg: #24212e; --muted: #6b6680; --accent: #7c5cf0;
+      --wall: #ebe6f7; --floor: #d6cfe8; --door: #a8794f; --door-dark: #8a6040;
+      --frame: #6e4b30; --brass: #d9a933; --cat: #e8832a; --cat-light: #b85a17; --ink: #1c1410;
+      --nose: #f29bb0; --eye: #9fd13a; --scratch: #f2dcc0; --light: #ffe08a;
+      --bubble: #ffffff; --mat: #b0574a;
+    }
+    :root[data-theme="dark"] {
+      --bg: #15131c; --fg: #ece9f5; --muted: #a29cb8; --accent: #a78bfa;
+      --wall: #1f1c29; --floor: #2b2738; --door: #7a5536; --door-dark: #5e4029;
+      --frame: #3f2b1c; --brass: #c79a2b; --cat: #d4721f; --cat-light: #9a4a12; --ink: #0d0907;
+      --scratch: #c7a785; --bubble: #2b2738; --mat: #7d3a31;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font: calc(16px * var(--text-scale, 1))/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: grid; place-items: center; min-height: 100vh; padding: 16px;
+    }
+    main { width: 100%; max-width: 560px; text-align: center; }
+    svg.scene { width: 100%; height: auto; display: block; border-radius: 16px; }
+    h1 { margin: 8px 0 4px; font-size: calc(28px * var(--text-scale, 1)); }
+    h1 .code { color: var(--accent); font-variant-numeric: tabular-nums; }
+    p { margin: 4px 0; color: var(--muted); }
+    .detail {
+      display: inline-block; margin-top: 8px; padding: 4px 10px; border-radius: 6px;
+      background: var(--wall); color: var(--fg); font-size: calc(14px * var(--text-scale, 1)); word-break: break-word;
+    }
+    nav { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    nav a {
+      color: var(--accent); text-decoration: none; padding: 8px 16px;
+      border: 1px solid var(--accent); border-radius: 8px;
+    }
+    nav a:hover { background: var(--accent); color: var(--bg); }
+
+    /* --- сцена --- */
+    .wall { fill: var(--wall); }
+    .floor { fill: var(--floor); }
+    .frame { fill: var(--frame); }
+    .door-leaf { fill: var(--door); }
+    .panel { fill: none; stroke: var(--door-dark); stroke-width: 3; }
+    .brass { fill: var(--brass); }
+    .plate { fill: var(--bg); stroke: var(--brass); stroke-width: 2; }
+    .plate-text { fill: var(--fg); font: 700 calc(18px * var(--text-scale, 1)) ui-monospace, monospace; text-anchor: middle; }
+    .mat { fill: var(--mat); }
+    .mat-text { fill: var(--scratch); font: 600 calc(7px * var(--text-scale, 1)) sans-serif; text-anchor: middle; letter-spacing: .5px; }
+    .cat { fill: var(--cat); }
+    .cat-stroke { stroke: var(--cat); fill: none; stroke-linecap: round; }
+    .ear-in { fill: var(--nose); opacity: .7; }
+    .nose { fill: var(--ink); }
+    .eye { fill: var(--eye); }
+    .pupil { fill: var(--ink); }
+    .lid { fill: var(--cat); }
+    .ink-line { stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; fill: none; }
+    .stripe { stroke: var(--cat-light); stroke-width: 3.5; stroke-linecap: round; fill: none; }
+    .tail-stripes { stroke: var(--cat-light); fill: none; stroke-dasharray: 4 9; }
+    .whisker { stroke: var(--ink); stroke-width: 1; stroke-linecap: round; opacity: .7; }
+    .radio { fill: var(--ink); }
+    .radio-led { fill: #ff4d4d; animation: led 1s steps(2) infinite; }
+    @keyframes led { 50% { opacity: .2; } }
+    .wave { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; opacity: 0; }
+    .scene.radio .wave { animation: wave 1.2s ease-out infinite; }
+    .radio-held { opacity: 0; transition: opacity .2s; }
+    .scene.radio .radio-held { opacity: 1; }
+    /* Рация: правая лапа бросает дверь и подносит её ко рту. */
+    .scene.radio .leg-b { animation: none; transform: rotate(-30deg); }
+    .wave-2 { animation-delay: .3s; }
+    .wave-3 { animation-delay: .6s; }
+    @keyframes wave { 0% { opacity: 0; } 20% { opacity: 1; } 70%, 100% { opacity: 0; } }
+    .scratch { stroke: var(--scratch); stroke-width: 2.5; stroke-linecap: round; fill: none; }
+    .bubble { fill: var(--bubble); stroke: var(--muted); stroke-width: 1.5; }
+    .bubble-text { fill: var(--fg); font: 600 calc(13px * var(--text-scale, 1)) sans-serif; text-anchor: middle; }
+    .gap-light { fill: var(--light); }
+    .gap-dark { fill: #000; opacity: .55; }
+
+    /* Лапы скребут по очереди: поворот вокруг плеча. */
+    .leg { transform-box: view-box; transform-origin: 204px 172px; }
+    .leg-a { animation: scratch .36s ease-in-out infinite alternate; }
+    .leg-b { animation: scratch .36s ease-in-out infinite alternate-reverse; }
+    @keyframes scratch { from { transform: rotate(-11deg); } to { transform: rotate(9deg); } }
+
+    /* Хвост ходит от раздражения, чуть быстрее у 403. */
+    .tail { transform-box: view-box; transform-origin: 146px 238px;
+            animation: tail 1.6s ease-in-out infinite alternate; }
+    @keyframes tail { from { transform: rotate(-12deg); } to { transform: rotate(10deg); } }
+
+    /* Тело покачивается в такт лапам. */
+    .body { animation: bob .36s ease-in-out infinite alternate; }
+    @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-1.5px); } }
+
+    .eye, .pupil { transform-box: fill-box; transform-origin: center; animation: blink 4s infinite; }
+    @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+
+    /* Ухо дёргается раз в несколько секунд. */
+    .ear-back { transform-box: view-box; transform-origin: 196px 124px; animation: twitch 5s infinite; }
+    @keyframes twitch { 0%, 80%, 86%, 100% { transform: rotate(0); } 83% { transform: rotate(-14deg); } }
+
+    /* Дверь вздрагивает от каждого удара лапой. */
+    .door { animation: rattle .18s linear infinite; }
+    @keyframes rattle { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(.6px); } }
+
+    /* Царапины прорисовываются по одной, держатся и гаснут — цикл 6 с. */
+    .scratch { stroke-dasharray: 40; stroke-dashoffset: 40; animation: claw 6s infinite; }
+    .scratch:nth-child(2) { animation-delay: .4s; }
+    .scratch:nth-child(3) { animation-delay: .8s; }
+    .scratch:nth-child(4) { animation-delay: 2.4s; }
+    .scratch:nth-child(5) { animation-delay: 2.8s; }
+    .scratch:nth-child(6) { animation-delay: 3.2s; }
+    @keyframes claw {
+      0% { stroke-dashoffset: 40; opacity: 1; }
+      6% { stroke-dashoffset: 0; }
+      70% { stroke-dashoffset: 0; opacity: 1; }
+      85%, 100% { stroke-dashoffset: 0; opacity: 0; }
+    }
+
+    /* Пузырь реплики: показывает и прячет скрипт. */
+    .say { opacity: 0; transform: translateY(4px); transition: opacity .25s, transform .25s; }
+    .say.on { opacity: 1; transform: none; }
+
+    /* 403: свет под дверью мерцает и иногда перекрывается тенью шагов. */
+    .gap-light { animation: flicker 3s infinite; }
+    @keyframes flicker { 0%, 100% { opacity: .95; } 50% { opacity: .75; } }
+    .feet { fill: #000; opacity: .45; animation: feet 7s linear infinite; }
+    @keyframes feet {
+      0%, 30% { transform: translateX(-60px); opacity: 0; }
+      35% { opacity: .45; }
+      65% { opacity: .45; }
+      70%, 100% { transform: translateX(80px); opacity: 0; }
+    }
+
+    /* Наведёшь на кота — скребёт вдвое чаще. */
+    .scene:hover .leg-a, .scene:hover .leg-b, .scene:hover .body { animation-duration: .18s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; }
+      .scratch { stroke-dashoffset: 0; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <svg class="scene" viewBox="0 0 400 300" role="img"
+       aria-label="{% if status_code == 403 %}Рыжий кот скребётся в запертую дверь, его не пускают{% elif status_code == 415 %}Рыжий кот с рацией вызывает базу у закрытой двери{% else %}Рыжий кот скребётся в дверь, за которой никого нет{% endif %}">
+    <rect class="wall" x="0" y="0" width="400" height="262"/>
+    <rect class="floor" x="0" y="262" width="400" height="38"/>
+
+    {# Дверь с коробкой, филёнками и табличкой с кодом. #}
+    <g class="door">
+      <rect class="frame" x="236" y="30" width="140" height="232" rx="3"/>
+      <rect class="door-leaf" x="244" y="38" width="124" height="220"/>
+      <rect class="panel" x="256" y="110" width="100" height="56" rx="3"/>
+      <rect class="panel" x="256" y="178" width="100" height="66" rx="3"/>
+      <rect class="plate" x="276" y="56" width="60" height="30" rx="4"/>
+      <text class="plate-text" x="306" y="78">{{ status_code }}</text>
+      <circle class="brass" cx="352" cy="172" r="6"/>
+      <rect class="brass" x="349" y="180" width="6" height="10" rx="2"/>
+      {% if status_code == 403 %}
+        {# Замок на цепочке. #}
+        <path d="M310 150 q11 -18 22 0" fill="none" stroke="var(--brass)" stroke-width="3"/>
+        <rect class="brass" x="306" y="150" width="30" height="24" rx="4"/>
+        <circle cx="321" cy="160" r="3" fill="var(--frame)"/>
+        <rect x="320" y="161" width="2" height="7" fill="var(--frame)"/>
+      {% endif %}
+      {# Царапины — на высоте лап. #}
+      <g>
+        <path class="scratch" d="M248 132 l6 26"/>
+        <path class="scratch" d="M253 130 l6 27"/>
+        <path class="scratch" d="M258 131 l6 25"/>
+        <path class="scratch" d="M248 160 l5 22"/>
+        <path class="scratch" d="M253 158 l5 24"/>
+        <path class="scratch" d="M258 159 l5 22"/>
+      </g>
+    </g>
+
+    {# Щель под дверью: 403 — свет и чьи-то шаги, 404 — темнота. #}
+    {% if status_code == 403 %}
+      <rect class="gap-light" x="244" y="258" width="124" height="4"/>
+      <g class="feet"><rect x="290" y="258" width="10" height="4" rx="1"/><rect x="306" y="258" width="10" height="4" rx="1"/></g>
+    {% else %}
+      <rect class="gap-dark" x="244" y="258" width="124" height="4"/>
+    {% endif %}
+
+    {# Коврик «добро пожаловать» — для иронии. #}
+    <rect class="mat" x="132" y="262" width="104" height="9" rx="2"/>
+    <text class="mat-text" x="184" y="269">ДОБРО ПОЖАЛОВАТЬ</text>
+
+    {# Кот: стоит на задних лапах, передними скребёт дверь. #}
+    <g class="cat-group">
+      {# Хвост трубой с крючком — уверенный в себе кот. #}
+      <g class="tail">
+        <path class="cat-stroke" stroke-width="9" d="M146 238 Q114 236 118 196 Q121 158 104 154"/>
+        <path class="tail-stripes" stroke-width="9" d="M146 238 Q114 236 118 196 Q121 158 104 154"/>
+      </g>
+      <g class="body">
+        <ellipse class="cat" cx="168" cy="238" rx="28" ry="24"/>
+        <ellipse class="cat" cx="180" cy="200" rx="26" ry="46" transform="rotate(24 180 200)"/>
+        <ellipse class="cat" cx="160" cy="259" rx="14" ry="5"/>
+        <ellipse class="cat" cx="188" cy="259" rx="14" ry="5"/>
+        {# Полосы по спине и бедру. #}
+        <path class="stripe" d="M160 178 q9 3 12 11"/>
+        <path class="stripe" d="M154 194 q10 3 13 12"/>
+        <path class="stripe" d="M150 211 q10 3 12 12"/>
+        <path class="stripe" d="M146 232 q9 -2 14 6"/>
+        {# Голова. #}
+        <g>
+          <path class="cat ear-back" d="M190 128 L192 100 L210 120 Z"/>
+          <path class="cat" d="M208 122 L224 102 L228 130 Z"/>
+          <path class="ear-in" d="M212 121 L222 108 L224 126 Z"/>
+          <circle class="cat" cx="210" cy="140" r="22"/>
+          <ellipse class="cat" cx="228" cy="148" rx="10" ry="8"/>
+          {# Полоски на лбу. #}
+          <path class="stripe" stroke-width="2.5" d="M204 120 l1 8"/>
+          <path class="stripe" stroke-width="2.5" d="M210 119 l0 8"/>
+          <path class="stripe" stroke-width="2.5" d="M197 124 l3 7"/>
+          {# Наглый прищур: глаз под тяжёлым веком, бровь домиком к носу. #}
+          <ellipse class="eye" cx="220" cy="137" rx="4" ry="4.6"/>
+          <ellipse class="pupil" cx="222" cy="138" rx="1.3" ry="3.2"/>
+          <path class="lid" d="M214 131 L227 134 L227 137 L214 136 Z"/>
+          <path class="ink-line" d="M214 136 L227 137"/>
+          <path class="ink-line" d="M213 129 L226 133"/>
+          {# Чёрный нос и ухмылка на одну сторону. #}
+          <path class="nose" d="M234 142 h6 l-3 4 Z"/>
+          <path class="ink-line" stroke-width="1.3" d="M237 146 v3 q-3 3 -7 0"/>
+          <path class="ink-line" stroke-width="1.3" d="M237 149 q4 1 6 -3"/>
+          <line class="whisker" x1="230" y1="150" x2="245" y2="145"/>
+          <line class="whisker" x1="230" y1="152" x2="245" y2="155"/>
+        </g>
+      </g>
+      {# Передние лапы — поворот вокруг плеча (204,172). #}
+      <g class="leg leg-a">
+        <path class="cat-stroke" stroke-width="10" d="M204 172 L244 146"/>
+        <ellipse class="cat" cx="245" cy="145" rx="5" ry="7"/>
+      </g>
+      <g class="leg leg-b">
+        <path class="cat-stroke" stroke-width="10" d="M200 180 L244 172"/>
+        <g class="radio-held">
+          <rect class="radio" x="238" y="160" width="13" height="22" rx="3"/>
+          <rect class="radio" x="246" y="148" width="3" height="14" rx="1.5"/>
+          <circle class="radio-led" cx="248" cy="165" r="1.8"/>
+        </g>
+        <ellipse class="cat" cx="245" cy="171" rx="5" ry="7"/>
+      </g>
+    </g>
+
+    {# Эфир: волны от рации у рта. #}
+    <path class="wave" d="M246 132 q6 -6 12 0"/>
+    <path class="wave wave-2" d="M242 126 q10 -10 20 0"/>
+    <path class="wave wave-3" d="M238 120 q14 -14 28 0"/>
+
+    {# Реплика кота: текст и ширину пузыря меняет скрипт. #}
+    <g class="say on" id="say">
+      <rect class="bubble" id="say-box" x="68" y="74" width="120" height="30" rx="14"/>
+      <path class="bubble" d="M150 103 l14 14 l-2 -14 Z"/>
+      <text class="bubble-text" id="say-text" x="128" y="94">{{ lines[0] }}</text>
+    </g>
+  </svg>
+
+  {% if status_code == 403 %}
+    <h1><span class="code">403</span> — сюда не пускают</h1>
+    <p>Дверь заперта, а кот всё равно скребётся. У вас нет доступа к этой странице.</p>
+  {% elif status_code == 415 %}
+    <h1><span class="code">415</span> — база, ответьте</h1>
+    <p>Кот вызывает базу, а база такой формат не принимает: сервер не умеет обработать тип содержимого запроса.</p>
+  {% else %}
+    <h1><span class="code">404</span> — за дверью никого</h1>
+    <p>Кот скребётся, но там пусто: такой страницы нет или её перенесли.</p>
+  {% endif %}
+  {% if detail %}<div class="detail">{{ detail }}</div>{% endif %}
+  <nav>
+    <a href="/">На главную</a>
+    <a href="javascript:history.back()">Назад</a>
+  </nav>
+</main>
+<script>
+  (function () {
+    var scene = document.querySelector('svg.scene');
+    var say = document.getElementById('say');
+    var box = document.getElementById('say-box');
+    var text = document.getElementById('say-text');
+    var lines = {{ lines | tojson }};
+    var call = {{ radio_call | tojson }};
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function rand(a, b) { return a + Math.random() * (b - a); }
+    function show(t) {
+      text.textContent = t;
+      var w = Math.max(70, text.getComputedTextLength() + 28);
+      box.setAttribute('width', w);
+      box.setAttribute('x', 128 - w / 2);
+      say.classList.add('on');
+    }
+    show(lines[0]);
+    if (reduce) { return; }
+    var i = 1;
+    var nextRadio = Date.now() + rand(5000, 14000);
+    function pause(then) {
+      say.classList.remove('on');
+      setTimeout(then, rand(700, 1600));
+    }
+    function tick() {
+      if (Date.now() >= nextRadio) {
+        scene.classList.add('radio');
+        show(call);
+        setTimeout(function () {
+          scene.classList.remove('radio');
+          nextRadio = Date.now() + rand(10000, 25000);
+          pause(tick);
+        }, 3200);
+        return;
+      }
+      show(lines[i++ % lines.length]);
+      setTimeout(function () { pause(tick); }, 2600);
+    }
+    setTimeout(function () { pause(tick); }, 2600);
+  })();
+</script>
+</body>
+</html>
