@@ -271,6 +271,8 @@ def test_responder_sees_own_project_answers_and_nothing_else(
         r = c.get(path)
         assert r.status_code == 403, path
         assert "Нет доступа" in r.text
+        assert 'class="leg leg-a"' in r.text  # отказ гейта — та же страница с котом
+        assert 'href="/auth/logout"' in r.text
     assert c.post("/p/demo/questions/" + qid + "/drop").status_code == 403
 
     r = c.post(f"/p/demo/questions/{qid}/resolve", data={"resolution": "Берём A"})
