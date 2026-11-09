@@ -176,6 +176,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/questions/{qid}/resolve` | Закрыть с ответом: выбранный вариант, ADR и/или текст | `question_service.resolve` | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/{qid}/drop` | Снять без ответа с причиной | `question_service.drop` | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/{qid}/reopen` | Переоткрыть вопрос | `question_service.reopen` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/delete` | Удалить вопрос с вариантами и ссылками (confirm), назад к списку | `question_service.delete` | ✅ | — |
 | `POST /p/{slug}/questions/{qid}/options` | Добавить вариант ответа | `question_service.add_option` | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/{qid}/options/{position}` | Правка (`op=update`) или удаление (`op=delete`) варианта | `question_service.update_option` / `remove_option` | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/{qid}/links` | Добавить ссылку с немедленной проверкой (`op=attach`) или убрать (`op=detach`) | `question_service.link` + `verify_links` / `unlink` | ✅ | OQM-004 |

@@ -90,6 +90,7 @@ blocks | addressed_by | resolved_by | see_also`. Форма `to_ref`
 | Проверить ссылки | `cod-doc question verify [Q-021]` (exit 1 при битых) | `question_verify` |
 | Закрыть | `cod-doc question resolve Q-021 --by ADR-014 [--option N] [-r текст]` | `question_resolve` |
 | Снять / вернуть | `cod-doc question drop --why …` / `reopen` | `question_drop` / `question_reopen` |
+| Удалить (дубль, мусор) | `cod-doc question delete Q-021 [--yes]` | `question_delete` |
 | Перенести документ | `cod-doc question import <doc_key> [--dry-run] [--keep-doc]` | `question_import` (`dry_run=true` по умолчанию) |
 | Задача под вопрос | `cod-doc task create … --addresses Q-021` | `task_create(addresses=[…])` |
 

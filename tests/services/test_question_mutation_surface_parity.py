@@ -38,6 +38,7 @@ MUTATIONS = frozenset(
         "link",
         "unlink",
         "import_document",
+        "delete",
     }
 )
 
@@ -107,4 +108,5 @@ def test_discovered_mutations_exact() -> None:
         "link",
         "unlink",
         "import_document",
+        "delete",
     }

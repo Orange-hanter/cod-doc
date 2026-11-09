@@ -113,6 +113,20 @@ def test_lifecycle_and_list_filters(root: Path) -> None:
     assert (card["status"], card["owner"], card["options"]) == ("dropped", None, [])
 
 
+def test_delete_asks_then_removes(root: Path) -> None:
+    _run("new", "-p", "p", "-t", "Дубль", "-q", "Q?")
+    declined = CliRunner().invoke(main, ["question", "delete", "Q-001", "-p", "p"], input="n\n")
+    assert declined.exit_code == 1
+    assert _run("show", "Q-001", "-p", "p")[0] == 0
+
+    code, out = _run("delete", "Q-001", "-p", "p", "--yes")
+    assert code == 0, out
+    assert "Q-001 deleted" in out
+    code, out = _run("show", "Q-001", "-p", "p")
+    assert code == 1
+    assert "not found" in out
+
+
 def test_link_verify_exit_code(root: Path) -> None:
     _run("new", "-p", "p", "-t", "T", "-q", "Q?")
     code, out = _run("link", "Q-001", "-p", "p", "--to-kind", "code", "--to-ref", "gone.py")

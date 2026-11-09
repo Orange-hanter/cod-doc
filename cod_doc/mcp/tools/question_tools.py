@@ -256,6 +256,34 @@ def register(mcp: FastMCP) -> None:  # noqa: C901 — один register на с�
             )
             return question_service.question_to_dict(session, reopened)
 
+    @mcp.tool(name="question_delete")
+    def question_delete(
+        project: str,
+        question_id: str,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Delete a question with its options and links — for duplicates and junk.
+
+        Irreversible: the row is gone, only the ``deleted`` revision keeps its
+        title and text. To close a real question without an answer use
+        ``question_drop`` instead. Returns the question as it was.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import question_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            deleted = question_service.delete(
+                session,
+                project_id=project_id,
+                question_id=question_id,
+                author=author,
+                reason=reason,
+            )
+            return {**question_service.question_summary(deleted), "deleted": True}
+
     @mcp.tool(name="question_option_add")
     def question_option_add(
         project: str,

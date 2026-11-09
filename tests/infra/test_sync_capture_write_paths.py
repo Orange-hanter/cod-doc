@@ -1091,6 +1091,17 @@ def _(w: World) -> Expect:
     return _q("reopen")(w)
 
 
+@case("question_service.delete")
+def _(w: World) -> Expect:
+    uids = [
+        ("open_question", w.now(OpenQuestionModel, question_id="Q-001")),
+        ("open_question_option", w.now(QuestionOptionModel, title="A")),
+        ("open_question_option", w.now(QuestionOptionModel, title="B")),
+    ]
+    question_service.delete(w.session, project_id=w.pid, question_id="Q-001", author=AUTHOR)
+    return uids
+
+
 @case("question_service.add_option")
 def _(w: World) -> Expect:
     question_service.add_option(

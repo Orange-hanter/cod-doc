@@ -10,6 +10,7 @@ Routes:
 - ``POST /p/{slug}/questions/{qid}/resolve``            — close with an answer.
 - ``POST /p/{slug}/questions/{qid}/drop``               — close without an answer.
 - ``POST /p/{slug}/questions/{qid}/reopen``             — back to open.
+- ``POST /p/{slug}/questions/{qid}/delete``             — delete; redirect to the list.
 - ``POST /p/{slug}/questions/{qid}/options``            — add an option.
 - ``POST /p/{slug}/questions/{qid}/options/{position}`` — edit or remove an option.
 - ``POST /p/{slug}/questions/{qid}/links``              — attach or detach a link.
@@ -470,6 +471,29 @@ def question_reopen(
             session, project_id=project_id, question_id=qid, author=_author(request)
         ),
     )
+
+
+@router.post("/p/{slug}/questions/{qid}/delete")
+def question_delete(
+    request: Request,
+    slug: str,
+    qid: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> RedirectResponse:
+    """Удалить вопрос; карточки больше нет, поэтому назад — к списку."""
+    session, project_id = db
+    try:
+        question_service.delete(
+            session, project_id=project_id, question_id=qid, author=_author(request)
+        )
+        session.commit()
+    except QuestionNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(404, f"Вопрос не найден: {qid}") from exc
+    except _SERVICE_ERRORS as exc:
+        session.rollback()
+        return _back(slug, qid, str(exc))
+    return RedirectResponse(url=f"/p/{slug}/questions?status=all", status_code=303)
 
 
 @router.post("/p/{slug}/questions/{qid}/options")
