@@ -64,7 +64,19 @@ if TYPE_CHECKING:
 
 router = APIRouter()
 
+#: Автор веб-записи без OIDC-сессии (локальный ``cod-doc serve``).
 AUTHOR = "human:web"
+
+
+def _author(request: Request) -> str:
+    """Автор записи: владелец OIDC-сессии (``human:<handle>``), иначе ``human:web``.
+
+    Ответы участников с ролью responder должны быть подписаны ими, а не
+    общим веб-автором: иначе в журнале не видно, кто ответил.
+    """
+    handle = getattr(request.state, "web_handle", "")
+    return f"human:{handle}" if handle else AUTHOR
+
 
 STATUS_OPTIONS = [s.value for s in QuestionStatus]
 STATUS_FILTERS = [*STATUS_OPTIONS, "all"]
@@ -274,6 +286,7 @@ def question_new_form(
 
 @router.post("/p/{slug}/questions/new")
 def question_new_submit(
+    request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     title: Annotated[str, Form()],
@@ -295,7 +308,7 @@ def question_new_submit(
             priority=Priority(priority),
             owner=(owner or "").strip() or None,
             options=[(line.strip(), None) for line in (options or "").splitlines() if line.strip()],
-            author=AUTHOR,
+            author=_author(request),
         )
         session.commit()
     except _SERVICE_ERRORS as exc:
@@ -362,6 +375,7 @@ def question_show(
 
 @router.post("/p/{slug}/questions/{qid}/edit")
 def question_edit(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
@@ -385,13 +399,14 @@ def question_edit(
             context=context.strip(),
             priority=Priority(priority),
             owner=owner.strip(),
-            author=AUTHOR,
+            author=_author(request),
         ),
     )
 
 
 @router.post("/p/{slug}/questions/{qid}/resolve")
 def question_resolve(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
@@ -411,13 +426,14 @@ def question_resolve(
             resolution=resolution.strip() or None,
             by_adr=by_adr.strip() or None,
             chosen_option=int(chosen_option) if chosen_option.strip() else None,
-            author=AUTHOR,
+            author=_author(request),
         ),
     )
 
 
 @router.post("/p/{slug}/questions/{qid}/drop")
 def question_drop(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
@@ -433,13 +449,14 @@ def question_drop(
             project_id=project_id,
             question_id=qid,
             resolution=resolution.strip(),
-            author=AUTHOR,
+            author=_author(request),
         ),
     )
 
 
 @router.post("/p/{slug}/questions/{qid}/reopen")
 def question_reopen(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
@@ -450,13 +467,14 @@ def question_reopen(
         slug,
         qid,
         lambda: question_service.reopen(
-            session, project_id=project_id, question_id=qid, author=AUTHOR
+            session, project_id=project_id, question_id=qid, author=_author(request)
         ),
     )
 
 
 @router.post("/p/{slug}/questions/{qid}/options")
 def question_option_add(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
@@ -474,7 +492,7 @@ def question_option_add(
             question_id=qid,
             title=title.strip(),
             body=body.strip() or None,
-            author=AUTHOR,
+            author=_author(request),
         ),
         anchor="options",
     )
@@ -482,6 +500,7 @@ def question_option_add(
 
 @router.post("/p/{slug}/questions/{qid}/options/{position}")
 def question_option_change(
+    request: Request,
     slug: str,
     qid: str,
     position: int,
@@ -498,7 +517,11 @@ def question_option_change(
             slug,
             qid,
             lambda: question_service.remove_option(
-                session, project_id=project_id, question_id=qid, position=position, author=AUTHOR
+                session,
+                project_id=project_id,
+                question_id=qid,
+                position=position,
+                author=_author(request),
             ),
             anchor="options",
         )
@@ -513,7 +536,7 @@ def question_option_change(
             position=position,
             title=title.strip() or None,
             body=body.strip(),
-            author=AUTHOR,
+            author=_author(request),
         ),
         anchor="options",
     )
@@ -521,6 +544,7 @@ def question_option_change(
 
 @router.post("/p/{slug}/questions/{qid}/links")
 def question_link(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
@@ -547,7 +571,7 @@ def question_link(
             to_ref=ref,
             relation=rel,
             note=note.strip() or None,
-            author=AUTHOR,
+            author=_author(request),
         )
         question_service.verify_links(session, project_id=project_id, question_id=qid)
 
@@ -559,7 +583,7 @@ def question_link(
             to_kind=kind,
             to_ref=ref,
             relation=rel,
-            author=AUTHOR,
+            author=_author(request),
         )
 
     return _mutate(session, slug, qid, detach if op == "detach" else attach, anchor="links")
@@ -567,6 +591,7 @@ def question_link(
 
 @router.post("/p/{slug}/questions/{qid}/verify")
 def question_verify(
+    request: Request,
     slug: str,
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],

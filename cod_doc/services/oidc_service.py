@@ -61,6 +61,7 @@ __all__ = [
     "pkce_pair",
     "read_session",
     "session_actor_alive",
+    "session_identity",
     "session_key",
 ]
 
@@ -339,6 +340,14 @@ def session_actor_alive(factory: sessionmaker[Session], actor_uid: str) -> bool:
     with factory() as session:
         actor = session.get(ActorModel, actor_uid)
         return actor is not None and not actor.disabled and actor.oidc_sub is not None
+
+
+def session_identity(factory: sessionmaker[Session], actor_uid: str) -> Identity | None:
+    """Владелец сессии с ролями по проектам; ``None`` — сессия мертва (F1+F3)."""
+    from cod_doc.services import access_service
+
+    with factory() as session:
+        return access_service.identity_for_session(session, actor_uid)
 
 
 # --- транзакционные обёртки для маршрута ---------------------------------------
