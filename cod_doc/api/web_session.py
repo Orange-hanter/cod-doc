@@ -24,7 +24,6 @@
 
 from __future__ import annotations
 
-import html
 import json
 import logging
 from typing import TYPE_CHECKING, Final
@@ -33,6 +32,7 @@ from urllib.parse import urlencode
 import anyio.to_thread
 
 from cod_doc.api import web_access
+from cod_doc.api.web.templates_env import templates
 from cod_doc.services import oidc_service
 
 if TYPE_CHECKING:
@@ -255,13 +255,12 @@ async def _send_redirect(send: Send, location: str) -> None:
 
 
 async def _send_forbidden(send: Send, reason: str) -> None:
-    """403-страница: причина и выход — другой аккаунт может иметь доступ."""
+    """403-страница с котом у двери: причина и выход — другой аккаунт может иметь доступ."""
     body = (
-        "<!doctype html><meta charset=utf-8><title>Нет доступа</title>"
-        "<body style='font-family:system-ui;max-width:40rem;margin:4rem auto'>"
-        "<h1>Нет доступа</h1><p>" + html.escape(reason) + "</p>"
-        "<p><a href='/'>На главную</a> · <a href='/auth/logout'>Выйти</a></p>"
-    ).encode()
+        templates.get_template("error_cat.html")
+        .render(status_code=_HTTP_FORBIDDEN, detail=reason, logout=True)
+        .encode()
+    )
     headers = [
         (b"content-type", b"text/html; charset=utf-8"),
         (b"content-length", str(len(body)).encode()),

@@ -182,14 +182,19 @@ def test_no_template_uses_undeclared_css_variables() -> None:
 
     `--bg-card` молча давал прозрачный фон — такую опечатку не видно ни в
     одном тесте по HTML и не ловит линтер.
+
+    Самодостаточная страница (``error_cat.html`` — без base.html) объявляет
+    свои токены в собственном ``<style>``: они засчитываются только ей.
     """
     base = (ROOT / "static" / "css" / "_base.css").read_text(encoding="utf-8")
     declared = set(re.findall(r"(--[a-z0-9-]+)\s*:", base + CSS))
-    used: set[str] = set()
+    unknown_set: set[str] = set()
     for tpl in TEMPLATES.rglob("*.html"):
-        used |= set(re.findall(r"var\((--[a-z0-9-]+)", tpl.read_text(encoding="utf-8")))
+        html = tpl.read_text(encoding="utf-8")
+        own = set(re.findall(r"(--[a-z0-9-]+)\s*:", html))
+        unknown_set |= set(re.findall(r"var\((--[a-z0-9-]+)", html)) - declared - own
 
-    unknown = sorted(used - declared)
+    unknown = sorted(unknown_set)
     assert not unknown, f"шаблоны ссылаются на необъявленные токены: {unknown}"
 
 

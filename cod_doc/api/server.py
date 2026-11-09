@@ -11,8 +11,10 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from cod_doc import __version__
 from cod_doc.api.auth import BearerGate, is_web_protected_path
@@ -92,6 +94,39 @@ app.include_router(websocket_router)
 app.include_router(fragments_router)
 app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# Коды, на которые браузер получает страницу с котом вместо голого JSON.
+_CAT_PAGE_CODES: frozenset[int] = frozenset({403, 404, 415})
+# Машинные поверхности: их клиенты разбирают JSON ``{"detail": ...}``.
+_JSON_PREFIXES: tuple[str, ...] = ("/api", "/ws", "/static")
+
+
+def _wants_html_error(request: Request) -> bool:
+    """Навигация браузера, а не API-клиент и не HTMX-подгрузка фрагмента."""
+    if request.url.path.startswith(_JSON_PREFIXES):
+        return False
+    if request.headers.get("HX-Request", "").lower() == "true":
+        return False
+    return "text/html" in request.headers.get("accept", "")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    """403/404/415 в браузере — страница с котом у двери; остальное — как у FastAPI."""
+    if exc.status_code not in _CAT_PAGE_CODES or not _wants_html_error(request):
+        return await http_exception_handler(request, exc)
+    # Дефолтная фраза статуса («Not Found») ничего не добавляет к заголовку страницы.
+    detail: str | None = exc.detail if isinstance(exc.detail, str) else None
+    if detail in {"Not Found", "Forbidden", "Unsupported Media Type"}:
+        detail = None
+    return templates.TemplateResponse(
+        request,
+        "error_cat.html",
+        {"status_code": exc.status_code, "detail": detail},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 @app.exception_handler(WebError)
