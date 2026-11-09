@@ -22,7 +22,7 @@ from ._types import (
     QuestionStateError,
     VerifyReport,
 )
-from .crud import create, drop, get, list_for_project, reopen, resolve, update
+from .crud import create, delete, drop, get, list_for_project, reopen, resolve, update
 from .import_doc import (
     AlreadyImportedError,
     ImportPlan,
@@ -69,6 +69,7 @@ __all__ = [
     "check_edge",
     "code_excerpt",
     "create",
+    "delete",
     "drop",
     "get",
     "import_document",

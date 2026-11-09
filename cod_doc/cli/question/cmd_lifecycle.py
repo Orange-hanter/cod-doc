@@ -1,4 +1,4 @@
-"""`question resolve|drop|reopen` — status transitions."""
+"""`question resolve|drop|reopen|delete` — status transitions and removal."""
 
 from __future__ import annotations
 
@@ -116,3 +116,42 @@ def question_reopen(
             reason=reason,
         )
     console.print(f"[green]❓ {question_id} reopened[/green]")
+
+
+@question.command("delete")
+@click.argument("question_id")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--yes", "-y", is_flag=True, help="Do not ask for confirmation")
+@click.option("--author", default="cli", show_default=True)
+@click.option("--reason", default=None)
+@click.pass_context
+def question_delete(
+    ctx: click.Context,
+    question_id: str,
+    project: str,
+    yes: bool,
+    author: str,
+    reason: str | None,
+) -> None:
+    """Delete a question with its options and links (irreversible).
+
+    For duplicates and junk; a real question closed without an answer is
+    `question drop`.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import question_service
+
+    if not yes:
+        click.confirm(f"Delete {question_id} with its options and links?", abort=True)
+    cfg: Config = ctx.obj["config"]
+    sf = make_session(project, cfg)
+    with service_errors(), transactional(sf) as session:
+        project_id = require_project_id(session, project)
+        deleted = question_service.delete(
+            session,
+            project_id=project_id,
+            question_id=question_id,
+            author=author,
+            reason=reason,
+        )
+    console.print(f"[green]🗑️ {deleted.question_id} deleted: {deleted.title}[/green]")

@@ -25,6 +25,8 @@ from cod_doc.infra.models import (
     PlanModel,
     PlanSectionModel,
     ProjectModel,
+    QuestionLinkModel,
+    QuestionOptionModel,
     RevisionModel,
     SectionModel,
 )
@@ -556,3 +558,61 @@ def test_search_indexes_open_questions_only(factory) -> None:  # type: ignore[no
         assert counts["question"] == 0
         question_service.reopen(session, project_id=pid, question_id=q.question_id, author=AUTHOR)
         assert search_service.reindex_all(session, pid)["question"] == 1
+
+
+def test_delete_cascades_rows_and_index_but_keeps_history(factory) -> None:  # type: ignore[no-untyped-def]
+    with transactional(factory) as session:
+        pid = _seed(session)
+        dup = _create(session, pid, title="Дубль", options=[("A", None), ("B", "b")])
+        keep = _create(session, pid, title="Живой", options=[("C", None)])
+        common = {"project_id": pid, "question_id": dup.question_id, "author": AUTHOR}
+        question_service.link(
+            session,
+            **common,  # type: ignore[arg-type]
+            to_kind=QuestionLinkKind.TASK,
+            to_ref="AB-001",
+            relation=QuestionRelation.ADDRESSED_BY,
+        )
+        dup_row = dup.row_id
+
+        gone = question_service.delete(session, **common, reason="дубль")  # type: ignore[arg-type]
+        assert (gone.question_id, gone.title) == (dup.question_id, "Дубль")
+
+        assert question_service.get(session, pid, dup.question_id) is None
+        assert [q.question_id for q in question_service.list_for_project(session, pid)] == [
+            keep.question_id
+        ]
+        orphans = [
+            session.execute(
+                select(func.count()).select_from(m).where(m.question_row_id == dup_row)
+            ).scalar_one()
+            for m in (QuestionOptionModel, QuestionLinkModel)
+        ]
+        assert orphans == [0, 0]
+        indexed = session.execute(
+            text("SELECT ref FROM db_search_idx WHERE project_id = :p AND kind='question'"),
+            {"p": pid},
+        ).scalars()
+        assert list(indexed) == [keep.question_id]
+
+        diff = session.execute(
+            select(RevisionModel.diff)
+            .where(
+                RevisionModel.entity_kind == EntityKind.QUESTION.value,
+                RevisionModel.entity_id == dup_row,
+            )
+            .order_by(RevisionModel.row_id.desc())
+            .limit(1)
+        ).scalar_one()
+        assert '"op": "deleted"' in diff
+        assert "Дубль" in diff
+        event = session.execute(
+            select(ActivityEventModel.kind)
+            .where(ActivityEventModel.scope_id == dup.question_id)
+            .order_by(ActivityEventModel.row_id.desc())
+            .limit(1)
+        ).scalar_one()
+        assert event == "question.deleted"
+
+        with pytest.raises(QuestionNotFoundError):
+            question_service.delete(session, **common)  # type: ignore[arg-type]

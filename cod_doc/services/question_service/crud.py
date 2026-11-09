@@ -391,3 +391,52 @@ def reopen(
     reopened = get(session, project_id, question_id)
     assert reopened is not None
     return reopened
+
+
+def delete(
+    session: Session,
+    *,
+    project_id: int,
+    question_id: str,
+    author: str,
+    reason: str | None = None,
+) -> OpenQuestion:
+    """Удалить вопрос вместе с вариантами и ссылками; вернуть снимок до удаления.
+
+    ``drop`` — закрытие без ответа, вопрос остаётся в истории проекта;
+    ``delete`` — для вопроса, которого не должно было быть (дубль, мусор
+    импорта, тестовая запись). Статус не важен: удалить можно и открытый, и
+    закрытый.
+
+    Каскад (та же транзакция): строки ``open_question_option`` и
+    ``open_question_link`` (ORM ``delete-orphan`` + FK ``CASCADE``), строка
+    FTS. Ревизии не трогаются — журнал append-only: ревизия ``deleted``
+    пишется до удаления строки и несёт заголовок и текст вопроса, чтобы по
+    истории было видно, что именно удалили.
+    """
+    model = _require_question(session, project_id, question_id)
+    qid = model.question_id
+    snapshot = get(session, project_id, qid)
+    assert snapshot is not None
+    session.flush()
+    activity_service.write_revision_and_emit_event(
+        session,
+        **audit_kwargs(
+            model,
+            author=author,
+            op="deleted",
+            reason=reason,
+            summary=f"Question {qid} deleted: {model.title}",
+            payload={
+                "title": model.title,
+                "question": model.question,
+                "status": model.status,
+                "option_count": len(model.options),
+                "link_count": len(model.links),
+            },
+        ),
+    )
+    search_service.delete_entity(session, kind="question", ref=qid, project_id=project_id)
+    session.delete(model)
+    session.flush()
+    return snapshot

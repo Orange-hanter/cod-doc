@@ -3099,6 +3099,7 @@ _cod-doc() {
     (cod_doc_question_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-question-$words[1]:"
       case $words[1] in
+        (delete)  _cod_doc_question_delete && ret=0 ;;
         (drop)    _cod_doc_question_drop && ret=0 ;;
         (edit)    _cod_doc_question_edit && ret=0 ;;
         (import)  _cod_doc_question_import && ret=0 ;;
@@ -3121,6 +3122,7 @@ _cod-doc() {
 (( $+functions[_cod_doc_question_commands] )) || _cod_doc_question_commands() {
   local -a cmds
   cmds=(
+    'delete:Delete a question with its options and links (irreversible).'
     'drop:Close without an answer.'
     'edit:Patch fields of a question.'
     'import:Turn an open-question document into questions, then delete the docu…'
@@ -3135,6 +3137,20 @@ _cod-doc() {
     'verify:Re-check links of one question (or all); exit 1 if any link is brok…'
   )
   _describe -t cod-doc-question-commands 'cod-doc question command' cmds
+}
+
+(( $+functions[_cod_doc_question_delete] )) || _cod_doc_question_delete() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-y --yes)'{--yes,-y}'[Do not ask for confirmation]' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
 }
 
 (( $+functions[_cod_doc_question_drop] )) || _cod_doc_question_drop() {

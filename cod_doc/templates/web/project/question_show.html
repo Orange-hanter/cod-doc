@@ -46,6 +46,10 @@
   {% if broken_links %}
     <span class="q-broken-chip" title="по последней проверке">✗ битых ссылок: {{ broken_links }}</span>
   {% endif %}
+  <form method="post" action="{{ base }}/delete" class="q-inline"
+        onsubmit="return confirm('Удалить {{ q.question_id }} вместе с вариантами и ссылками? Это необратимо.');">
+    <button type="submit" class="btn btn-sm btn-danger" title="для дублей и мусора; закрыть без ответа — «Снять»">Удалить</button>
+  </form>
   <a class="q-actions-right muted" href="/p/{{ project.name }}/revisions?entity_kind=question&amp;entity_id={{ row_id }}">История изменений</a>
 </div>
 

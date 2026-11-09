@@ -20,6 +20,7 @@ QUESTION_TOOLS = {
     "question_resolve",
     "question_drop",
     "question_reopen",
+    "question_delete",
     "question_option_add",
     "question_option_update",
     "question_option_remove",
@@ -92,6 +93,31 @@ def test_lifecycle_through_tools(root) -> None:  # type: ignore[no-untyped-def]
     dropped = _tool("question_drop")(project="p", question_id="Q-001", resolution="снят")
     assert dropped["status"] == "dropped"
     assert dropped["options"] == []
+
+
+def test_delete_removes_question_in_any_status(root) -> None:  # type: ignore[no-untyped-def]
+    _tool("question_create")(
+        project="p",
+        title="Дубль",
+        question="Q?",
+        options=[{"title": "A"}],
+        links=[{"to_kind": "code", "to_ref": "app.py"}],
+    )
+    _tool("question_create")(project="p", title="Живой", question="Q?")
+    _tool("question_drop")(project="p", question_id="Q-001", resolution="дубль")
+
+    deleted = _tool("question_delete")(project="p", question_id="Q-001", reason="дубль Q-002")
+    assert (deleted["question_id"], deleted["title"], deleted["deleted"]) == (
+        "Q-001",
+        "Дубль",
+        True,
+    )
+    assert _tool("question_get")(project="p", question_id="Q-001") is None
+    listed = _tool("question_list")(project="p", status=None)
+    assert [q["question_id"] for q in listed] == ["Q-002"]
+
+    with pytest.raises(Exception, match="Q-001"):
+        _tool("question_delete")(project="p", question_id="Q-001")
 
 
 def test_link_reports_target_existence_and_verify(root) -> None:  # type: ignore[no-untyped-def]

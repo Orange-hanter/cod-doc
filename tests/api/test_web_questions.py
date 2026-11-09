@@ -253,3 +253,19 @@ def test_card_answer_form_only_while_open_and_edit_flag(q_client) -> None:  # ty
     assert "Снят без ответа" in dropped
     assert "неактуально" in dropped
     assert "Переоткрыть" in dropped
+
+
+def test_delete_button_removes_question_and_returns_to_list(q_client) -> None:  # type: ignore[no-untyped-def]
+    card = q_client.get(f"/p/{SLUG}/questions/Q-001").text
+    assert f'action="/p/{SLUG}/questions/Q-001/delete"' in card
+    assert "return confirm(" in card
+
+    r = q_client.post(f"/p/{SLUG}/questions/Q-001/delete", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{SLUG}/questions?status=all"
+
+    listing = q_client.get(r.headers["location"]).text
+    assert "Q-001" not in listing
+    assert "Q-002" in listing
+    assert q_client.get(f"/p/{SLUG}/questions/Q-001").status_code == 404
+    assert q_client.post(f"/p/{SLUG}/questions/Q-001/delete").status_code == 404
