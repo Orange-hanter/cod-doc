@@ -76,6 +76,7 @@ __all__ = [
     "create_token",
     "disable_actor",
     "hash_token",
+    "identity_for_session",
     "init_store",
     "list_members",
     "list_oidc_links",
@@ -84,8 +85,10 @@ __all__ = [
     "oidc_unlink",
     "open_store",
     "project_uid_for",
+    "project_uid_for_slug",
     "record_denied",
     "record_login",
+    "registry_project_uids",
     "remove_member",
     "revoke_token",
     "store_session",
@@ -285,6 +288,50 @@ def project_uid_for(entry: ProjectEntry) -> str:
         msg = f"у проекта {entry.name!r} нет uid — догоните схему: cod-doc project migrate"
         raise AccessError(msg)
     return uid
+
+
+def project_uid_for_slug(slug: str) -> str | None:
+    """``project.uid`` по слагу реестра; нет проекта, uid или БД — ``None``.
+
+    Без кэша: слаг в реестре можно перевесить на другую БД, и закэшированный
+    uid пустил бы участника старого проекта в новый под тем же именем.
+    ``None`` у вызывающего — отказ (fail-closed), а не пропуск.
+    """
+    from cod_doc.config import Config
+
+    entry = Config.load().get_project(slug)
+    if entry is None:
+        return None
+    return _uid_or_none(entry)
+
+
+def registry_project_uids() -> dict[str, str | None]:
+    """Проекты реестра → их ``project.uid``; ``None`` — uid не прочитан.
+
+    Нечитаемый проект не выпадает из ответа: вызывающий решает, что значит
+    «не смогли проверить», а молча пропущенный проект сделал бы, например,
+    оператором узла того, кто не admin в нём.
+    """
+    from cod_doc.config import Config
+
+    cfg = Config.load()
+    out: dict[str, str | None] = {}
+    for raw in cfg.projects:
+        name = raw.get("name")
+        if not isinstance(name, str):
+            continue
+        entry = cfg.get_project(name)
+        out[name] = _uid_or_none(entry) if entry is not None else None
+    return out
+
+
+def _uid_or_none(entry: ProjectEntry) -> str | None:
+    # Любой сбой открытия БД (файла нет, проект переехал, схема старая) —
+    # «проекта нет», а не 500 на каждой странице веба.
+    try:
+        return project_uid_for(entry)
+    except Exception:
+        return None
 
 
 # --- actor и членство ---------------------------------------------------------
@@ -620,6 +667,26 @@ def authenticate_by_sub(session: Session, sub: str) -> Identity | None:
     """
     actor = session.scalar(select(ActorModel).where(ActorModel.oidc_sub == sub))
     if actor is None or actor.disabled or actor.kind != KIND_HUMAN:
+        return None
+    return Identity(
+        actor_uid=actor.uid,
+        handle=actor.handle,
+        kind=actor.kind,
+        token_label=OIDC_LABEL,
+        authors=_authors(session, actor),
+        roles=MappingProxyType(_roles(session, actor)),
+    )
+
+
+def identity_for_session(session: Session, actor_uid: str) -> Identity | None:
+    """Владелец веб-сессии с ролями — на каждый запрос веба (F1 аудита 0056).
+
+    Те же условия, что у входа (`authenticate_by_sub`), плюс живая привязка:
+    отключённый актёр или снятый ``oidc_sub`` закрывают сессию сразу (F3).
+    Роли читаются заново: снятое членство действует на следующем запросе.
+    """
+    actor = session.get(ActorModel, actor_uid)
+    if actor is None or actor.disabled or actor.kind != KIND_HUMAN or actor.oidc_sub is None:
         return None
     return Identity(
         actor_uid=actor.uid,

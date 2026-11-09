@@ -13,20 +13,26 @@
   ключ в ``oidc_meta`` хранилища). Отказ — 303 на ``/auth/oidc/login`` с
   безопасным ``next``; websocket без сессии — close 1008.
 
-Гейт только аутентифицирует: identity в ``request_identity`` **не** биндится,
-семантика авторизации веба прежняя (binding с пустой ролью сломал бы
-``check_write`` веб-фрагментов). Хендл для шапки кладётся в
+Авторизация (F1 аудита 0056) — :mod:`cod_doc.api.web_access`: после
+аутентификации гейт читает роли владельца сессии и решает по пути и методу —
+проект только участнику, запись по роли, страницы узла только оператору.
+Отказ — 403-страница (websocket — close 1008) и ``auth.denied`` SYNC-202 в
+журнал хранилища. ``request_identity`` не биндится: веб-фрагменты пишут от
+``human:web``, и ``check_write`` их отверг бы. Хендл кладётся в
 ``scope["state"]["web_handle"]`` — шаблоны читают ``request.state.web_handle``.
 """
 
 from __future__ import annotations
 
+import html
 import json
+import logging
 from typing import TYPE_CHECKING, Final
 from urllib.parse import urlencode
 
 import anyio.to_thread
 
+from cod_doc.api import web_access
 from cod_doc.services import oidc_service
 
 if TYPE_CHECKING:
@@ -35,10 +41,14 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
     from starlette.types import ASGIApp, Receive, Scope, Send
 
+    from cod_doc.services.request_identity import Identity
+
 __all__ = ["SessionGate", "is_web_session_path"]
 
 _HTTP_SEE_OTHER: Final = 303
+_HTTP_FORBIDDEN: Final = 403
 _HTTP_UNAVAILABLE: Final = 503
+_log = logging.getLogger("cod_doc.api.web_session")
 #: Код закрытия websocket «policy violation» (RFC 6455 §7.4.1).
 _WS_POLICY_VIOLATION: Final = 1008
 #: Префиксы вне гейта: JSON API — у BearerGate, логин — сам гейт, статика — открыта.
@@ -104,23 +114,41 @@ class SessionGate:
             return
         # F3 аудита (ревью #282, раунд 4): stateless-кука не отзывается сама —
         # гейт сверяет актёра, disable/unlink закрывают вход сразу, не дожидаясь TTL.
-        # Сбой проверки (хранилище мигнуло) — fail-closed на логин, не 500:
-        # незнакомое состояние доступа не должно открывать веб (ревью #282, раунд 5).
+        # F1: тот же запрос в хранилище отдаёт роли — по ним web_access решает,
+        # куда сессии можно. Сбой проверки (хранилище мигнуло, реестр не читается) —
+        # fail-closed на логин/отказ, не 500: незнакомое состояние доступа не
+        # должно открывать веб (ревью #282, раунд 5).
         actor_uid = str(payload.get("actor_uid", ""))
         try:
-            alive = await anyio.to_thread.run_sync(
-                oidc_service.session_actor_alive, factory, actor_uid
+            identity = await anyio.to_thread.run_sync(
+                oidc_service.session_identity, factory, actor_uid
             )
         except Exception:
-            alive = False
-        if not alive:
+            identity = None
+        if identity is None:
             if ws:
                 await _send_close(send)
                 return
             await _send_login(send, scope)
             return
-        # Хендл для шапки шаблонов; identity не биндим — авторизация веба не менялась.
-        scope.setdefault("state", {})["web_handle"] = str(payload.get("handle", ""))
+        try:
+            verdict = await anyio.to_thread.run_sync(_decide, identity, scope)
+        except Exception:
+            verdict = web_access.Deny("проверка доступа не удалась")
+        if isinstance(verdict, web_access.Redirect):
+            await _send_redirect(send, verdict.location)
+            return
+        if isinstance(verdict, web_access.Deny):
+            await anyio.to_thread.run_sync(_journal_denied, factory, scope, verdict, identity)
+            if ws:
+                await _send_close(send)
+                return
+            await _send_forbidden(send, verdict.reason)
+            return
+        # Хендл для шапки шаблонов и автора веб-записей, где он проставлен
+        # (вопросы). request_identity не биндим: веб-фрагменты пишут от
+        # ``human:web``, и check_write отверг бы их — доступ уже решён выше.
+        scope.setdefault("state", {})["web_handle"] = identity.handle
         await self.app(scope, receive, send)
 
     async def _resolve(
@@ -145,6 +173,44 @@ class SessionGate:
             return None
         key = await anyio.to_thread.run_sync(oidc_service.session_key, factory)
         return (factory, key)
+
+
+def _decide(identity: Identity, scope: Scope) -> web_access.Verdict:
+    """Решение ``web_access`` по scope; в потоке — uid проектов читаются с диска."""
+    from cod_doc.services import access_service
+
+    return web_access.decide(
+        identity,
+        method=str(scope.get("method", "GET")),
+        path=scope["path"],
+        websocket=scope["type"] == "websocket",
+        query=bytes(scope.get("query_string", b"")).decode("latin-1"),
+        uid_of=access_service.project_uid_for_slug,
+        registry=access_service.registry_project_uids,
+    )
+
+
+def _journal_denied(
+    factory: sessionmaker[Session], scope: Scope, verdict: web_access.Deny, identity: Identity
+) -> None:
+    """``auth.denied`` SYNC-202 — как у Bearer-гейта; сбой журнала отказ не отменяет."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import access_service
+
+    client = scope.get("client")
+    ip = str(client[0]) if client else ""
+    try:
+        with transactional(factory) as session:
+            access_service.record_denied(
+                session,
+                code="SYNC-202",
+                ip=ip,
+                path=scope["path"],
+                token_label=identity.token_label,
+                project=verdict.project,
+            )
+    except Exception:
+        _log.exception("журнал отказа веб-доступа не записан")
 
 
 def _cookie(scope: Scope, name: str) -> str | None:
@@ -176,6 +242,31 @@ async def _send_login(send: Send, scope: Scope) -> None:
         (b"location", (_LOGIN_PATH + "?" + urlencode({"next": nxt})).encode("latin-1")),
     ]
     await send({"type": "http.response.start", "status": _HTTP_SEE_OTHER, "headers": headers})
+    await send({"type": "http.response.body", "body": body})
+
+
+async def _send_redirect(send: Send, location: str) -> None:
+    headers = [
+        (b"content-length", b"0"),
+        (b"location", location.encode("latin-1")),
+    ]
+    await send({"type": "http.response.start", "status": _HTTP_SEE_OTHER, "headers": headers})
+    await send({"type": "http.response.body", "body": b""})
+
+
+async def _send_forbidden(send: Send, reason: str) -> None:
+    """403-страница: причина и выход — другой аккаунт может иметь доступ."""
+    body = (
+        "<!doctype html><meta charset=utf-8><title>Нет доступа</title>"
+        "<body style='font-family:system-ui;max-width:40rem;margin:4rem auto'>"
+        "<h1>Нет доступа</h1><p>" + html.escape(reason) + "</p>"
+        "<p><a href='/'>На главную</a> · <a href='/auth/logout'>Выйти</a></p>"
+    ).encode()
+    headers = [
+        (b"content-type", b"text/html; charset=utf-8"),
+        (b"content-length", str(len(body)).encode()),
+    ]
+    await send({"type": "http.response.start", "status": _HTTP_FORBIDDEN, "headers": headers})
     await send({"type": "http.response.body", "body": body})
 
 

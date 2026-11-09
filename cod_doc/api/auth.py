@@ -386,7 +386,9 @@ class BearerGate:
         if match is None:
             return None
         slug = match.group("slug")
-        uid = await anyio.to_thread.run_sync(_project_uid, slug)
+        from cod_doc.services import access_service
+
+        uid = await anyio.to_thread.run_sync(access_service.project_uid_for_slug, slug)
         try:
             request_identity.enter_project(uid, slug)
         except request_identity.AccessDeniedError as exc:
@@ -413,21 +415,3 @@ class BearerGate:
                 token_label=denial.token_label,
                 project=denial.project,
             )
-
-
-def _project_uid(slug: str) -> str | None:
-    """``project.uid`` по слагу реестра; нет проекта или uid — ``None`` (→ 403).
-
-    Без кэша: слаг в реестре можно перевесить на другую БД, и закэшированный
-    uid пустил бы участника старого проекта в новый под тем же именем.
-    """
-    from cod_doc.config import Config
-    from cod_doc.services import access_service
-
-    entry = Config.load().get_project(slug)
-    if entry is None:
-        return None
-    try:
-        return access_service.project_uid_for(entry)
-    except access_service.AccessError:
-        return None
