@@ -82,7 +82,10 @@ def idp(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def linked(store: None) -> None:
+def linked(store: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Реестр из одного проекта p1, где alice admin — она оператор узла и видит
+    # «/». Авторизацию по проектам проверяет tests/api/test_web_access.py.
+    monkeypatch.setattr(acc, "registry_project_uids", lambda: {"demo": "p1"})
     factory = acc.open_store()
     assert factory is not None
     with transactional(factory) as s:

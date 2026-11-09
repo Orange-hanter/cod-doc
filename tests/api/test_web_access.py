@@ -130,6 +130,21 @@ def test_node_pages_operator_only_member_redirected() -> None:
     assert isinstance(_decide(_who(), "GET", "/"), web_access.Deny)
 
 
+def test_unreadable_or_empty_registry_has_no_operator() -> None:
+    """Сбой чтения реестра не делает оператором узла (fail-closed)."""
+    admin_demo = _who(**{"u-demo": "admin"})
+    for projects in ({}, {"demo": "u-demo", "broken": None}):
+        verdict = web_access.decide(
+            admin_demo,
+            method="GET",
+            path="/settings",
+            websocket=False,
+            uid_of=_UIDS.get,
+            registry=lambda projects=projects: projects,
+        )
+        assert isinstance(verdict, web_access.Deny), projects
+
+
 # --- сквозной флоу через SessionGate ----------------------------------------
 
 

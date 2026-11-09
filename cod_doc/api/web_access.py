@@ -13,7 +13,7 @@ SessionGate аутентифицирует, этот модуль решает �
   а веб-запись идёт мимо этой проверки.
 - **Страница узла** (``/``, ``/settings``, ``/palette``, ``/standards``,
   legacy JSON вне ``/api``) — только оператору: ``admin`` во всех проектах
-  реестра. Настройки узла правят общий конфиг, индекс перечисляет все проекты.
+  реестра; пустой реестр или проект с непрочитанным uid — оператора нет. Настройки узла правят общий конфиг, индекс перечисляет все проекты.
   Не оператору ``/`` уводит на первый его проект, остальное — 403.
 
 Неизвестный проект, проект без ``uid`` и сбой чтения реестра — отказ: состояние
@@ -109,7 +109,7 @@ def decide(
     path: str,
     websocket: bool,
     uid_of: Callable[[str], str | None],
-    registry: Callable[[], Mapping[str, str]],
+    registry: Callable[[], Mapping[str, str | None]],
     query: str = "",
 ) -> Verdict:
     """Решение по запросу владельца сессии; ``uid_of``/``registry`` — из ``access_service``."""
@@ -123,10 +123,15 @@ def decide(
             identity, slug, method=method, path=path, websocket=websocket, uid_of=uid_of
         )
     projects = registry()
-    if all(identity.roles.get(uid) == ROLE_ADMIN for uid in projects.values()):
+    # Оператор — admin в каждом проекте реестра. Пустой реестр и проект с
+    # непрочитанным uid — не оператор: сбой чтения не должен открывать
+    # настройки узла всем привязанным (fail-closed).
+    if projects and all(
+        uid is not None and identity.roles.get(uid) == ROLE_ADMIN for uid in projects.values()
+    ):
         return Allow()
     if path == "/":
-        mine = sorted(name for name, uid in projects.items() if uid in identity.roles)
+        mine = sorted(name for name, uid in projects.items() if uid and uid in identity.roles)
         if mine:
             return Redirect("/p/" + quote(mine[0], safe=""))
         return Deny(f"{identity.handle!r} не участник ни одного проекта")

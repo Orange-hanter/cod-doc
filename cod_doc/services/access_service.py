@@ -305,24 +305,23 @@ def project_uid_for_slug(slug: str) -> str | None:
     return _uid_or_none(entry)
 
 
-def registry_project_uids() -> dict[str, str]:
-    """Проекты реестра → их ``project.uid``; проекты без uid или БД пропущены.
+def registry_project_uids() -> dict[str, str | None]:
+    """Проекты реестра → их ``project.uid``; ``None`` — uid не прочитан.
 
-    Пропущенный проект не открывается никому: вход в него идёт через
-    :func:`project_uid_for_slug`, а она для него отвечает ``None``.
+    Нечитаемый проект не выпадает из ответа: вызывающий решает, что значит
+    «не смогли проверить», а молча пропущенный проект сделал бы, например,
+    оператором узла того, кто не admin в нём.
     """
     from cod_doc.config import Config
 
     cfg = Config.load()
-    out: dict[str, str] = {}
+    out: dict[str, str | None] = {}
     for raw in cfg.projects:
         name = raw.get("name")
-        entry = cfg.get_project(name) if isinstance(name, str) else None
-        if entry is None:
+        if not isinstance(name, str):
             continue
-        uid = _uid_or_none(entry)
-        if uid is not None:
-            out[entry.name] = uid
+        entry = cfg.get_project(name)
+        out[name] = _uid_or_none(entry) if entry is not None else None
     return out
 
 
