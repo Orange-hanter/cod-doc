@@ -59,6 +59,10 @@ def index(
 ) -> HTMLResponse:
     cfg = get_config()
     all_entries = cfg.list_projects()
+    # OIDC-сессия не оператора: SessionGate кладёт её проекты (web_access).
+    visible = getattr(request.state, "web_projects", None)
+    if visible is not None:
+        all_entries = [e for e in all_entries if e.name in visible]
     total = len(all_entries)
     limit = max(1, min(limit, INDEX_MAX_LIMIT))
     offset = max(0, offset)
