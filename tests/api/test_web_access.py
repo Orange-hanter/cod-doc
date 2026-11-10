@@ -118,13 +118,13 @@ def test_websocket_feed_is_read_run_is_write() -> None:
     )
 
 
-def test_node_pages_operator_only_member_redirected() -> None:
+def test_node_pages_operator_only_member_sees_own_index() -> None:
     operator = _who(**{"u-demo": "admin", "u-other": "admin"})
     for path in ("/", "/settings", "/standards", "/projects", "/palette"):
         assert _decide(operator, "GET", path) == web_access.Allow(), path
     # admin одного проекта — не оператор узла: настройки правят общий конфиг
     half = _who(**{"u-demo": "admin"})
-    assert _decide(half, "GET", "/") == web_access.Redirect("/p/demo")
+    assert _decide(half, "GET", "/") == web_access.Allow(visible=frozenset({"demo"}))
     assert isinstance(_decide(half, "GET", "/settings"), web_access.Deny)
     assert isinstance(_decide(half, "POST", "/settings"), web_access.Deny)
     assert isinstance(_decide(_who(), "GET", "/"), web_access.Deny)
@@ -265,7 +265,10 @@ def test_responder_sees_own_project_answers_and_nothing_else(
     qid = _question(demo_db)
     c: TestClient = request.getfixturevalue("client")
 
-    assert c.get("/").headers.get("location") == "/p/demo"
+    index = c.get("/")
+    assert index.status_code == 200
+    assert 'href="/p/demo"' in index.text
+    assert 'href="/p/other"' not in index.text  # чужой проект в индексе не виден
     assert c.get("/p/demo/questions").status_code == 200
     for path in ("/p/other", "/p/other/questions", "/settings", "/projects"):
         r = c.get(path)

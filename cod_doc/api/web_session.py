@@ -135,9 +135,6 @@ class SessionGate:
             verdict = await anyio.to_thread.run_sync(_decide, identity, scope)
         except Exception:
             verdict = web_access.Deny("проверка доступа не удалась")
-        if isinstance(verdict, web_access.Redirect):
-            await _send_redirect(send, verdict.location)
-            return
         if isinstance(verdict, web_access.Deny):
             await anyio.to_thread.run_sync(_journal_denied, factory, scope, verdict, identity)
             if ws:
@@ -148,7 +145,11 @@ class SessionGate:
         # Хендл для шапки шаблонов и автора веб-записей, где он проставлен
         # (вопросы). request_identity не биндим: веб-фрагменты пишут от
         # ``human:web``, и check_write отверг бы их — доступ уже решён выше.
-        scope.setdefault("state", {})["web_handle"] = identity.handle
+        state = scope.setdefault("state", {})
+        state["web_handle"] = identity.handle
+        # Индекс не оператору показывает только его проекты; ``None`` — без
+        # ограничения (оператор или не индекс).
+        state["web_projects"] = verdict.visible
         await self.app(scope, receive, send)
 
     async def _resolve(
@@ -243,15 +244,6 @@ async def _send_login(send: Send, scope: Scope) -> None:
     ]
     await send({"type": "http.response.start", "status": _HTTP_SEE_OTHER, "headers": headers})
     await send({"type": "http.response.body", "body": body})
-
-
-async def _send_redirect(send: Send, location: str) -> None:
-    headers = [
-        (b"content-length", b"0"),
-        (b"location", location.encode("latin-1")),
-    ]
-    await send({"type": "http.response.start", "status": _HTTP_SEE_OTHER, "headers": headers})
-    await send({"type": "http.response.body", "body": b""})
 
 
 async def _send_forbidden(send: Send, reason: str) -> None:

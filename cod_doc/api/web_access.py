@@ -14,7 +14,8 @@ SessionGate аутентифицирует, этот модуль решает �
 - **Страница узла** (``/``, ``/settings``, ``/palette``, ``/standards``,
   legacy JSON вне ``/api``) — только оператору: ``admin`` во всех проектах
   реестра; пустой реестр или проект с непрочитанным uid — оператора нет. Настройки узла правят общий конфиг, индекс перечисляет все проекты.
-  Не оператору ``/`` уводит на первый его проект, остальное — 403.
+  Не оператору ``/`` показывает только его проекты (``Allow.visible``),
+  остальное — 403.
 
 Неизвестный проект, проект без ``uid`` и сбой чтения реестра — отказ: состояние
 доступа, которое нельзя проверить, веб не открывает.
@@ -25,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
-from urllib.parse import parse_qsl, quote
+from urllib.parse import parse_qsl
 
 from cod_doc.services.request_identity import (
     ROLE_ADMIN,
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 
     from cod_doc.services.request_identity import Identity
 
-__all__ = ["Allow", "Deny", "Redirect", "Verdict", "decide", "project_of"]
+__all__ = ["Allow", "Deny", "Verdict", "decide", "project_of"]
 
 _PROJECT_PATHS: Final = (
     re.compile(r"^/p/(?P<slug>[^/]+)(?:/|$)"),
@@ -56,14 +57,14 @@ _READ_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS"})
 
 @dataclass(frozen=True, slots=True)
 class Allow:
-    """Пропустить; ``project`` — слаг, если путь проектный."""
+    """Пропустить; ``project`` — слаг, если путь проектный.
+
+    ``visible`` — слаги, которые странице узла можно показать (индекс не
+    оператору); ``None`` — без ограничения.
+    """
 
     project: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class Redirect:
-    location: str
+    visible: frozenset[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +73,7 @@ class Deny:
     project: str | None = None
 
 
-Verdict = Allow | Redirect | Deny
+Verdict = Allow | Deny
 
 
 def project_of(path: str, query: str = "") -> str | None:
@@ -131,9 +132,9 @@ def decide(
     ):
         return Allow()
     if path == "/":
-        mine = sorted(name for name, uid in projects.items() if uid and uid in identity.roles)
+        mine = frozenset(name for name, uid in projects.items() if uid and uid in identity.roles)
         if mine:
-            return Redirect("/p/" + quote(mine[0], safe=""))
+            return Allow(visible=mine)
         return Deny(f"{identity.handle!r} не участник ни одного проекта")
     return Deny(f"{identity.handle!r}: страница узла доступна только администратору")
 
