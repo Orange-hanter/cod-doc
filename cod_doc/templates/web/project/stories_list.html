@@ -6,7 +6,7 @@
     видимый текст это narrative (Restate: 69–245 знаков), он режется до двух
     строк по высоте, целиком лежит в DOM и в title. -#}
 {%- macro story_row(s) -%}
-  {% call ui.row(id=s.story_id, href="/p/" ~ project.name ~ "/stories/" ~ s.story_id, title=s.narrative, attrs='data-story-id="' ~ s.story_id ~ '"') %}
+  {% call ui.row(id=s.story_id, href="/p/" ~ project.name ~ "/stories/" ~ s.story_id, title=s.narrative, attrs={"data-story-id": s.story_id}) %}
     <div class="l-row-body">
       {#- ADO-144: разобранный нарратив — персона, «хочет», «чтобы» — остаётся
           структурой, но в одну строку-абзац: метки вместо карточки в три блока. -#}

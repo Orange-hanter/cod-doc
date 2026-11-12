@@ -28,12 +28,15 @@
 {#- ── 05 Действия ──────────────────────────────────────────────────────── -#}
 
 {#- Кнопка или ссылка-кнопка. kind: primary | secondary | signal | ghost | danger. -#}
-{%- macro button(label, kind="secondary", href=None, size=None, block=False, type="button", attrs="") -%}
+{#- attrs — словарь доп. атрибутов (`{"hx-post": url}`); рендерится xmlattr с
+    автоэскейпом. Строку с готовой разметкой сюда не передавать: значения из
+    БД попали бы в HTML без экранирования. -#}
+{%- macro button(label, kind="secondary", href=None, size=None, block=False, type="button", attrs={}) -%}
   {%- set cls = "l-btn l-btn-" ~ kind ~ (" l-btn-sm" if size == "sm" else "") ~ (" l-btn-block" if block else "") -%}
   {%- if href -%}
-    <a class="{{ cls }}" href="{{ href }}" {{ attrs | safe }}>{{ label }}</a>
+    <a class="{{ cls }}" href="{{ href }}"{{ attrs | xmlattr }}>{{ label }}</a>
   {%- else -%}
-    <button class="{{ cls }}" type="{{ type }}" {{ attrs | safe }}>{{ label }}</button>
+    <button class="{{ cls }}" type="{{ type }}"{{ attrs | xmlattr }}>{{ label }}</button>
   {%- endif -%}
 {%- endmacro -%}
 
@@ -127,8 +130,8 @@
 
 {#- Строка-сущность. href — ссылка на всю строку; peek — data-peek для
     шторки (tests/api/test_web_peek_links.py). Тело — caller(). -#}
-{%- macro row(id=None, href=None, selected=False, peek=False, filter=True, title=None, attrs="") -%}
-  <article class="l-row{{ ' l-row-selected' if selected }}"{% if filter %} data-filter-row{% endif %}{% if title %} title="{{ title }}"{% endif %} {{ attrs | safe }}>
+{%- macro row(id=None, href=None, selected=False, peek=False, filter=True, title=None, attrs={}) -%}
+  <article class="l-row{{ ' l-row-selected' if selected }}"{% if filter %} data-filter-row{% endif %}{% if title %} title="{{ title }}"{% endif %}{{ attrs | xmlattr }}>
     {%- if href %}<a class="l-row-link" href="{{ href }}" aria-label="{{ id or 'open' }}"{% if peek %} data-peek{% else %} data-peek-off{% endif %}></a>{% endif -%}
     {%- if id %}<span class="l-row-id">{{ id }}</span>{% endif -%}
     {{ caller() }}

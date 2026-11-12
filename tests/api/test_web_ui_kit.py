@@ -62,6 +62,25 @@ def test_every_kit_class_in_templates_has_a_rule() -> None:
     assert not unstyled, f"классы кита без правила в _ledger.css: {unstyled}"
 
 
+def test_row_and_button_attrs_are_escaped() -> None:
+    """Доп. атрибуты идут словарём через xmlattr, а не строкой под `| safe`.
+
+    Значение из БД (story_id, заголовок) в строке-атрибуте закрыло бы кавычку
+    и вставило разметку — XSS через любое поле, которое пишет MCP-поверхность.
+    """
+    from cod_doc.api.web.templates_env import templates
+
+    evil = '"><script>alert(1)</script>'
+    tpl = templates.env.from_string(
+        '{% import "_ui/ledger.html" as ui %}'
+        '{% call ui.row(id="X", attrs={"data-story-id": v}) %}body{% endcall %}'
+        '{{ ui.button("b", attrs={"data-x": v}) }}'
+    )
+    html = tpl.render(v=evil)
+    assert "<script>" not in html
+    assert 'data-story-id="&#34;&gt;&lt;script&gt;' in html
+
+
 def test_tone_modifiers_are_styled() -> None:
     """Тоны собираются конкатенацией (`"l-tag-" ~ tone`) — сканер их не видит."""
     css = (ROOT / "static" / "css" / "_ledger.css").read_text(encoding="utf-8")
