@@ -1,5 +1,35 @@
 {% extends "base.html" %}
 {% import "_frag/sort.html" as sorting %}
+{% import "_ui/ledger.html" as ui %}
+
+{#- Строка истории (кит Ledger, R/Data/Story Row). У истории нет заголовка —
+    видимый текст это narrative (Restate: 69–245 знаков), он режется до двух
+    строк по высоте, целиком лежит в DOM и в title. -#}
+{%- macro story_row(s) -%}
+  {% call ui.row(id=s.story_id, href="/p/" ~ project.name ~ "/stories/" ~ s.story_id, title=s.narrative, attrs={"data-story-id": s.story_id}) %}
+    <div class="l-row-body">
+      {#- ADO-144: разобранный нарратив — персона, «хочет», «чтобы» — остаётся
+          структурой, но в одну строку-абзац: метки вместо карточки в три блока. -#}
+      <span class="l-row-text l-clamp-2">
+        {%- if s.parsed.title %}<strong>{{ s.parsed.title }}.</strong> {% endif -%}
+        {%- if s.persona %}<span class="l-row-persona">{{ s.persona }}</span> {% endif -%}
+        {%- if s.parsed.want or s.parsed.so_that -%}
+          {%- if s.parsed.want %}<span class="l-row-label">Хочет</span> {{ s.parsed.want }}{% endif -%}
+          {%- if s.parsed.so_that %} <span class="l-row-label">Чтобы</span> {{ s.parsed.so_that }}{% endif -%}
+        {%- else -%}
+          {{ s.narrative }}
+        {%- endif -%}
+      </span>
+      <span class="l-row-meta">
+        {{ ui.status(s.status) }}
+        <span class="l-mono" title="{{ s.tasks_done }} из {{ s.tasks_total }} задач закрыто">задачи {{ s.tasks_done }}/{{ s.tasks_total }}</span>
+        <span class="l-mono l-prio-{{ s.priority }}">{{ s.priority }}</span>
+        {%- for scope in s.plan_scopes[:2] %}<span class="l-mono">{{ scope }}</span>{% endfor -%}
+        {%- if s.plan_scopes | length > 2 %}<span>+{{ s.plan_scopes | length - 2 }}</span>{% endif -%}
+      </span>
+    </div>
+  {% endcall %}
+{%- endmacro -%}
 {% block title %}Stories · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -12,17 +42,11 @@
 
 <div class="stories-page">
 
-  <header class="stories-header">
-    <div class="stories-header-icon">📖</div>
-    <div>
-      <h1 class="stories-title">{{ project.name }} · User stories</h1>
-      <p class="stories-subtitle muted">
-        Stories capture user-facing requirements in
-        <em>As a … I want … so that …</em> form. Each story spawns tasks
-        inside a plan; plans are tied to stories via implementation links.
-      </p>
-    </div>
-  </header>
+  {{ ui.page_header(
+       "User stories",
+       eyebrow="stories · " ~ project.name,
+       lead=(totals.stories ~ " историй в " ~ (groups | selectattr("label") | list | length) ~ " группах. История — требование в форме «Как … я хочу … чтобы …»; задачи её реализуют внутри плана.")
+     ) }}
 
   {# ── Generate from docs ─────────────────────────────────────────────── #}
   <section class="stories-generate-card">
@@ -152,37 +176,33 @@
     </div>
 
     {% if not stories %}
-      <p class="muted">Stories ещё не созданы. Сгенерируй из документации выше или импортируй вручную.</p>
+      {{ ui.empty("Stories ещё не созданы", "Сгенерируй из документации выше или импортируй вручную.", glyph="＋") }}
     {% else %}
-      {% for grp in groups %}
-        {% if grp.label %}
-          <details class="story-group" data-filter-group open>
-            <summary class="story-group-head story-hue-{{ grp.hue }}">
-              <span class="story-group-chevron">▾</span>
-              <span class="story-group-label">{{ grp.label }}</span>
-              <span class="count-chip">{{ grp.stories | length }}</span>
-            </summary>
-
-            {# Section AI summary — only for section grouping (each section
-               has a stable key the summary service can use). Persona / flat
-               views skip this, and so does the "No section" bucket: it has no
-               subject to summarise, it is just the not-yet-sorted pile. #}
-            {% if group_by == 'section' and grp.key and grp.analyzable %}
-              {% with section=grp.key, summary=grp.summary, error='' %}
-                {% include "_frag/section_summary.html" %}
-              {% endwith %}
-            {% endif %}
-
-            <div class="story-grid">
-              {% for s in grp.stories %}{% include "_frag/story_card.html" %}{% endfor %}
-            </div>
-          </details>
-        {% else %}
-          <div class="story-grid">
-            {% for s in grp.stories %}{% include "_frag/story_card.html" %}{% endfor %}
-          </div>
-        {% endif %}
-      {% endfor %}
+      {#- Правила масштаба (доска «Ledger · Масштаб»): группа со счётчиком и
+          сводкой статусов, в группе видно 6 строк, хвост — «ещё N из M».
+          На большом проекте (> 40 историй) раскрыты первые три группы:
+          у Restate 15 секций по 8–55 историй. -#}
+      {% set _many = stories | length > 40 %}
+      <div class="l-list">
+        {% for grp in groups %}
+          {% if grp.label %}
+            {% call ui.group(grp.label, count=grp.stories | length, meta=grp.meta, open=(not _many or loop.index <= 3)) %}
+              {# Section AI summary — only for section grouping (each section
+                 has a stable key the summary service can use). Persona / flat
+                 views skip this, and so does the "No section" bucket: it has no
+                 subject to summarise, it is just the not-yet-sorted pile. #}
+              {% if group_by == 'section' and grp.key and grp.analyzable %}
+                {% with section=grp.key, summary=grp.summary, error='' %}
+                  {% include "_frag/section_summary.html" %}
+                {% endwith %}
+              {% endif %}
+              {{ ui.rows_with_more(grp.stories, story_row, visible=6) }}
+            {% endcall %}
+          {% else %}
+            {% for s in grp.stories %}{{ story_row(s) }}{% endfor %}
+          {% endif %}
+        {% endfor %}
+      </div>
     {% endif %}
   </section>
 

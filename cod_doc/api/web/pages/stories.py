@@ -251,6 +251,22 @@ STORY_SORT = SortSpec(
 )
 
 
+def _status_meta(items: list[dict[str, Any]]) -> str:
+    """Сводка статусов группы для свёрнутого заголовка: «18 accepted · 4 draft».
+
+    Правило масштаба 1 (доска «Ledger · Масштаб»): у Restate до 55 историй в
+    секции, и свёрнутая группа обязана сказать, что внутри, без раскрытия.
+    Порядок — по рангу статуса, а не по частоте: строки не прыгают между
+    рендерами.
+    """
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item["status"]] = counts.get(item["status"], 0) + 1
+    unknown = len(_STATUS_RANK)  # неизвестный статус — в конец сводки
+    ordered = sorted(counts, key=lambda status: _STATUS_RANK.get(status, unknown))
+    return " · ".join(f"{counts[status]} {status}" for status in ordered)
+
+
 @router.get("/p/{slug}/stories", response_class=HTMLResponse)
 def stories_list(
     request: Request,
@@ -509,6 +525,9 @@ def stories_list(
                     ),
                 }
             )
+
+    for grp in groups:
+        grp["meta"] = _status_meta(grp["stories"])
 
     return templates.TemplateResponse(
         request,

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "_ui/ledger.html" as ui %}
+{% block title %}Кит Ledger — COD-DOC{% endblock %}
+
+{#- Строки-образцы. Те же макросы зовут боевые страницы (stories_list). -#}
+{%- macro story_row(s) -%}
+  {% call ui.row(id=s.id, href="#" ~ s.id) %}
+    <div class="l-row-body">
+      <span class="l-row-text l-clamp-2">{{ s.narrative }}</span>
+      <span class="l-row-meta">
+        {{ ui.status(s.status) }}
+        <span class="l-mono">задачи {{ s.tasks_done }}/{{ s.tasks_total }}</span>
+        <span class="l-mono l-prio-{{ s.priority }}">{{ s.priority }}</span>
+      </span>
+    </div>
+  {% endcall %}
+{%- endmacro -%}
+
+{%- macro task_row(t) -%}
+  {% call ui.row(id=t.id, href="#" ~ t.id) %}
+    <div class="l-row-body"><span class="l-row-text l-clamp-2">{{ t.title }}</span></div>
+    <div class="l-row-aside">{{ ui.status(t.status) }}<span class="l-mono l-muted">{{ t.who }}</span></div>
+  {% endcall %}
+{%- endmacro -%}
+
+{% block content %}
+<div class="l-kit">
+  {% call ui.page_header("Кит Ledger", eyebrow="_ui/ledger.html · _ledger.css", lead="Компоненты веб-интерфейса cod-doc. Каждый блок — макрос с образцом на данных масштаба Restate/Orakul. Палитру переключает кнопка ◐ в шапке.") %}
+    {{ ui.button("Primary", "primary") }}
+  {% endcall %}
+
+  <section class="l-kit-section">
+    <h2>01 · Цвет</h2>
+    <div class="l-kit-swatches">
+      {% for var, use in swatches %}
+        <div class="l-kit-swatch"><span style="background: var({{ var }})"></span><code>{{ var }}</code><span class="l-muted">{{ use }}</span></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="l-kit-section">
+    <h2>05 · Действия</h2>
+    <div class="l-kit-grid">
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.button("Завершить", "primary") }}{{ ui.button("Сухой прогон", "secondary") }}{{ ui.button("Починить", "signal") }}
+      </div><div class="l-kit-caption"><code>ui.button(label, kind)</code> — primary одна на область; signal — только для действия, снимающего проблему.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.button("Править", "ghost") }}{{ ui.button("Удалить секцию", "danger") }}{{ ui.button("Малая", "secondary", size="sm") }}
+      </div><div class="l-kit-caption"><code>ghost</code> — в строках и тулбарах, <code>danger</code> — необратимое.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.cmd("cod-doc doc import --replace") }}{{ ui.kbd("⌘K") }}
+      </div><div class="l-kit-caption"><code>ui.cmd</code> — CLI-эквивалент рядом с кнопкой; <code>ui.kbd</code> — клавиша.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage l-kit-stage-block">
+        {{ ui.code_block("cod-doc doc import docs/system/DATA_MODEL.md -p cod-doc --replace --dry-run") }}
+      </div><div class="l-kit-caption"><code>ui.code_block</code> — полная команда, переносится по ширине.</div></div>
+    </div>
+  </section>
+
+  <section class="l-kit-section">
+    <h2>06 · Метки</h2>
+    <div class="l-kit-grid">
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.tag("conflict", "signal") }}{{ ui.tag("edited_in_place", "warn") }}{{ ui.tag("finding", "info") }}{{ ui.tag("done", "ok") }}{{ ui.tag("todo", "neutral") }}
+      </div><div class="l-kit-caption"><code>ui.tag(label, tone)</code>; <code>ui.status(value)</code> выводит тон из статуса.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.id_chip("ADO-083") }}{{ ui.id_chip("PBR-105", soft=True) }}{{ ui.label("Критерии приёмки", "2 / 4") }}
+      </div><div class="l-kit-caption"><code>ui.id_chip</code>, <code>ui.label(text, count)</code>.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.filter_chip("Все", 289, active=True) }}{{ ui.filter_chip("draft", 87) }}{{ ui.filter_chip("accepted", 177) }}
+      </div><div class="l-kit-caption"><code>ui.filter_chip(text, count, href, active)</code> — счётчик в каждом чипе.</div></div>
+    </div>
+  </section>
+
+  <section class="l-kit-section">
+    <h2>09 · Данные</h2>
+    <div class="l-kit-grid">
+      <div class="l-kit-spec"><div class="l-kit-stage l-kit-stage-block">
+        {{ ui.health([(16, "ok"), (279, "signal"), (4, "warn"), (2, "info")]) }}
+        <p>{{ ui.legend("16 в синхроне", "ok") }} {{ ui.legend("279 недоступны", "signal") }} {{ ui.legend("4 неточны", "warn") }}</p>
+      </div><div class="l-kit-caption"><code>ui.health([(n, tone), …])</code> + <code>ui.legend</code>.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage">
+        {{ ui.progress(6, 24, active=2, blocked=3) }}<span class="l-mono l-muted">6 / 24</span>
+      </div><div class="l-kit-caption"><code>ui.progress(done, total, active, blocked)</code> — секция плана.</div></div>
+    </div>
+
+    <div class="l-list">
+      {% call ui.group("Эпик 7. Партнёрские заявки", count=stories | length, meta="18 accepted · 4 draft · 2 delivered") %}
+        {{ ui.rows_with_more(stories, story_row, visible=3) }}
+      {% endcall %}
+      {% call ui.group("Эпик 11. Independent Agent (Самозанятые/ИП РФ, индивидуальные брокеры TH)", count=31, meta="22 accepted · 9 draft", open=False) %}
+        {{ ui.empty("Свёрнуто") }}
+      {% endcall %}
+      {% call ui.group("D  Уведомления и email", count="6 / 24", meta="2 в работе · 3 blocked", progress_html=ui.progress(6, 24, active=2, blocked=3)) %}
+        {% for t in tasks %}{{ task_row(t) }}{% endfor %}
+      {% endcall %}
+    </div>
+    <p class="l-muted"><code>ui.group</code> + <code>ui.rows_with_more(rows, row_macro, visible)</code> + <code>ui.row</code>: правила масштаба 1–3 — группа со счётчиком, текст в 2 строки, «ещё N из M». Быстрый фильтр раскрывает свёрнутые группы с совпадениями.</p>
+  </section>
+
+  <section class="l-kit-section">
+    <h2>10 · Обратная связь</h2>
+    <div class="l-kit-grid">
+      <div class="l-kit-spec"><div class="l-kit-stage l-kit-stage-block">
+        {{ ui.banner("Секцию #oidc переименовали — 1 ссылка не резолвится.", "signal", "Перепривязать", "#") }}
+        <p></p>
+        {{ ui.banner("Задачу держит agent:claude-opus-5 · 3 ч.", "warn") }}
+        <p></p>
+        {{ ui.banner("Вы читаете как reader. Правка недоступна.", "info") }}
+        <p></p>
+        {{ ui.banner("Документ в синхроне с диском.", "ok") }}
+      </div><div class="l-kit-caption"><code>ui.banner(text, tone, action_label, action_href)</code>.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage l-kit-stage-block">
+        {% call ui.empty("Документация совпадает с источниками", "214 документов, 0 открытых находок.") %}{{ ui.button("Сверить сейчас") }}{% endcall %}
+      </div><div class="l-kit-caption"><code>ui.empty(title, desc)</code>, действие — через <code>call</code>.</div></div>
+      <div class="l-kit-spec"><div class="l-kit-stage l-kit-stage-block">{{ ui.skeleton() }}</div><div class="l-kit-caption"><code>ui.skeleton(lines)</code> — загрузка.</div></div>
+    </div>
+  </section>
+
+  <section class="l-kit-section">
+    <h2>11 · Шапка экрана</h2>
+    {{ ui.page_header("Кто подтверждает выплату комиссии первым — агентство-инициатор или партнёр, и что происходит, если вторая сторона не подтверждает в течение 14 дней после статуса Completed: автоматическое подтверждение, эскалация в арбитраж или блокировка новых заявок?", eyebrow="Q-148 · блокирует 4 задачи") }}
+    <p class="l-muted"><code>ui.page_header(title, eyebrow, lead)</code>: заголовок длиннее 120 знаков набирается на шаг ниже и режется до 3 строк (правило 7).</p>
+  </section>
+</div>
+{% endblock %}
