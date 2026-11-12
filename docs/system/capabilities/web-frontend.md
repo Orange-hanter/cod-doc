@@ -75,6 +75,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /settings` | Сохранение конфига | `Config.save` | ✅ | WEB-060 |
 | `GET /standards` | Каталог встроенных skills/стандартов | `skill_service.list_skills` | ✅ | OBI-standards |
 | `GET /standards/{name}` | Деталь skill'а / стандарта | `skill_service.get_skill` | ✅ | OBI-standards |
+| `GET /ui/kit` | Каталог кита Ledger: макросы `_ui/ledger.html` на образцовых данных | — (без БД) | ✅ | WUI-007 |
 | **Проект — overview и bootstrap**  | | | |
 | `GET /p/{slug}` | Дашборд проекта: KPI, MASTER preview, ready tasks, планы, ревизии, drift-health | `Project.stats/read_master` + `plan_service` + `revision_service` + `project_health_service` | ✅ | WEB-002 |
 | `POST /p/{slug}/init` | Bootstrap БД (alembic upgrade + ProjectModel) | `project_service.init_project` | ✅ | WEB-080 |

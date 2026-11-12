@@ -23,15 +23,18 @@
     });
   }
 
-  // Палитра ортогональна light/dark: атрибут есть — мягкая, нет — исходная.
+  // Палитра ортогональна light/dark. Круг: ledger → soft → default
+  // (classic, без атрибута) → ledger. В localStorage — имя палитры.
   const PALETTE_KEY = 'cod-doc-palette';
+  const PALETTE_CYCLE = ['ledger', 'soft', 'default'];
   const paletteToggle = document.getElementById('palette-toggle');
   if (paletteToggle) {
     paletteToggle.addEventListener('click', () => {
-      const soft = root.getAttribute('data-palette') !== 'soft';
-      if (soft) root.setAttribute('data-palette', 'soft');
-      else root.removeAttribute('data-palette');
-      try { localStorage.setItem(PALETTE_KEY, soft ? 'soft' : 'default'); } catch (e) { /* ignore */ }
+      const current = root.getAttribute('data-palette') || 'default';
+      const next = PALETTE_CYCLE[(PALETTE_CYCLE.indexOf(current) + 1) % PALETTE_CYCLE.length];
+      if (next === 'default') root.removeAttribute('data-palette');
+      else root.setAttribute('data-palette', next);
+      try { localStorage.setItem(PALETTE_KEY, next); } catch (e) { /* ignore */ }
     });
   }
 

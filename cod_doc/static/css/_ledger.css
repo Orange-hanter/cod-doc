@@ -1,0 +1,408 @@
+/* COD-DOC web — кит Ledger (редизайн 2026-11).
+ *
+ * Пара к макросам `templates/web/_ui/ledger.html`: каждый класс `l-*` здесь
+ * отвечает компоненту `R/*` из pencil-библиотеки «Ledger · Библиотека».
+ * Цвета — только токены из _base.css (на palette=ledger они свои, на
+ * classic/soft — сведены к старой палитре, поэтому кит не ломает их).
+ * Кегль — только calc(Npx * var(--text-scale, 1)): регулятор текста
+ * (tests/api/test_web_text_style.py).
+ *
+ * Правила масштаба (доска «Ledger · Масштаб»): список группируется и
+ * сворачивается, текст режется по строкам (line-clamp), в группе видно
+ * несколько строк и «ещё N из M».
+ */
+
+/* ── Shell: верхняя панель и вкладки проекта на палитре Ledger ─────────── */
+[data-palette="ledger"] .topbar {
+  background: var(--bar);
+  border-bottom-color: var(--bar);
+  color: var(--bar-fg);
+  backdrop-filter: none;
+}
+[data-palette="ledger"] .topbar .brand { color: var(--bar-fg); font-family: var(--font-mono); letter-spacing: 0; }
+[data-palette="ledger"] .topbar .brand::before { background: var(--signal); box-shadow: none; border-radius: 5px; }
+[data-palette="ledger"] .topbar nav a { color: var(--bar-muted); }
+[data-palette="ledger"] .topbar nav a:hover { color: var(--bar-fg); background: var(--bar-field); }
+[data-palette="ledger"] .topbar nav a.active { color: var(--bar-fg); background: transparent; box-shadow: inset 0 -2px 0 var(--signal); border-radius: 0; }
+[data-palette="ledger"] .topbar .cod-user,
+[data-palette="ledger"] .topbar > a { color: var(--bar-muted); }
+[data-palette="ledger"] .topbar .cmdk-open {
+  background: var(--bar-field);
+  border-color: var(--bar-field);
+  color: var(--bar-muted);
+}
+[data-palette="ledger"] .topbar .cmdk-kbd { border-color: var(--bar-line); color: var(--bar-muted); background: transparent; }
+[data-palette="ledger"] .topbar .palette-toggle,
+[data-palette="ledger"] .topbar .theme-toggle { color: var(--bar-muted); border-color: var(--bar-line); background: transparent; }
+
+[data-palette="ledger"] nav.tabs a.active { box-shadow: inset 0 -2px 0 var(--ink); }
+
+/* ── Типографика ──────────────────────────────────────────────────────── */
+.l-display { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; color: var(--fg-strong); }
+.l-mono { font-family: var(--font-mono); }
+.l-muted { color: var(--muted); }
+.l-clamp-2, .l-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.l-clamp-2 { -webkit-line-clamp: 2; line-clamp: 2; }
+.l-clamp-3 { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* ── 05 Действия ──────────────────────────────────────────────────────── */
+.l-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font: 500 calc(13px * var(--text-scale, 1))/1 var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.l-btn:hover { text-decoration: none; filter: brightness(1.05); }
+.l-btn-primary { background: var(--ink); color: var(--on-ink); }
+.l-btn-secondary { background: var(--bg); color: var(--fg); border-color: var(--border-strong); }
+.l-btn-signal { background: var(--signal); color: var(--on-signal); }
+.l-btn-ghost { background: transparent; color: var(--muted); height: 32px; padding: 0 10px; }
+.l-btn-ghost:hover { background: var(--bg-soft); color: var(--fg); }
+.l-btn-danger { background: var(--bg); color: var(--signal); border-color: var(--signal); }
+.l-btn-sm { height: 30px; padding: 0 10px; font-size: calc(12px * var(--text-scale, 1)); }
+.l-btn-block { width: 100%; justify-content: center; }
+.l-btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; background: var(--bg); border-color: var(--border); color: var(--muted); }
+
+.l-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: calc(12px * var(--text-scale, 1))/1.3 var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.l-cmd::before { content: "›"; color: var(--muted); opacity: 0.7; }
+
+.l-kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font: calc(11px * var(--text-scale, 1))/1.2 var(--font-mono);
+  color: var(--muted);
+}
+
+.l-code {
+  display: flex;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bar);
+  color: var(--bar-fg);
+  font: calc(12px * var(--text-scale, 1))/1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.l-code::before { content: "$"; color: var(--bar-muted); }
+
+/* ── 06 Метки ─────────────────────────────────────────────────────────── */
+.l-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font: 500 calc(11px * var(--text-scale, 1))/1.3 var(--font-mono);
+  white-space: nowrap;
+}
+.l-tag-signal  { background: var(--signal-soft);      color: var(--signal); }
+.l-tag-warn    { background: var(--warning-soft-bg);  color: var(--warning); }
+.l-tag-info    { background: var(--info-soft-bg);     color: var(--info); }
+.l-tag-ok      { background: var(--success-soft-bg);  color: var(--success); }
+.l-tag-neutral { background: var(--bg-soft);          color: var(--muted); }
+
+.l-id {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--on-ink);
+  font: 600 calc(12px * var(--text-scale, 1))/1.3 var(--font-mono);
+  white-space: nowrap;
+}
+.l-id-soft { background: var(--bg-soft); color: var(--fg); }
+
+.l-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: 600 calc(11px * var(--text-scale, 1))/1.3 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.l-label-count { font-family: var(--font-mono); font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+.l-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font: 500 calc(12px * var(--text-scale, 1))/1.3 var(--font-sans);
+}
+
+.l-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex: none; }
+.l-dot-signal { background: var(--signal); }
+.l-dot-warn { background: var(--warning); }
+.l-dot-info { background: var(--info); }
+.l-dot-muted { background: var(--muted); }
+
+.l-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font: 500 calc(12px * var(--text-scale, 1))/1 var(--font-sans);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.l-filter:hover { text-decoration: none; color: var(--fg); }
+.l-filter-active { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.l-filter-active:hover { color: var(--on-ink); }
+.l-filter-count { font-family: var(--font-mono); opacity: 0.8; }
+
+/* ── 09 Данные ────────────────────────────────────────────────────────── */
+.l-health { display: flex; gap: 2px; height: 10px; }
+.l-health > span { min-width: 2px; }
+.l-health > span:first-child { border-radius: 3px 0 0 3px; }
+.l-health > span:last-child { border-radius: 0 3px 3px 0; }
+.l-legend { display: inline-flex; align-items: center; gap: var(--space-2); font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); }
+.l-legend::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--l-swatch, var(--success)); }
+
+.l-progress {
+  display: inline-flex;
+  width: 160px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  flex: none;
+}
+.l-progress > .l-progress-done    { background: var(--ink); }
+.l-progress > .l-progress-active  { background: var(--signal); }
+.l-progress > .l-progress-blocked { background: var(--warning); }
+
+/* Список — карточка с разделителями строк. */
+.l-list {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Группа: <details class="l-group"> + <summary class="l-group-head">. */
+.l-group { border-bottom: 1px solid var(--border); }
+.l-group:last-child { border-bottom: none; }
+.l-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 16px;
+  background: var(--bg-alt);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.l-group-head::-webkit-details-marker { display: none; }
+.l-group-head::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: calc(11px * var(--text-scale, 1));
+  transition: transform var(--motion-fast);
+}
+.l-group[open] > .l-group-head::before { transform: rotate(90deg); }
+.l-group[open] > .l-group-head { border-bottom: 1px solid var(--border); }
+.l-group-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 calc(13px * var(--text-scale, 1))/1.3 var(--font-sans);
+  color: var(--fg-strong);
+}
+.l-group-count { font: calc(12px * var(--text-scale, 1))/1 var(--font-mono); color: var(--muted); }
+.l-group-meta { font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); white-space: nowrap; }
+
+/* Строка-сущность: общая сетка для историй, задач, пунктов очереди. */
+.l-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+.l-row:last-child { border-bottom: none; }
+.l-row:hover { background: var(--bg-alt); }
+.l-row-selected { background: var(--signal-tint); box-shadow: inset 3px 0 0 var(--signal); }
+.l-row-link { position: absolute; inset: 0; z-index: 0; }
+.l-row a:not(.l-row-link), .l-row button { position: relative; z-index: 1; }
+.l-row-id {
+  flex: none;
+  width: 72px;
+  padding-top: 1px;
+  font: 600 calc(12px * var(--text-scale, 1))/1.45 var(--font-mono);
+  color: var(--muted-strong);
+}
+.l-row-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.l-row-text { font: calc(13px * var(--text-scale, 1))/1.45 var(--font-sans); color: var(--fg); }
+.l-row-persona { font-weight: 600; color: var(--fg-strong); }
+.l-row-persona::after { content: " ·"; font-weight: 400; color: var(--muted); }
+.l-row-label {
+  font-size: calc(11px * var(--text-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.l-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: calc(12px * var(--text-scale, 1));
+  color: var(--muted);
+}
+.l-row-meta .l-mono { font-size: calc(12px * var(--text-scale, 1)); }
+.l-row-aside { flex: none; display: flex; align-items: center; gap: 10px; }
+.l-prio-critical { color: var(--signal); }
+.l-prio-high { color: var(--fg); }
+.l-prio-medium, .l-prio-low { color: var(--muted); }
+
+/* «Показать ещё N из M» — <details class="l-more">: свёрнутый хвост группы. */
+.l-more > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 16px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--info);
+  font: 500 calc(13px * var(--text-scale, 1))/1 var(--font-sans);
+  background: var(--bg);
+}
+.l-more > summary::-webkit-details-marker { display: none; }
+.l-more > summary::before { content: "⌄"; }
+.l-more[open] > summary { display: none; }
+.l-more-rows > .l-row:first-child { border-top: 1px solid var(--border); }
+
+/* ── 10 Обратная связь ────────────────────────────────────────────────── */
+.l-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font: calc(13px * var(--text-scale, 1))/1.4 var(--font-sans);
+}
+.l-banner-text { flex: 1 1 auto; min-width: 0; }
+.l-banner-signal { background: var(--signal-soft);     color: var(--signal-ink); }
+.l-banner-warn   { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+.l-banner-info   { background: var(--info-soft-bg);    color: var(--info-soft-fg); }
+.l-banner-ok     { background: var(--success-soft-bg); color: var(--success-soft-fg); }
+.l-banner a { color: inherit; font-weight: 600; text-decoration: underline; }
+
+.l-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+}
+.l-empty-badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--success-soft-bg);
+  color: var(--success);
+  font-size: calc(20px * var(--text-scale, 1));
+}
+.l-empty-title { font: 500 calc(20px * var(--text-scale, 1))/1.3 var(--font-display); color: var(--fg-strong); margin: 0; }
+.l-empty-desc { font-size: calc(13px * var(--text-scale, 1)); color: var(--muted); margin: 0; }
+
+.l-skeleton { display: flex; flex-direction: column; gap: 12px; }
+.l-skeleton > span { display: block; height: 12px; border-radius: 4px; background: var(--border); }
+
+/* ── 11 Сущности ──────────────────────────────────────────────────────── */
+.l-page-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin: 0 0 24px;
+}
+.l-page-header-titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.l-eyebrow {
+  font: calc(11px * var(--text-scale, 1))/1.3 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.l-page-title {
+  margin: 0;
+  font: 500 calc(32px * var(--text-scale, 1))/1.15 var(--font-display);
+  letter-spacing: -0.015em;
+  color: var(--fg-strong);
+}
+/* Заголовок длиннее 120 знаков — на шаг ниже и не больше 3 строк (правило 7). */
+.l-page-title-long { font-size: calc(20px * var(--text-scale, 1)); line-height: 1.45; }
+.l-page-lead { margin: 0; font-size: calc(14px * var(--text-scale, 1)); line-height: 1.5; color: var(--muted); }
+.l-page-actions { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+
+.l-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.l-toolbar-spacer { flex: 1 1 auto; }
+
+@media (max-width: 720px) {
+  .l-page-header { flex-direction: column; align-items: stretch; }
+  .l-page-title { font-size: calc(24px * var(--text-scale, 1)); }
+  .l-row-id { width: auto; }
+  .l-row { flex-wrap: wrap; }
+  .l-group-meta { display: none; }
+}
+
+/* ── Страница кита (/ui/kit) ─────────────────────────────────────────── */
+.l-kit { display: flex; flex-direction: column; gap: 48px; max-width: 1100px; }
+.l-kit-section { display: flex; flex-direction: column; gap: 16px; }
+.l-kit-section > h2 { margin: 0; padding-bottom: 12px; border-bottom: 1px solid var(--border-strong); font: 500 calc(26px * var(--text-scale, 1))/1.2 var(--font-display); }
+.l-kit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.l-kit-spec { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg); }
+.l-kit-stage { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 24px; background: var(--bg-inset); }
+.l-kit-stage-block { display: block; }
+.l-kit-caption { padding: 10px 14px; border-top: 1px solid var(--border); font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); }
+.l-kit-caption code { font-weight: 600; color: var(--fg); }
+.l-kit-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.l-kit-swatch { display: flex; flex-direction: column; gap: 4px; font-size: calc(11px * var(--text-scale, 1)); }
+.l-kit-swatch > span:first-child { height: 40px; border-radius: var(--radius-md); border: 1px solid var(--border); }

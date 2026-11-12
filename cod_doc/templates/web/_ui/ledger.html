@@ -1,0 +1,176 @@
+{#- Кит Ledger — Jinja-макросы, по одному на компонент `R/*` pencil-библиотеки
+    «Ledger · Библиотека». Подключение:
+
+        {% import "_ui/ledger.html" as ui %}
+        {{ ui.tag("conflict", "signal") }}
+
+    Стили — static/css/_ledger.css (классы `l-*`). Тоны: signal | warn | info |
+    ok | neutral. Всё, что приходит из БД, экранируется автоэскейпом Jinja;
+    `caller()` — разметка вызывающего шаблона.
+
+    Каталог с примерами — страница /ui/kit (`ui_kit.html`). Новый компонент
+    добавляется в три места: макрос здесь, класс в _ledger.css, пример там. -#}
+
+{#- ── Тоны ──────────────────────────────────────────────────────────────── -#}
+{%- set _TONES = ("signal", "warn", "info", "ok", "neutral") -%}
+
+{#- Статус задачи/истории/вопроса → тон метки. Неизвестное — neutral. -#}
+{%- macro tone_of(status) -%}
+  {%- set s = (status or "") | string | lower -%}
+  {%- if s in ("done", "delivered", "accepted", "resolved", "active", "in_sync", "ok") -%}ok
+  {%- elif s in ("in_progress", "in-progress", "conflict", "missing", "critical", "blocked_hard") -%}signal
+  {%- elif s in ("blocked", "deferred", "in_review", "review", "edited_in_place", "stale", "stale_export", "high_risk") -%}warn
+  {%- elif s in ("draft", "proposed", "open", "finding", "inbox") -%}info
+  {%- else -%}neutral
+  {%- endif -%}
+{%- endmacro -%}
+
+{#- ── 05 Действия ──────────────────────────────────────────────────────── -#}
+
+{#- Кнопка или ссылка-кнопка. kind: primary | secondary | signal | ghost | danger. -#}
+{%- macro button(label, kind="secondary", href=None, size=None, block=False, type="button", attrs="") -%}
+  {%- set cls = "l-btn l-btn-" ~ kind ~ (" l-btn-sm" if size == "sm" else "") ~ (" l-btn-block" if block else "") -%}
+  {%- if href -%}
+    <a class="{{ cls }}" href="{{ href }}" {{ attrs | safe }}>{{ label }}</a>
+  {%- else -%}
+    <button class="{{ cls }}" type="{{ type }}" {{ attrs | safe }}>{{ label }}</button>
+  {%- endif -%}
+{%- endmacro -%}
+
+{#- CLI-эквивалент действия: «› cod-doc …». Правило 3 стиля. -#}
+{%- macro cmd(text) -%}<code class="l-cmd" title="То же из терминала">{{ text }}</code>{%- endmacro -%}
+
+{%- macro kbd(text) -%}<kbd class="l-kbd">{{ text }}</kbd>{%- endmacro -%}
+
+{%- macro code_block(text) -%}<pre class="l-code"><code>{{ text }}</code></pre>{%- endmacro -%}
+
+{#- ── 06 Метки ─────────────────────────────────────────────────────────── -#}
+
+{%- macro tag(label, tone="neutral", title=None) -%}
+  <span class="l-tag l-tag-{{ tone if tone in _TONES else 'neutral' }}"{% if title %} title="{{ title }}"{% endif %}>{{ label }}</span>
+{%- endmacro -%}
+
+{#- Метка статуса: тон выводится из значения. -#}
+{%- macro status(value) -%}{{ tag(value, tone_of(value)) }}{%- endmacro -%}
+
+{%- macro id_chip(text, soft=False, href=None) -%}
+  {%- if href -%}<a class="l-id{{ ' l-id-soft' if soft }}" href="{{ href }}">{{ text }}</a>
+  {%- else -%}<span class="l-id{{ ' l-id-soft' if soft }}">{{ text }}</span>{%- endif -%}
+{%- endmacro -%}
+
+{%- macro label(text, count=None) -%}
+  <span class="l-label">{{ text }}{% if count is not none and count != "" %}<span class="l-label-count">{{ count }}</span>{% endif %}</span>
+{%- endmacro -%}
+
+{%- macro dot(tone="ok") -%}<span class="l-dot l-dot-{{ tone }}" aria-hidden="true"></span>{%- endmacro -%}
+
+{#- Фильтр-чип со счётчиком (правило 4: счётчик в каждом чипе). -#}
+{%- macro filter_chip(text, count=None, href="#", active=False) -%}
+  <a class="l-filter{{ ' l-filter-active' if active }}" href="{{ href }}"{% if active %} aria-current="true"{% endif %}>
+    {{- text -}}{% if count is not none %} <span class="l-filter-count">{{ count }}</span>{% endif -%}
+  </a>
+{%- endmacro -%}
+
+{#- ── 09 Данные ────────────────────────────────────────────────────────── -#}
+
+{#- Полоса здоровья: segments — список (доля, тон). Доли — любые числа. -#}
+{%- macro health(segments) -%}
+  <div class="l-health" role="img" aria-label="{% for n, t in segments %}{{ t }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}">
+    {%- for n, t in segments if n -%}
+      <span style="flex: {{ n }} 1 0; background: var(--{{ {'ok':'success','signal':'signal','warn':'warning','info':'info'}.get(t, 'border') }})"></span>
+    {%- endfor -%}
+  </div>
+{%- endmacro -%}
+
+{%- macro legend(text, tone="ok") -%}
+  <span class="l-legend" style="--l-swatch: var(--{{ {'ok':'success','signal':'signal','warn':'warning','info':'info'}.get(tone, 'border') }})">{{ text }}</span>
+{%- endmacro -%}
+
+{#- Прогресс: done/active/blocked из total. Пустой total — пустой трек. -#}
+{%- macro progress(done, total, active=0, blocked=0, width=160) -%}
+  <span class="l-progress" style="width: {{ width }}px" title="{{ done }} из {{ total }}">
+    {%- if total -%}
+      {%- if done %}<span class="l-progress-done" style="width: {{ (done * 100 / total) | round(1) }}%"></span>{% endif -%}
+      {%- if active %}<span class="l-progress-active" style="width: {{ (active * 100 / total) | round(1) }}%"></span>{% endif -%}
+      {%- if blocked %}<span class="l-progress-blocked" style="width: {{ (blocked * 100 / total) | round(1) }}%"></span>{% endif -%}
+    {%- endif -%}
+  </span>
+{%- endmacro -%}
+
+{#- Группа длинного списка (правило 1). Счётчик и сводка видны в свёрнутом
+    виде. `filter=True` вешает data-filter-group: быстрый фильтр раскрывает
+    группу с совпадениями (cod_doc_palette.js::syncDetails). -#}
+{%- macro group(title, count=None, meta=None, open=True, filter=True, progress_html=None) -%}
+  <details class="l-group"{% if open %} open{% endif %}{% if filter %} data-filter-group{% endif %}>
+    <summary class="l-group-head">
+      <span class="l-group-title" title="{{ title }}">{{ title }}</span>
+      {%- if count is not none %}<span class="l-group-count" data-filter-count>{{ count }}</span>{% endif %}
+      {%- if progress_html %}{{ progress_html }}{% endif %}
+      {%- if meta %}<span class="l-group-meta">{{ meta }}</span>{% endif %}
+    </summary>
+    {{ caller() }}
+  </details>
+{%- endmacro -%}
+
+{#- Хвост группы: первые `visible` строк видны, остальные — под «ещё N из M»
+    (правило 3). rows — список; row_macro — макрос строки, который зовётся
+    на каждом элементе. -#}
+{%- macro rows_with_more(rows, row_macro, visible=6) -%}
+  {%- for r in rows[:visible] %}{{ row_macro(r) }}{% endfor -%}
+  {%- if rows | length > visible -%}
+    <details class="l-more" data-filter-group>
+      <summary>Показать ещё {{ rows | length - visible }} из {{ rows | length }}</summary>
+      <div class="l-more-rows">{% for r in rows[visible:] %}{{ row_macro(r) }}{% endfor %}</div>
+    </details>
+  {%- endif -%}
+{%- endmacro -%}
+
+{#- Строка-сущность. href — ссылка на всю строку; peek — data-peek для
+    шторки (tests/api/test_web_peek_links.py). Тело — caller(). -#}
+{%- macro row(id=None, href=None, selected=False, peek=False, filter=True, title=None, attrs="") -%}
+  <article class="l-row{{ ' l-row-selected' if selected }}"{% if filter %} data-filter-row{% endif %}{% if title %} title="{{ title }}"{% endif %} {{ attrs | safe }}>
+    {%- if href %}<a class="l-row-link" href="{{ href }}" aria-label="{{ id or 'open' }}"{% if peek %} data-peek{% else %} data-peek-off{% endif %}></a>{% endif -%}
+    {%- if id %}<span class="l-row-id">{{ id }}</span>{% endif -%}
+    {{ caller() }}
+  </article>
+{%- endmacro -%}
+
+{#- ── 10 Обратная связь ────────────────────────────────────────────────── -#}
+
+{%- macro banner(text, tone="info", action_label=None, action_href=None) -%}
+  <div class="l-banner l-banner-{{ tone }}" role="{{ 'alert' if tone == 'signal' else 'status' }}">
+    <span class="l-banner-text">{{ text }}</span>
+    {%- if action_label and action_href %}<a href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+  </div>
+{%- endmacro -%}
+
+{%- macro empty(title, desc=None, glyph="✓") -%}
+  <div class="l-empty">
+    <span class="l-empty-badge" aria-hidden="true">{{ glyph }}</span>
+    <p class="l-empty-title">{{ title }}</p>
+    {%- if desc %}<p class="l-empty-desc">{{ desc }}</p>{% endif %}
+    {%- if caller is defined %}{{ caller() }}{% endif %}
+  </div>
+{%- endmacro -%}
+
+{%- macro skeleton(lines=4) -%}
+  <div class="l-skeleton" aria-busy="true" aria-label="Загрузка">
+    <span style="width: 140px"></span><span style="width: 60%; height: 28px"></span>
+    {%- for i in range(lines) %}<span style="width: {{ [100, 100, 72, 88][i % 4] }}%"></span>{% endfor %}
+  </div>
+{%- endmacro -%}
+
+{#- ── 11 Сущности ──────────────────────────────────────────────────────── -#}
+
+{#- Шапка экрана. Длинный заголовок (>120 знаков) — на шаг ниже (правило 7).
+    Действия — caller(), если передан. -#}
+{%- macro page_header(title, eyebrow=None, lead=None) -%}
+  <header class="l-page-header">
+    <div class="l-page-header-titles">
+      {%- if eyebrow %}<span class="l-eyebrow">{{ eyebrow }}</span>{% endif %}
+      <h1 class="l-page-title{{ ' l-page-title-long l-clamp-3' if title | length > 120 }}">{{ title }}</h1>
+      {%- if lead %}<p class="l-page-lead">{{ lead }}</p>{% endif %}
+    </div>
+    {%- if caller is defined %}<div class="l-page-actions">{{ caller() }}</div>{% endif %}
+  </header>
+{%- endmacro -%}
