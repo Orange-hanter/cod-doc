@@ -36,6 +36,7 @@ from . import (
     standards,
     stories,
     tasks,
+    ui_kit,
 )
 
 router = APIRouter()
@@ -56,6 +57,8 @@ router.include_router(costs.router)
 router.include_router(run.router)
 router.include_router(navigator.router)
 router.include_router(standards.router)
+# Кит Ledger — каталог макросов `_ui/ledger.html` (редизайн 2026-11).
+router.include_router(ui_kit.router)
 # RFC 24 §9 scenarios — read-only list + detail (authoring half).
 router.include_router(scenarios.router)
 # OQM-004 open questions — list, card and write forms (DB-only entity).

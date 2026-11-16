@@ -96,6 +96,23 @@
   --content-max: 1280px;
   --topbar-h: 52px;
   --backbar-h: 36px;  /* ADO-149: липкая полоса «назад» под топбаром */
+
+  /* Ledger-токены (кит `_ui/ledger.html`, стили `_ledger.css`). Значения
+   * по умолчанию сведены к палитре выше, чтобы кит рендерился и на
+   * classic/soft; собственные цвета Ledger — в [data-palette="ledger"]. */
+  --signal:       var(--danger);
+  --signal-soft:  var(--danger-soft-bg);
+  --signal-ink:   var(--danger-soft-fg);
+  --signal-tint:  var(--bg-alt);
+  --on-signal:    #ffffff;
+  --ink:          var(--fg-strong);
+  --on-ink:       var(--bg);
+  --bar:          var(--bg);
+  --bar-fg:       var(--fg-strong);
+  --bar-muted:    var(--muted);
+  --bar-field:    var(--bg-alt);
+  --bar-line:     var(--border);
+  --font-display: Georgia, "Times New Roman", serif;
 }
 
 [data-theme="dark"] {
@@ -254,6 +271,133 @@
   --radius-sm: 3px;
   --radius-md: 6px;
   --radius-lg: 8px;
+}
+
+/* Ledger — палитра редизайна (pencil-файл «Ledger · Библиотека», токены r-*).
+ * Бумага, чернила и один сигнальный цвет: --danger/--signal — оранжево-
+ * красный, и это единственный «громкий» тон; ссылки и info — синие.
+ * Шрифты: Newsreader для текста документов и заголовков (--font-display),
+ * Inter для интерфейса, JetBrains Mono для ключей. Локальных копий шрифтов
+ * нет — стек падает на системные, сеть не нужна (как ADO-233 для mermaid). */
+[data-palette="ledger"]:not([data-theme="dark"]) {
+  --fg:           #17171b;
+  --fg-strong:    #0f0f12;
+  --muted:        #55555e;
+  --muted-strong: #3e3e45;
+  --bg:           #ffffff;
+  --bg-alt:       #faf8f4;
+  --bg-soft:      #efece5;
+  --bg-inset:     #f5f3ee;
+  --border:       #e4e1d8;
+  --border-soft:  #ece9e1;
+  --border-strong:#cfcbc0;
+
+  --accent:           #3557c9;
+  --accent-fg:        #ffffff;
+  --accent-soft-bg:   #e6ebfa;
+  --accent-soft-fg:   #23409e;
+  --accent-hover:     #2a49ae;
+
+  --success:          #2f7d4f;
+  --success-soft-bg:  #e3f1e8;
+  --success-soft-fg:  #1f5a37;
+  --success-border:   #b9dcc6;
+
+  --warning:          #9a6512;
+  --warning-soft-bg:  #faf0da;
+  --warning-soft-fg:  #5e3e0a;
+  --warning-border:   #ead9b0;
+
+  --danger:           #c8430b;
+  --danger-soft-bg:   #fbe9df;
+  --danger-soft-fg:   #7a2a08;
+  --danger-border:    #f0b79a;
+
+  --info:             #3557c9;
+  --info-soft-bg:     #e6ebfa;
+  --info-soft-fg:     #23409e;
+  --info-border:      #b3c1ee;
+
+  --purple:           #6f4fa8;
+  --purple-soft-bg:   #ece6f5;
+
+  --signal-tint:  #fff8f3;
+  --ink:          #17171b;
+  --on-ink:       #ffffff;
+  --bar:          #1b1b1f;
+  --bar-fg:       #f5f3ee;
+  --bar-muted:    #a6a6ae;
+  --bar-field:    #2a2a30;
+  --bar-line:     #44444c;
+
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px rgba(23, 23, 27, 0.06);
+  --shadow-lg: 0 24px 60px rgba(23, 23, 27, 0.18);
+}
+
+[data-palette="ledger"][data-theme="dark"] {
+  --fg:           #edebe6;
+  --fg-strong:    #f7f5f0;
+  --muted:        #b4b2ac;
+  --muted-strong: #cfcdc7;
+  --bg:           #1a1a1e;
+  --bg-alt:       #1f1f24;
+  --bg-soft:      #25252b;
+  --bg-inset:     #121214;
+  --border:       #2a2a2f;
+  --border-soft:  #222227;
+  --border-strong:#3a3a40;
+
+  --accent:           #7d9bf5;
+  --accent-fg:        #121214;
+  --accent-soft-bg:   #18203a;
+  --accent-soft-fg:   #a9bcf8;
+  --accent-hover:     #93adf7;
+
+  --success:          #4cc38a;
+  --success-soft-bg:  #15291d;
+  --success-soft-fg:  #8fd6a2;
+  --success-border:   #24533a;
+
+  --warning:          #e0a84a;
+  --warning-soft-bg:  #2e2410;
+  --warning-soft-fg:  #ebc98a;
+  --warning-border:   #4a3a18;
+
+  --danger:           #f06a2c;
+  --danger-soft-bg:   #3a1f12;
+  --danger-soft-fg:   #f8b48f;
+  --danger-border:    #6b2f14;
+
+  --info:             #7d9bf5;
+  --info-soft-bg:     #18203a;
+  --info-soft-fg:     #a9bcf8;
+  --info-border:      #34507e;
+
+  --purple:           #a58ad8;
+  --purple-soft-bg:   #2a2238;
+
+  --signal-tint:  #24170f;
+  --ink:          #edebe6;
+  --on-ink:       #121214;
+  --bar:          #0b0b0d;
+  --bar-fg:       #edebe6;
+  --bar-muted:    #8a8a93;
+  --bar-field:    #1e1e23;
+  --bar-line:     #3a3a42;
+
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+[data-palette="ledger"] {
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Newsreader", "Iowan Old Style", Charter, Georgia, serif;
 }
 
 /* ── Base reset & typography ──────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-theme="light" data-palette="soft">
+<html lang="ru" data-theme="light" data-palette="ledger">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,7 +16,7 @@
      Порядок тот же, что был в app.css: токены → компоненты → оверрайды. #}
   {% for css in (
     'css/_base.css', 'css/_components.css', 'css/_task_detail.css', 'css/_doc_detail.css',
-    'css/_peek.css', 'css/_cmdk.css',
+    'css/_peek.css', 'css/_cmdk.css', 'css/_ledger.css',
   ) %}
     <link rel="stylesheet" href="{{ static_url(css) }}">
   {% endfor %}
@@ -31,8 +31,12 @@
           resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', resolved);
-        if (localStorage.getItem('cod-doc-palette') === 'default') {
+        // Палитры: ledger (по умолчанию) → soft → default (classic).
+        var palette = localStorage.getItem('cod-doc-palette');
+        if (palette === 'default') {
           document.documentElement.removeAttribute('data-palette');
+        } else if (palette === 'soft') {
+          document.documentElement.setAttribute('data-palette', 'soft');
         }
       } catch (e) { /* localStorage may be denied — fall back to default */ }
     })();
@@ -64,7 +68,7 @@
         m = window.mermaid;
       }
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      const isSoft = document.documentElement.getAttribute('data-palette') === 'soft';
+      const isSoft = ['soft', 'ledger'].includes(document.documentElement.getAttribute('data-palette'));
       // startOnLoad вешается на событие load, а оно к этому моменту уже
       // прошло: загрузка выше асинхронная. Поэтому run() явно.
       m.initialize({
@@ -165,7 +169,7 @@
             title="Live updates: idle">idle</span>
     {% endif %}
     <button type="button" class="palette-toggle" id="palette-toggle"
-            aria-label="Toggle palette" title="Soft / classic palette">
+            aria-label="Toggle palette" title="Палитра: Ledger / soft / classic">
       <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
         <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 1.5v13a6.5 6.5 0 0 1 0-13z"/>
       </svg>
