@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_ui/ledger.html" as ui %}
 {% block title %}Docs · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> /
@@ -8,8 +9,6 @@
 <span>Docs</span>
 {%- endif %}
 </nav>
-
-<h1>{{ project.name }} · Docs</h1>
 
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
@@ -39,12 +38,13 @@
   {%- if sort.query %}&amp;{{ sort.query | e }}{% endif -%}
 {%- endmacro %}
 
-<nav class="docs-action-bar">
-  <a class="btn btn-primary" href="/p/{{ project.name }}/docs/new">➕ New blank</a>
-  <a class="btn btn-secondary" href="/p/{{ project.name }}/docs/generate">✨ Generate via AI</a>
-  <a class="btn btn-secondary" href="#import-section">📥 Import markdown</a>
-  <a class="btn docs-nav-btn" href="/p/{{ project.name }}/docs/navigator">🗺 Navigator</a>
-</nav>
+{#- WUI-010 (кит Ledger): шапка с действиями вместо заголовка и полосы кнопок. -#}
+{% call ui.page_header(project.name ~ " · Docs", eyebrow="Документация") %}
+  {{ ui.button("Импорт markdown", "ghost", href="#import-section") }}
+  {{ ui.button("Navigator", "ghost", href="/p/" ~ project.name ~ "/docs/navigator") }}
+  {{ ui.button("Generate via AI", "secondary", href="/p/" ~ project.name ~ "/docs/generate") }}
+  {{ ui.button("New blank", "primary", href="/p/" ~ project.name ~ "/docs/new") }}
+{% endcall %}
 
 {# Здоровье корпуса одной строкой: сколько всего, сколько не разложено,
    сколько разошлось с файлами. Инбокс — кликабельный: это очередь работы. #}
@@ -66,32 +66,12 @@
   </span>
 </nav>
 
-{# Status filter button bar — default 'Live' hides deprecated docs from the listing. #}
-<nav class="view-toggle" aria-label="Filter documents by status">
-  <a class="view-btn{% if _active_status == 'live' %} view-btn-active{% endif %}" href="{{ docs_url(status='live') }}">
-    <span class="view-btn-label">Live</span>
-    <span class="view-btn-count">{{ counts.live }}</span>
-  </a>
-  <a class="view-btn view-btn-in_progress{% if _active_status == 'active' %} view-btn-active{% endif %}" href="{{ docs_url(status='active') }}">
-    <span class="view-btn-label">Active</span>
-    <span class="view-btn-count">{{ counts.active }}</span>
-  </a>
-  <a class="view-btn{% if _active_status == 'draft' %} view-btn-active{% endif %}" href="{{ docs_url(status='draft') }}">
-    <span class="view-btn-label">Draft</span>
-    <span class="view-btn-count">{{ counts.draft }}</span>
-  </a>
-  <a class="view-btn{% if _active_status == 'review' %} view-btn-active{% endif %}" href="{{ docs_url(status='review') }}">
-    <span class="view-btn-label">Review</span>
-    <span class="view-btn-count">{{ counts.review }}</span>
-  </a>
-  <a class="view-btn view-btn-deprecated{% if _active_status == 'deprecated' %} view-btn-active{% endif %}" href="{{ docs_url(status='deprecated') }}">
-    <span class="view-btn-label">Deprecated</span>
-    <span class="view-btn-count">{{ counts.deprecated }}</span>
-  </a>
-  <a class="view-btn{% if _active_status == 'all' %} view-btn-active{% endif %}" href="{{ docs_url(status='all') }}">
-    <span class="view-btn-label">All</span>
-    <span class="view-btn-count">{{ counts.total }}</span>
-  </a>
+{# Status filter — default 'Live' hides deprecated docs from the listing.
+   WUI-010: чипы кита со счётчиком в каждом (правило масштаба 4). #}
+<nav class="l-filters" aria-label="Filter documents by status">
+  {% for key, label, count in (('live', 'Live', counts.live), ('active', 'Active', counts.active), ('draft', 'Draft', counts.draft), ('review', 'Review', counts.review), ('deprecated', 'Deprecated', counts.deprecated), ('all', 'All', counts.total)) %}
+    {{ ui.filter_chip(label, count, href=docs_url(status=key) | trim, active=(_active_status == key)) }}
+  {% endfor %}
 </nav>
 
 <form method="get" action="/p/{{ project.name }}/docs" class="docs-filterbar">
