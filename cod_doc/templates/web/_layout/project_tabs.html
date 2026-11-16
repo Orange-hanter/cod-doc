@@ -6,9 +6,22 @@ Variables (set via `{% with %}`):
 
 The list lives in `cod_doc/api/web/navigation.py::PROJECT_TABS` (WUI-006):
 the search palette offers the same tabs as jump targets.
+
+WUI-008 (Ledger): вкладки сгруппированы в разделы `TAB_GROUPS`. Первая строка —
+разделы, вторая — вкладки текущего раздела; вкладки остальных разделов
+раскрываются меню по наведению или фокусу (`:focus-within`, без JS). Все
+ссылки лежат в одном `<nav class="tabs">`: и полоса, и тесты видят полный
+список, клавиатура проходит его Tab'ом.
 #}
-<nav class="tabs">
-  {%- for slug_id, label, href in project_tabs(slug) -%}
-    <a class="{% if active == slug_id %}active{% endif %}" href="{{ href }}">{{ label }}</a>
+<nav class="tabs tabs-grouped" aria-label="Разделы проекта">
+  {%- for group in project_tab_groups(slug, active) -%}
+    <div class="tabs-group{% if group.current %} tabs-group-current{% endif %}">
+      <a class="tabs-group-label" href="{{ group.href }}"{% if group.current %} aria-current="true"{% endif %}>{{ group.label }}</a>
+      <div class="tabs-sub">
+        {%- for slug_id, label, href in group.tabs -%}
+          <a class="{% if active == slug_id %}active{% endif %}" href="{{ href }}">{{ label }}</a>
+        {%- endfor -%}
+      </div>
+    </div>
   {%- endfor -%}
 </nav>

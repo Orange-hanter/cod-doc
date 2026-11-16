@@ -45,7 +45,8 @@ def tabs_client(tmp_path: Path):
 
 
 def _extract_tabs_block(html: str) -> str:
-    m = re.search(r'<nav class="tabs">(.*?)</nav>', html, re.DOTALL)
+    # WUI-008: у полосы добавился модификатор `tabs-grouped` и aria-label.
+    m = re.search(r'<nav class="tabs[^"]*"[^>]*>(.*?)</nav>', html, re.DOTALL)
     assert m is not None, "no <nav class='tabs'> block on page"
     return m.group(1)
 
@@ -100,3 +101,28 @@ def test_disabled_tabs_have_no_href(tabs_client) -> None:
         assert f'href="/p/demo/{disabled}"' not in block, (
             f"disabled tab '{disabled}' must not emit a href"
         )
+
+
+# ── WUI-008: разделы проекта (Ledger) ───────────────────────────────────
+
+
+def test_every_tab_belongs_to_exactly_one_group() -> None:
+    """Вкладка вне групп пропала бы из полосы; в двух группах — двоилась бы."""
+    from cod_doc.api.web.navigation import PROJECT_TABS, TAB_GROUPS
+
+    grouped = [key for group in TAB_GROUPS for key in group.tabs]
+    assert sorted(grouped) == sorted(t.key for t in PROJECT_TABS)
+    assert len(grouped) == len(set(grouped))
+
+
+def test_current_group_holds_the_active_tab(tabs_client) -> None:
+    client, entry = tabs_client
+    r = client.get(f"/p/{entry.name}/docs")
+    block = _extract_tabs_block(r.text)
+    current = re.findall(
+        r'<div class="tabs-group tabs-group-current">\s*<a[^>]*>([^<]+)</a>', block
+    )
+    assert current == ["Docs"]
+    # Вкладки других разделов — в DOM (меню по наведению), а не выкинуты.
+    assert 'href="/p/demo/revisions"' in block
+    assert 'href="/p/demo/roadmap"' in block
