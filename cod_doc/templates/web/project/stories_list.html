@@ -45,7 +45,7 @@
   {{ ui.page_header(
        "User stories",
        eyebrow="stories · " ~ project.name,
-       lead=(totals.stories ~ " историй в " ~ (groups | selectattr("label") | list | length) ~ " группах. История — требование в форме «Как … я хочу … чтобы …»; задачи её реализуют внутри плана.")
+       lead=(totals.stories ~ " историй" ~ ((" в " ~ (groups | selectattr("label") | list | length) ~ " группах") if group_by != "none" else "") ~ ". История — требование в форме «Как … я хочу … чтобы …»; задачи её реализуют внутри плана.")
      ) }}
 
   {# ── Generate from docs ─────────────────────────────────────────────── #}

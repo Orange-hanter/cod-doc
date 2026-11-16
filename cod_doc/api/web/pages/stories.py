@@ -263,7 +263,7 @@ def _status_meta(items: list[dict[str, Any]]) -> str:
     for item in items:
         counts[item["status"]] = counts.get(item["status"], 0) + 1
     unknown = len(_STATUS_RANK)  # неизвестный статус — в конец сводки
-    ordered = sorted(counts, key=lambda status: _STATUS_RANK.get(status, unknown))
+    ordered = sorted(counts, key=lambda status: (_STATUS_RANK.get(status, unknown), status))
     return " · ".join(f"{counts[status]} {status}" for status in ordered)
 
 

@@ -19,7 +19,9 @@ router = APIRouter()
 
 # Образцы для строк: длины взяты по максимумам живых БД (narrative до 245
 # знаков, заголовок задачи до 170), чтобы line-clamp было видно сразу.
-_STORIES: list[dict[str, Any]] = [
+# Кортежи, а не списки: модульные образцы живут весь процесс, и случайная
+# мутация из роута должна падать сразу, а не копиться между запросами.
+_STORIES: tuple[dict[str, Any], ...] = (
     {
         "id": "US-201",
         "narrative": (
@@ -56,9 +58,9 @@ _STORIES: list[dict[str, Any]] = [
         }
         for i in range(6)
     ),
-]
+)
 
-_TASKS: list[dict[str, Any]] = [
+_TASKS: tuple[dict[str, Any], ...] = (
     {
         "id": "KIT-010",
         "title": (
@@ -81,7 +83,7 @@ _TASKS: list[dict[str, Any]] = [
         "status": "done",
         "who": "human:dakh",
     },
-]
+)
 
 _SWATCHES: tuple[tuple[str, str], ...] = (
     ("--bg-inset", "бумага, фон экрана"),

@@ -73,7 +73,7 @@ def test_row_and_button_attrs_are_escaped() -> None:
     evil = '"><script>alert(1)</script>'
     tpl = templates.env.from_string(
         '{% import "_ui/ledger.html" as ui %}'
-        '{% call ui.row(id="X", attrs={"data-story-id": v}) %}body{% endcall %}'
+        '{% call ui.row(id=v, href="/x/" ~ v, title=v, attrs={"data-story-id": v}) %}body{% endcall %}'
         '{{ ui.button("b", attrs={"data-x": v}) }}'
     )
     html = tpl.render(v=evil)

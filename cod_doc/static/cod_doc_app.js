@@ -30,7 +30,10 @@
   const paletteToggle = document.getElementById('palette-toggle');
   if (paletteToggle) {
     paletteToggle.addEventListener('click', () => {
-      const current = root.getAttribute('data-palette') || 'default';
+      // Чужое значение атрибута (старое имя, расширение) — как classic: иначе
+      // indexOf(-1) всегда давал бы ledger, и выйти из круга было нельзя.
+      const attr = root.getAttribute('data-palette');
+      const current = PALETTE_CYCLE.includes(attr) ? attr : 'default';
       const next = PALETTE_CYCLE[(PALETTE_CYCLE.indexOf(current) + 1) % PALETTE_CYCLE.length];
       if (next === 'default') root.removeAttribute('data-palette');
       else root.setAttribute('data-palette', next);
