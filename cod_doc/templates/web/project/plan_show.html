@@ -1,4 +1,14 @@
 {% extends "base.html" %}
+{% import "_ui/ledger.html" as ui %}
+
+{#- Строка задачи секции (кит Ledger, R/Data/Task Row): ID, заголовок в две
+    строки (живые заголовки — до 170 знаков), статус и приоритет. -#}
+{%- macro task_row(t) -%}
+  {% call ui.row(id=t.task_id, href="/p/" ~ project.name ~ "/tasks/" ~ t.task_id, peek=True, title=t.title, attrs={"data-task-id": t.task_id}) %}
+    <div class="l-row-body"><span class="l-row-text l-clamp-2">{{ t.title }}</span></div>
+    <div class="l-row-aside">{{ ui.status(t.status) }}<span class="l-mono l-prio-{{ t.priority }}">{{ t.priority }}</span></div>
+  {% endcall %}
+{%- endmacro -%}
 {% block title %}{{ plan.scope }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -11,7 +21,7 @@
 {% with slug=project.name, active="plans" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 {% include "_frag/back_bar.html" %}
 
-<h1>{{ plan.scope }}</h1>
+{{ ui.page_header(plan.scope, eyebrow="plan · " ~ project.name) }}
 <section class="doc-meta">
   <span><strong>Principle:</strong> {{ plan.principle }}</span>
   <span><strong>Status:</strong> {{ plan.status }}</span>
@@ -40,50 +50,24 @@
 
 <section class="overview-block">
   <h2>Sections</h2>
+  {#- WUI-009 (кит Ledger): секция — группа со счётчиком «закрыто / всего»,
+      прогрессом (закрыто · в работе · blocked) и сводкой. Видно 5 задач,
+      хвост — «ещё N из M»: в живых планах до 117 задач в секции. Открыты
+      незакрытые секции, как и раньше. -#}
   {% if sections %}
-    {% for s in sections %}
-      <details class="section-block" id="section-{{ s.section_id }}"
-               {% if s.done < s.total %}open{% endif %}>
-        <summary>
-          <span class="mono">{{ s.letter }}</span>
-          <span class="section-title">{{ s.title }}</span>
-          <span class="section-stats muted">
-            {{ s.done }} / {{ s.total }} · {{ s.status }}
-          </span>
-          <span class="progress-bar" title="{{ s.percent }}%">
-            <span class="progress-fill" style="width: {{ s.percent }}%"></span>
-          </span>
-        </summary>
-        {% if s.tasks %}
-          <div class="table-scroll">
-          <table class="grid section-tasks">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Priority</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for t in s.tasks %}
-                <tr class="status-{{ t.status }}">
-                  <td class="mono"><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>{{ t.task_id }}</a></td>
-                  <td><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>{{ t.title }}</a></td>
-                  <td>{{ t.type }}</td>
-                  <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
-                  <td><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-          </div>
-        {% else %}
-          <p class="muted">В этой секции нет задач.</p>
-        {% endif %}
-      </details>
-    {% endfor %}
+    <div class="l-list">
+      {% for s in sections %}
+        {% set _blocked = s.tasks | selectattr("status", "equalto", "blocked") | list | length %}
+        {% set _meta = ((s.in_progress ~ " в работе") if s.in_progress else "") ~ ((" · " if s.in_progress else "") ~ _blocked ~ " blocked" if _blocked else "") %}
+        {% call ui.group(s.title, prefix=s.letter, count=(s.done + s.cancelled) ~ " / " ~ s.total, meta=(_meta or s.status), open=(s.done + s.cancelled < s.total), filter=False, progress_html=ui.progress(s.done + s.cancelled, s.total, active=s.in_progress, blocked=_blocked)) %}
+          {% if s.tasks %}
+            {{ ui.rows_with_more(s.tasks, task_row, visible=5) }}
+          {% else %}
+            {{ ui.empty("В этой секции нет задач.", glyph="·") }}
+          {% endif %}
+        {% endcall %}
+      {% endfor %}
+    </div>
   {% else %}
   <p class="muted">У плана нет секций.</p>
   {% endif %}
