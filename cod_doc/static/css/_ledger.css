@@ -35,7 +35,8 @@
 [data-palette="ledger"] .topbar .palette-toggle,
 [data-palette="ledger"] .topbar .theme-toggle { color: var(--bar-muted); border-color: var(--bar-line); background: transparent; }
 
-[data-palette="ledger"] nav.tabs a.active { box-shadow: inset 0 -2px 0 var(--ink); }
+[data-palette="ledger"] nav.tabs a.active { color: var(--fg-strong); border-bottom-color: var(--ink); }
+[data-palette="ledger"] nav.tabs .tabs-group-current > .tabs-group-label { border-bottom-color: var(--signal); }
 
 /* ── Типографика ──────────────────────────────────────────────────────── */
 .l-display { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; color: var(--fg-strong); }

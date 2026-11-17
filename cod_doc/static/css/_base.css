@@ -581,6 +581,54 @@ code { font-size: calc(12px * var(--text-scale, 1)); }
   .tabs a, .tabs .tab-disabled { padding: var(--space-2); }
 }
 
+/* WUI-008: разделы проекта. Первая строка — шесть разделов, вторая — вкладки
+   текущего. Текущий раздел — `display: contents`: его подпись встаёт в строку
+   разделов, а ряд вкладок (order + flex-basis 100%) переносится под неё на
+   любой ширине, без абсолютного позиционирования. Вкладки остальных разделов —
+   меню по :hover и :focus-within, без JS; ссылки при этом в DOM всегда. */
+.tabs-grouped { gap: 0; }
+.tabs-group { position: relative; }
+.tabs-group-current { display: contents; }
+.tabs .tabs-group-label {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  font-weight: 600;
+  color: var(--muted);
+}
+.tabs .tabs-group-current > .tabs-group-label { color: var(--fg-strong); border-bottom-color: var(--fg-strong); }
+.tabs-sub { display: none; }
+.tabs-group-current > .tabs-sub {
+  display: flex;
+  flex-wrap: wrap;
+  order: 99;
+  flex-basis: 100%;
+  gap: var(--space-1);
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-alt);
+}
+.tabs-group-current > .tabs-sub a { font-weight: 500; }
+.tabs-group:not(.tabs-group-current):hover > .tabs-sub,
+.tabs-group:not(.tabs-group-current):focus-within > .tabs-sub {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  min-width: 180px;
+  padding: var(--space-1);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.tabs-group:not(.tabs-group-current) > .tabs-sub a {
+  padding: 6px var(--space-3);
+  border-bottom: none;
+  border-radius: var(--radius-sm);
+}
+.tabs-group:not(.tabs-group-current) > .tabs-sub a:hover { background: var(--bg-soft); }
+
 /* ── Grid (data tables) ───────────────────────────────────────────────── */
 .grid {
   width: 100%;

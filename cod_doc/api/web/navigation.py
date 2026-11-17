@@ -45,6 +45,52 @@ def project_tabs(slug: str) -> list[tuple[str, str, str]]:
     return [(t.key, t.label, f"/p/{slug}{t.suffix}") for t in PROJECT_TABS]
 
 
+class TabGroup(NamedTuple):
+    key: str
+    label: str
+    #: Ключи вкладок группы из ``PROJECT_TABS``, в порядке показа.
+    tabs: tuple[str, ...]
+
+
+#: Разделы проекта (редизайн Ledger, WUI-008): 18 вкладок в одну полосу
+#: переносились в два-три ряда, и активную приходилось искать глазами. Теперь
+#: первая строка — шесть разделов, вторая — вкладки текущего раздела; вкладки
+#: остальных разделов открываются по наведению или фокусу. Каждая вкладка
+#: обязана войти ровно в одну группу — стережёт tests/api/test_web_tabs.py.
+TAB_GROUPS: Final[tuple[TabGroup, ...]] = (
+    TabGroup("overview", "Overview", ("overview", "run", "metrics", "costs")),
+    TabGroup("docs", "Docs", ("docs", "scenarios", "code_refs", "search")),
+    TabGroup("work", "Work", ("tasks", "stories")),
+    TabGroup("plans", "Plans", ("plans", "roadmap")),
+    TabGroup("decisions", "Decisions", ("adr", "questions", "proposals")),
+    TabGroup("activity", "Activity", ("revisions", "commits", "routines")),
+)
+
+
+class TabGroupView(NamedTuple):
+    key: str
+    label: str
+    #: Адрес первой вкладки группы — куда ведёт клик по разделу.
+    href: str
+    current: bool
+    tabs: list[tuple[str, str, str]]
+
+
+def project_tab_groups(slug: str, active: str) -> list[TabGroupView]:
+    """Разделы проекта для полосы вкладок; ``current`` — у раздела вкладки ``active``."""
+    by_key = {key: (key, label, href) for key, label, href in project_tabs(slug)}
+    return [
+        TabGroupView(
+            key=group.key,
+            label=group.label,
+            href=by_key[group.tabs[0]][2],
+            current=active in group.tabs,
+            tabs=[by_key[key] for key in group.tabs],
+        )
+        for group in TAB_GROUPS
+    ]
+
+
 #: Страница сущности по виду хита FTS. У находки (`finding`) своей страницы
 #: нет — хит без ссылки.
 _ENTITY_PATH: Final[dict[str, str]] = {
