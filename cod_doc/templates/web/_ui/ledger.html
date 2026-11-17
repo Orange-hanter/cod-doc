@@ -93,9 +93,9 @@
 {%- macro progress(done, total, active=0, blocked=0, width=160) -%}
   <span class="l-progress" style="width: {{ width }}px" title="{{ done }} из {{ total }}">
     {%- if total -%}
-      {%- if done %}<span class="l-progress-done" style="width: {{ (done * 100 / total) | round(1) }}%"></span>{% endif -%}
-      {%- if active %}<span class="l-progress-active" style="width: {{ (active * 100 / total) | round(1) }}%"></span>{% endif -%}
-      {%- if blocked %}<span class="l-progress-blocked" style="width: {{ (blocked * 100 / total) | round(1) }}%"></span>{% endif -%}
+      {%- if done %}<span class="l-progress-done" style="width: {{ "%g" | format((done * 100 / total) | round(1)) }}%"></span>{% endif -%}
+      {%- if active %}<span class="l-progress-active" style="width: {{ "%g" | format((active * 100 / total) | round(1)) }}%"></span>{% endif -%}
+      {%- if blocked %}<span class="l-progress-blocked" style="width: {{ "%g" | format((blocked * 100 / total) | round(1)) }}%"></span>{% endif -%}
     {%- endif -%}
   </span>
 {%- endmacro -%}
@@ -103,9 +103,11 @@
 {#- Группа длинного списка (правило 1). Счётчик и сводка видны в свёрнутом
     виде. `filter=True` вешает data-filter-group: быстрый фильтр раскрывает
     группу с совпадениями (cod_doc_palette.js::syncDetails). -#}
-{%- macro group(title, count=None, meta=None, open=True, filter=True, progress_html=None) -%}
+{#- prefix — короткий ключ перед заголовком (буква секции плана), mono. -#}
+{%- macro group(title, count=None, meta=None, open=True, filter=True, progress_html=None, prefix=None) -%}
   <details class="l-group"{% if open %} open{% endif %}{% if filter %} data-filter-group{% endif %}>
     <summary class="l-group-head">
+      {%- if prefix %}<span class="l-group-prefix">{{ prefix }}</span>{% endif %}
       <span class="l-group-title" title="{{ title }}">{{ title }}</span>
       {%- if count is not none %}<span class="l-group-count" data-filter-count>{{ count }}</span>{% endif %}
       {%- if progress_html %}{{ progress_html }}{% endif %}

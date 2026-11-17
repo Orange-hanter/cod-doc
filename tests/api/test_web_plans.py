@@ -246,15 +246,13 @@ def test_plan_show_section_lists_tasks_inside(plans_client) -> None:
     client, entry, plan_id = plans_client
     r = client.get(f"/p/{entry.name}/plans/{plan_id}")
     assert r.status_code == 200
-    # All three task IDs from the seed appear inside a section-tasks table
-    assert 'class="grid section-tasks"' in r.text
-    assert "PAY-001" in r.text
-    assert "PAY-002" in r.text
-    assert "PAY-003" in r.text
-    # Done task gets the "done" badge in the section table
-    assert "badge-done" in r.text
-    # Each section is wrapped in <details>
-    assert '<details class="section-block"' in r.text
+    # WUI-009: задачи секции — строки кита Ledger (раньше таблица section-tasks)
+    for task_id in ("PAY-001", "PAY-002", "PAY-003"):
+        assert f'data-task-id="{task_id}"' in r.text
+    # Done task gets the "ok"-toned status tag
+    assert '<span class="l-tag l-tag-ok">done</span>' in r.text
+    # Each section is wrapped in <details> (группа кита)
+    assert '<details class="l-group"' in r.text
     # Section with in-progress/pending tasks opens by default (1+ pending)
     assert "open" in r.text
 
