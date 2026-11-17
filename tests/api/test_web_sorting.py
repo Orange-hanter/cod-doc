@@ -312,7 +312,8 @@ def test_docs_reset_link_and_node_chips_keep_sort(sort_client: SimpleNamespace) 
 
 def test_questions_sort_by_id_desc(sort_client: SimpleNamespace) -> None:
     c = sort_client.client
-    rows = (">Q-001</a>", ">Q-002</a>")
+    # WUI-011: строки кита Ledger несут data-question-id вместо ссылки-ячейки
+    rows = ('data-question-id="Q-001"', 'data-question-id="Q-002"')
     assert _order(c.get("/p/demo/questions").text, *rows) == [rows[1], rows[0]]  # priority
     assert _order(c.get("/p/demo/questions?sort=id").text, *rows) == list(rows)
     assert _order(c.get("/p/demo/questions?sort=id&dir=desc").text, *rows) == [rows[1], rows[0]]

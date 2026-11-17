@@ -1,5 +1,25 @@
 {% extends "base.html" %}
 {% import "_frag/sort.html" as sorting %}
+{% import "_ui/ledger.html" as ui %}
+
+{#- Строка вопроса (кит Ledger). Заголовок вопроса бывает до 468 знаков —
+    режется до двух строк, целиком в title. -#}
+{%- macro question_row(r) -%}
+  {% call ui.row(id=r.question_id, href="/p/" ~ project.name ~ "/questions/" ~ r.question_id, title=r.title ~ ((" — " ~ r.excerpt) if r.excerpt else ""), attrs={"data-question-id": r.question_id}) %}
+    <div class="l-row-body">
+      <span class="l-row-text l-clamp-2">{{ r.title }}</span>
+      <span class="l-row-meta">
+        {%- if status_filter != "open" %}{{ ui.tag(r.status_label, ui.tone_of(r.status)) }}{% endif %}
+        <span class="l-mono l-prio-{{ r.priority }}">{{ r.priority }}</span>
+        {%- if r.blocks %}<span class="l-tag l-tag-signal" title="ссылок вида blocks">блокирует {{ r.blocks }}</span>{% endif %}
+        {%- if r.owner %}<span>{{ r.owner }}</span>{% endif %}
+        <span class="l-mono">вар. {{ r.options or "—" }} · ссылки {{ r.links or "—" }}</span>
+        {%- if r.broken %}<span class="q-broken-chip" title="битых ссылок по последней проверке">✗ {{ r.broken }}</span>{% endif %}
+        <span title="{{ r.last_updated | ts_tooltip }}">{{ r.last_updated | short_date }}</span>
+      </span>
+    </div>
+  {% endcall %}
+{%- endmacro -%}
 {% block title %}Questions · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -10,20 +30,10 @@
 
 {% with slug=project.name, active="questions" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<header class="page-header">
-  <div>
-    <h1>Открытые вопросы</h1>
-    <p class="muted">
-      Нерешённое в проекте: вопрос, варианты ответа и ссылки на документы, код и задачи.
-      Живут только в БД — в документы не попадают. Ответ фиксируется ADR, выбранным
-      вариантом или текстом.
-    </p>
-  </div>
-  <div class="page-header-actions">
-    <a class="btn btn-primary" href="/p/{{ project.name }}/questions/new">Новый вопрос</a>
-    <a class="btn" href="/p/{{ project.name }}/revisions?entity_kind=question">История</a>
-  </div>
-</header>
+{% call ui.page_header("Открытые вопросы", eyebrow="questions · " ~ project.name, lead="Нерешённое в проекте: вопрос, варианты ответа и ссылки на документы, код и задачи. Живут только в БД — в документы не попадают. Ответ фиксируется ADR, выбранным вариантом или текстом.") %}
+  {{ ui.button("История", "ghost", href="/p/" ~ project.name ~ "/revisions?entity_kind=question") }}
+  {{ ui.button("Новый вопрос", "primary", href="/p/" ~ project.name ~ "/questions/new") }}
+{% endcall %}
 
 {% if broken_total %}
   <div class="alert alert-warning q-alert">
@@ -37,15 +47,13 @@
 
 {# Фильтр без JS: вкладки статуса — обычные ссылки, остальное — GET-форма. #}
 <div class="q-toolbar">
-  <nav class="q-status-tabs" aria-label="Статус">
+  <nav class="l-filters" aria-label="Статус">
     {% for t in tabs %}
       {% set href = "/p/" ~ project.name ~ "/questions?status=" ~ t.value
          ~ ("&priority=" ~ priority_filter if priority_filter else "")
          ~ ("&owner=" ~ owner_filter if owner_filter else "")
          ~ ("&" ~ sort.query if sort.query else "") %}
-      <a class="q-status-tab{% if status_filter == t.value %} active{% endif %}" href="{{ href }}">
-        {{ t.label }} <span class="q-status-count">{{ t.count }}</span>
-      </a>
+      {{ ui.filter_chip(t.label, t.count, href=href, active=(status_filter == t.value)) }}
     {% endfor %}
   </nav>
   <form class="q-filters" method="get" action="/p/{{ project.name }}/questions">
@@ -90,45 +98,21 @@
 {% else %}
   <div class="list-controls">
     {% if not sort.is_default %}<a class="view-btn" href="{{ sort.href('default') }}" title="Статус → приоритет → ID">↺ Default order</a>{% endif %}
-    {{ sorting.filter(".question-table", "Filter questions… (/)") }}
+    {{ sorting.toggle(sort) }}
+    {{ sorting.filter(".question-list", "Filter questions… (/)") }}
   </div>
-  <div class="table-scroll">
-    <table class="grid question-table">
-      <thead>
-        <tr>
-          {{ sorting.th(sort, "id", "ID", "question-col-id") }}
-          {{ sorting.th(sort, "title", "Вопрос") }}
-          {% if status_filter != "open" %}{{ sorting.th(sort, "status", "Статус") }}{% endif %}
-          {{ sorting.th(sort, "priority", "Приоритет") }}
-          {{ sorting.th(sort, "owner", "Владелец") }}
-          {{ sorting.th(sort, "options", "Вар.", "question-col-num") }}
-          {{ sorting.th(sort, "links", "Ссылки", "question-col-num") }}
-          {{ sorting.th(sort, "updated", "Изменён", "question-col-when") }}
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rows %}
-          <tr data-filter-row class="q-row q-prio-{{ r.priority }}">
-            <td class="mono question-col-id"><a class="question-row-link" href="/p/{{ project.name }}/questions/{{ r.question_id }}">{{ r.question_id }}</a></td>
-            <td class="q-cell-title">
-              <a class="q-title-link" href="/p/{{ project.name }}/questions/{{ r.question_id }}">{{ r.title }}</a>
-              {% if r.excerpt %}<div class="q-excerpt">{{ r.excerpt }}</div>{% endif %}
-            </td>
-            {% if status_filter != "open" %}
-              <td><span class="badge badge-q-{{ r.status }}">{{ r.status_label }}</span></td>
-            {% endif %}
-            <td><span class="meta-chip prio-chip prio-{{ r.priority }}">{{ r.priority }}</span></td>
-            <td class="muted">{{ r.owner or "—" }}</td>
-            <td class="question-col-num muted">{{ r.options or "—" }}</td>
-            <td class="question-col-num">
-              {% if r.links %}<span class="muted">{{ r.links }}</span>{% else %}<span class="muted">—</span>{% endif %}
-              {% if r.broken %}<span class="q-broken-chip" title="битых ссылок по последней проверке">✗ {{ r.broken }}</span>{% endif %}
-            </td>
-            <td class="muted question-col-when" title="{{ r.last_updated | ts_tooltip }}">{{ r.last_updated | short_date }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {#- WUI-011: открытые — группами «блокируют задачи / адресованы вам /
+      остальные», в группе 6 строк и «ещё N из M»; прочие статусы — одним списком. -#}
+  <div class="l-list question-list">
+    {% if groups %}
+      {% for g in groups %}
+        {% call ui.group(g.label, count=g.rows | length) %}
+          {{ ui.rows_with_more(g.rows, question_row, visible=6) }}
+        {% endcall %}
+      {% endfor %}
+    {% else %}
+      {% for r in rows %}{{ question_row(r) }}{% endfor %}
+    {% endif %}
   </div>
 {% endif %}
 {% endblock %}

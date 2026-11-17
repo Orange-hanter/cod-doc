@@ -393,6 +393,9 @@
 }
 /* Заголовок длиннее 120 знаков — на шаг ниже и не больше 3 строк (правило 7). */
 .l-page-title-long { font-size: calc(20px * var(--text-scale, 1)); line-height: 1.45; }
+/* То же для заголовка карточки (задача, вопрос, история, ADR, сценарий):
+   на детальной странице текст не режется — только кегль на шаг ниже. */
+.task-hero-title.l-title-long { font-size: calc(18px * var(--text-scale, 1)); line-height: 1.4; }
 .l-page-lead { margin: 0; font-size: calc(14px * var(--text-scale, 1)); line-height: 1.5; color: var(--muted); }
 .l-page-actions { flex: none; display: flex; align-items: center; gap: var(--space-2); }
 

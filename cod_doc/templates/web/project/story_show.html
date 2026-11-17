@@ -41,7 +41,7 @@
       </div>
     {% endif %}
   </div>
-  <h1 class="task-hero-title">{{ story.narrative }}</h1>
+  <h1 class="task-hero-title{% if story.narrative | length > 120 %} l-title-long{% endif %}">{{ story.narrative }}</h1>
 </header>
 
 <section class="task-card">

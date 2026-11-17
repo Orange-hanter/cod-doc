@@ -118,7 +118,9 @@ def test_list_shows_open_by_default_with_counters(q_client) -> None:  # type: ig
     assert r.status_code == 200
     assert "Q-001" in r.text
     assert "Q-002" not in r.text
-    assert 'class="grid question-table"' in r.text
+    # WUI-011: строки кита Ledger, открытые — группами
+    assert 'data-question-id="Q-001"' in r.text
+    assert 'class="l-list question-list"' in r.text
     assert "✗ 2" in r.text  # two broken links on Q-001
 
     r = q_client.get(f"/p/{SLUG}/questions?status=all")
@@ -232,9 +234,9 @@ def test_document_page_lists_linked_questions(q_client) -> None:  # type: ignore
 
 def test_list_tabs_count_every_status_and_keep_filters(q_client) -> None:  # type: ignore[no-untyped-def]
     r = q_client.get(f"/p/{SLUG}/questions?priority=medium")
-    assert 'Открытые <span class="q-status-count">1</span>' in r.text
-    assert 'Снятые <span class="q-status-count">1</span>' in r.text
-    assert 'Все <span class="q-status-count">2</span>' in r.text
+    assert 'Открытые <span class="l-filter-count">1</span>' in r.text
+    assert 'Снятые <span class="l-filter-count">1</span>' in r.text
+    assert 'Все <span class="l-filter-count">2</span>' in r.text
     # вкладка статуса не теряет фильтр приоритета
     assert f"/p/{SLUG}/questions?status=all&amp;priority=medium" in r.text
     # подстрока вопроса без markdown-разметки
@@ -269,3 +271,39 @@ def test_delete_button_removes_question_and_returns_to_list(q_client) -> None:  
     assert "Q-002" in listing
     assert q_client.get(f"/p/{SLUG}/questions/Q-001").status_code == 404
     assert q_client.post(f"/p/{SLUG}/questions/Q-001/delete").status_code == 404
+
+
+def test_open_questions_group_blocking_first() -> None:
+    """WUI-011: вопрос со ссылкой blocks — в первой группе, адресованный смотрящему — во второй."""
+    from cod_doc.api.web.pages.questions import _question_groups
+
+    rows = [
+        {"question_id": "Q-1", "blocks": 0, "owner": "human:dakh"},
+        {"question_id": "Q-2", "blocks": 2, "owner": "human:dakh"},
+        {"question_id": "Q-3", "blocks": 0, "owner": None},
+    ]
+    groups = _question_groups(rows, "human:dakh")
+    assert [(g["key"], [r["question_id"] for r in g["rows"]]) for g in groups] == [
+        ("blocking", ["Q-2"]),
+        ("mine", ["Q-1"]),
+        ("rest", ["Q-3"]),
+    ]
+    # без входа по OIDC группы «вам» нет, пустые группы не показываются
+    assert [g["key"] for g in _question_groups(rows, None)] == ["blocking", "rest"]
+
+
+def test_long_title_steps_down_but_is_not_cut(q_client) -> None:  # type: ignore[no-untyped-def]
+    """Правило масштаба 7: заголовок длиннее 120 знаков — кегль на шаг ниже.
+
+    На карточке текст не режется (в списке — line-clamp, здесь — целиком):
+    у Restate заголовки вопросов доходят до 468 знаков.
+    """
+    title = "Кто подтверждает выплату комиссии первым — " + "агентство или партнёр, " * 6
+    r = q_client.post(
+        f"/p/{SLUG}/questions/new",
+        data={"title": title, "question": "Что?", "priority": "high"},
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    assert 'class="task-hero-title l-title-long"' in r.text
+    assert title.strip() in r.text

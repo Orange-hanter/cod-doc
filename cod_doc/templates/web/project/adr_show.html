@@ -36,7 +36,7 @@
 <header class="task-hero">
   <div class="task-hero-row">
     <span class="task-hero-id mono">{{ adr.adr_id }}</span>
-    <span class="task-hero-title">{{ adr.title }}</span>
+    <span class="task-hero-title{% if adr.title | length > 120 %} l-title-long{% endif %}">{{ adr.title }}</span>
     <span class="task-hero-meta">
       <span class="badge badge-lg badge-{{ adr.status }}">{{ adr.status_icon }} {{ adr.status }}</span>
     </span>
