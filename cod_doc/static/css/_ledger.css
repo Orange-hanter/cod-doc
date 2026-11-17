@@ -309,6 +309,20 @@
 .l-more[open] > summary { display: none; }
 .l-more-rows > .l-row:first-child { border-top: 1px solid var(--border); }
 
+/* ИИ-сводка секции историй внутри группы кита: тихая полоса под заголовком
+   вместо отдельной фиолетовой карточки — тон Ledger оставляет цвет проблемам. */
+.l-group .section-summary {
+  margin: 0;
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-alt);
+}
+.l-group .section-summary-stale { box-shadow: inset 3px 0 0 var(--warning); }
+.l-group .section-summary-text { color: var(--fg); }
+.l-group .section-summary-meta { border-top: none; padding-top: 0; }
+
 /* ── 10 Обратная связь ────────────────────────────────────────────────── */
 .l-banner {
   display: flex;

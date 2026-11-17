@@ -317,9 +317,12 @@
 
 .stories-section { margin-top: var(--space-4); }
 .stories-section-head {
-  display: flex; align-items: center; gap: var(--space-3);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
+/* На 375px поле фильтра с его min-width выталкивало страницу на 6px вбок. */
+.stories-section-head .list-controls { min-width: 0; max-width: 100%; }
+.stories-section-head .list-filter { max-width: 100%; }
 .stories-section-title { font-size: calc(14px * var(--text-scale, 1)); font-weight: 700; color: var(--fg-strong); margin: 0; }
 
 /* Card grid */
