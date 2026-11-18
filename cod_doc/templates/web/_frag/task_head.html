@@ -45,7 +45,7 @@ and an id target would hit the page behind. #}
       {% endif %}
     </div>
   </div>
-  <h1 class="task-hero-title">{{ task.title }}</h1>
+  <h1 class="task-hero-title{% if task.title | length > 120 %} l-title-long{% endif %}">{{ task.title }}</h1>
 </header>
 
 <aside class="task-actions">

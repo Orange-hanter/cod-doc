@@ -146,6 +146,34 @@ def _row(q: OpenQuestion) -> dict[str, Any]:
     }
 
 
+def _question_groups(rows: list[dict[str, Any]], viewer: str | None) -> list[dict[str, Any]]:
+    """Открытые вопросы тремя группами (WUI-011, кит Ledger).
+
+    У Restate 126 открытых вопросов: плоский список не отвечает на «что
+    разобрать первым». Порядок групп — по цене промедления: вопрос, который
+    держит задачи (ссылка ``blocks``), потом адресованный смотрящему
+    (``owner`` = его хендл входа), потом остальные. Вопрос попадает в первую
+    подходящую группу; порядок внутри группы — текущая сортировка. Пустые
+    группы не показываются.
+    """
+    blocking: list[dict[str, Any]] = []
+    mine: list[dict[str, Any]] = []
+    rest: list[dict[str, Any]] = []
+    for row in rows:
+        if row["blocks"]:
+            blocking.append(row)
+        elif viewer and row.get("owner") == viewer:
+            mine.append(row)
+        else:
+            rest.append(row)
+    groups = [
+        ("blocking", "Блокируют задачи", blocking),
+        ("mine", "Адресованы вам", mine),
+        ("rest", "Остальные открытые", rest),
+    ]
+    return [{"key": k, "label": label, "rows": items} for k, label, items in groups if items]
+
+
 def _back(slug: str, qid: str, error: str | None = None) -> RedirectResponse:
     url = f"/p/{slug}/questions/{qid}"
     if error:
@@ -238,19 +266,25 @@ def questions_list(
         row["pos"] = pos
         row["broken"] = broken_by_question.get(q.question_id, 0)
         row["options"] = len(question_service.list_options(session, q.row_id))
-        row["links"] = len(question_service.list_links(session, q.row_id))
+        links = question_service.list_links(session, q.row_id)
+        row["links"] = len(links)
+        row["blocks"] = sum(1 for link in links if link.relation == QuestionRelation.BLOCKS)
         rows.append(row)
 
     counts = {s: sum(1 for q in everything if q.status.value == s) for s in STATUS_OPTIONS}
     counts["all"] = len(everything)
     tabs = [{"value": f, "label": STATUS_TAB_LABEL[f], "count": counts[f]} for f in STATUS_FILTERS]
     sort = sort_state(request, QUESTION_SORT)
+    ordered = sort.apply(rows)
+    # 0056: хендл входа по OIDC; без фичи атрибута нет — группы «вам» нет.
+    viewer = getattr(request.state, "web_handle", None)
     return templates.TemplateResponse(
         request,
         "project/questions_list.html",
         {
             "project": proj.entry,
-            "rows": sort.apply(rows),
+            "rows": ordered,
+            "groups": _question_groups(ordered, viewer) if status == "open" else [],
             "sort": sort,
             "counts": counts,
             "broken_total": len(broken),

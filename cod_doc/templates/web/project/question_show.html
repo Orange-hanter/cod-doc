@@ -27,7 +27,7 @@
       {% if q.owner %}<span class="meta-chip" title="кто отвечает за ответ">{{ q.owner }}</span>{% endif %}
     </div>
   </div>
-  <h1 class="task-hero-title">{{ q.title }}</h1>
+  <h1 class="task-hero-title{% if q.title | length > 120 %} l-title-long{% endif %}">{{ q.title }}</h1>
   {% if q.question_html %}<div class="q-lead doc-body">{{ q.question_html | safe }}</div>{% endif %}
 </header>
 
