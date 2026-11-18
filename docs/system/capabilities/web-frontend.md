@@ -184,6 +184,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/questions/{qid}/verify` | Перепроверить ссылки вопроса | `question_service.verify_links` | ✅ | OQM-004 |
 | **Ревизии, рутины, запуски агента**  | | | |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
+| `GET /p/{slug}/activity` | Лента activity_event за 7 дней: люди и агенты строками, рутины сводкой дня (`?who=people\|routines\|all`) | `activity_service.summarize` + `list_events` | ✅ | WUI-012 |
 | `GET /p/{slug}/routines` | Список routines + история запусков | `routine_service.list_routines` + `history` | ✅ | PCA-919 |
 | `POST /p/{slug}/routines/create` | Создание routine | `routine_service.create` | ✅ | PCA-919 |
 | `POST /p/{slug}/routines/{name}/toggle` | Включение/выключение routine | `routine_service.update_status` | ✅ | PCA-920 |

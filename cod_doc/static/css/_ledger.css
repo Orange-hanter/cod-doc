@@ -418,6 +418,33 @@
   .l-group-meta { display: none; }
 }
 
+/* ── Лента активности (/p/{slug}/activity, WUI-012) ───────────────────── */
+.l-activity { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start; }
+.l-activity-main { min-width: 0; }
+.l-activity-time { width: 64px; font-weight: 400; color: var(--muted); }
+.l-activity-digest { background: var(--bg-alt); }
+.l-activity-digest .l-row-text { color: var(--muted); }
+.l-activity-note { margin-top: var(--space-3); font-size: calc(12px * var(--text-scale, 1)); }
+.l-activity-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+.l-activity-kind {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+.l-activity-kind > .l-progress { grid-column: 1 / -1; width: 100% !important; }
+@media (max-width: 960px) {
+  .l-activity { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ── Страница кита (/ui/kit) ─────────────────────────────────────────── */
 .l-kit { display: flex; flex-direction: column; gap: 48px; max-width: 1100px; }
 .l-kit-section { display: flex; flex-direction: column; gap: 16px; }

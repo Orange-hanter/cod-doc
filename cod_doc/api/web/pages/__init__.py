@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from . import (
+    activity,
     adr,
     auth,
     code_refs,
@@ -49,6 +50,8 @@ router.include_router(plans.router)
 # RFC 36 / ROAD-007: дорожная карта — очередь проекта и прогноз, перестановка планов.
 router.include_router(roadmap.router)
 router.include_router(revisions.router)
+# WUI-012: лента activity_event — люди и агенты строками, рутины сводкой дня.
+router.include_router(activity.router)
 router.include_router(tasks.router)
 router.include_router(stories.router)
 router.include_router(settings.router)
