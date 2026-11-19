@@ -37,6 +37,7 @@ PROJECT_TABS: Final[tuple[ProjectTab, ...]] = (
     ProjectTab("routines", "Routines", "/routines"),
     ProjectTab("costs", "Costs", "/costs"),
     ProjectTab("revisions", "Revisions", "/revisions"),
+    ProjectTab("activity", "Feed", "/activity"),
 )
 
 
@@ -63,7 +64,7 @@ TAB_GROUPS: Final[tuple[TabGroup, ...]] = (
     TabGroup("work", "Work", ("tasks", "stories")),
     TabGroup("plans", "Plans", ("plans", "roadmap")),
     TabGroup("decisions", "Decisions", ("adr", "questions", "proposals")),
-    TabGroup("activity", "Activity", ("revisions", "commits", "routines")),
+    TabGroup("activity", "Activity", ("activity", "revisions", "commits", "routines")),
 )
 
 

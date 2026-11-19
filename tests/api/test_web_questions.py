@@ -307,3 +307,17 @@ def test_long_title_steps_down_but_is_not_cut(q_client) -> None:  # type: ignore
     assert r.status_code == 200
     assert 'class="task-hero-title l-title-long"' in r.text
     assert title.strip() in r.text
+
+
+@pytest.mark.parametrize(("length", "long"), [(120, False), (121, True)])
+def test_long_title_threshold_is_120(q_client, length: int, long: bool) -> None:  # type: ignore[no-untyped-def]
+    """ai-review #299: граница — ровно 120 знаков, иначе сдвиг порога не ловится."""
+    title = ("Вопрос " * 30)[: length - 1] + "?"
+    assert len(title) == length
+    r = q_client.post(
+        f"/p/{SLUG}/questions/new",
+        data={"title": title, "question": "Что?", "priority": "low"},
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    assert ('class="task-hero-title l-title-long"' in r.text) is long

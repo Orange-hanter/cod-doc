@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% import "_ui/ledger.html" as ui %}
+{% block title %}Activity · {{ project.name }} — COD-DOC{% endblock %}
+
+{#- Строка события (кит Ledger, R/Data/Activity Row): время, актор, вид,
+    объект, сводка. -#}
+{%- macro event_row(e) -%}
+  {% call ui.row(title=e.summary or e.kind, attrs={"data-event-kind": e.kind}) %}
+    {#- День — заголовок группы; в строке только «ЧЧ:ММ» из short_datetime. -#}
+    <span class="l-row-id l-activity-time" title="{{ e.ts | ts_tooltip }}">{{ (e.ts | short_datetime)[-5:] }}</span>
+    <div class="l-row-body">
+      <span class="l-row-text l-clamp-2">
+        <span class="l-mono">{{ e.kind }}</span>
+        {%- if e.scope_id %} ·
+          {% if e.href %}<a class="l-mono" href="{{ e.href }}" data-peek-off>{{ e.scope_id }}</a>{% else %}<span class="l-mono">{{ e.scope_id }}</span>{% endif %}
+        {%- endif %}
+        {%- if e.summary %} — {{ e.summary }}{% endif %}
+      </span>
+    </div>
+    <div class="l-row-aside">
+      {{ ui.dot("muted" if e.actor_kind in noise_kinds else ("signal" if e.actor_kind == "agent" else "ok")) }}
+      <span class="l-mono l-muted">{{ e.actor_id or e.actor_kind }}</span>
+    </div>
+  {% endcall %}
+{%- endmacro -%}
+
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Activity</span>
+</nav>
+
+{% with slug=project.name, active="activity" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+{{ ui.page_header(
+     "Кто что менял",
+     eyebrow="activity_event · " ~ window_days ~ " дней",
+     lead=(counts.people ~ " событий людей и агентов за " ~ window_days ~ " дней. " ~ counts.routines ~ " событий рутин и системы свёрнуты в сводку дня.")
+   ) }}
+
+<div class="l-activity">
+  <div class="l-activity-main">
+    <nav class="l-filters" aria-label="Кто">
+      {{ ui.filter_chip("Люди и агенты", counts.people, href="/p/" ~ project.name ~ "/activity", active=(who == "people")) }}
+      {{ ui.filter_chip("Рутины", counts.routines, href="/p/" ~ project.name ~ "/activity?who=routines", active=(who == "routines")) }}
+      {{ ui.filter_chip("Всё", counts.all, href="/p/" ~ project.name ~ "/activity?who=all", active=(who == "all")) }}
+    </nav>
+
+    {% if not days %}
+      {{ ui.empty("За " ~ window_days ~ " дней событий нет", glyph="·") }}
+    {% else %}
+      <div class="l-list">
+        {% for d in days %}
+          {% call ui.group(d.day, count=d.rows | length, meta=(("рутины ×" ~ d.noise_total) if d.noise_total else None), open=loop.index <= 3, filter=False) %}
+            {% if d.digest %}
+              <div class="l-row l-activity-digest" title="События рутин и системы за день">
+                <span class="l-row-id l-activity-time">рутины</span>
+                <div class="l-row-body"><span class="l-row-text">
+                  {%- for kind, n in d.digest[:6] %}<span class="l-mono">{{ kind }} ×{{ n }}</span>{{ " · " if not loop.last }}{% endfor -%}
+                  {%- if d.digest | length > 6 %} · ещё {{ d.digest | length - 6 }} видов{% endif -%}
+                </span></div>
+                <div class="l-row-aside">{{ ui.button("развернуть", "ghost", href="/p/" ~ project.name ~ "/activity?who=routines") }}</div>
+              </div>
+            {% endif %}
+            {% if d.rows %}
+              {{ ui.rows_with_more(d.rows, event_row, visible=8) }}
+            {% elif not d.digest %}
+              {{ ui.empty("Нет событий", glyph="·") }}
+            {% endif %}
+          {% endcall %}
+        {% endfor %}
+      </div>
+      <p class="l-muted l-activity-note">Лента читает до {{ rows_per_kind }} последних событий на вид актора; полный журнал — <code>cod-doc activity list -p {{ project.name }}</code>.</p>
+    {% endif %}
+  </div>
+
+  <aside class="l-activity-side">
+    {{ ui.label("За " ~ window_days ~ " дней по видам", counts.all) }}
+    {% for kind, n in top_kinds %}
+      <div class="l-activity-kind">
+        <span class="l-mono">{{ kind }}</span><span class="l-mono">{{ n }}</span>
+        {{ ui.progress(n, top_max, width=280) }}
+      </div>
+    {% endfor %}
+  </aside>
+</div>
+{% endblock %}
