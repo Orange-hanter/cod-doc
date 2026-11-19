@@ -25,7 +25,7 @@ from cod_doc.infra.models import (
     UserStoryModel,
 )
 from cod_doc.infra.repositories import LinkRepository
-from cod_doc.services import activity_service
+from cod_doc.services import activity_service, request_identity
 
 from ._section_helpers import _link_or_raise, _project_id_for_section, _section_or_raise
 from ._types import IncomingLink, ParsedLink, VerifyReport
@@ -37,6 +37,43 @@ if TYPE_CHECKING:
 
 _MD_LABEL_RE = re.compile(r"\[([^\]]+)\]")
 _LINE_FRAGMENT_RE = re.compile(r"^L(?P<start>\d+)(?:-L?(?P<end>\d+))?$")
+
+
+#: Автор служебных записей производной таблицы ``link``.
+_SYSTEM_AUTHOR = "system"
+
+
+def _emit_system(
+    session: Session,
+    project_id: int,
+    kind: str,
+    author: str,
+    *,
+    scope_kind: str,
+    scope_id: str,
+    payload: dict[str, object],
+    summary: str,
+) -> None:
+    """Событие пересчёта ``link`` — от сервера, а не от владельца токена.
+
+    ``link`` выводится из тел секций: пересчёт идёт либо каскадом записи,
+    право на которую уже проверено (``SectionWritten``), либо в чтении
+    (``curator_next``, ``ctx_drift_gate``, ``link_verify``). Под
+    Bearer-токеном ``activity_service.emit`` сверял бы ``author="system"`` с
+    владельцем и падал SYNC-202: чтение рушилось, а каскад записи
+    ``doc_service`` глотал как best-effort — ссылки молча протухали.
+    """
+    with request_identity.suspended():
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            kind,
+            author,
+            scope_kind=scope_kind,
+            scope_id=scope_id,
+            payload=payload,
+            summary=summary,
+        )
 
 
 def _extract_label(raw: str) -> str | None:
@@ -563,11 +600,11 @@ def sync_section(session: Session, section_id: int) -> list[Link]:
         inserted.append(m)
     session.flush()
 
-    activity_service.emit_for_write(
+    _emit_system(
         session,
         project_id,
         "link.synced",
-        "system",
+        _SYSTEM_AUTHOR,
         scope_kind="section",
         scope_id=str(section_id),
         payload={"link_count": len(inserted)},
@@ -590,11 +627,11 @@ def resolve(session: Session, link_row_id: int) -> Link:
     )
     session.flush()
 
-    activity_service.emit_for_write(
+    _emit_system(
         session,
         model.project_id,
         "link.resolved",
-        "system",
+        _SYSTEM_AUTHOR,
         scope_kind="link",
         scope_id=str(link_row_id),
         payload={"resolved": model.resolved, "broken_reason": model.broken_reason},
@@ -627,11 +664,11 @@ def resolve_section(session: Session, section_id: int) -> list[Link]:
         out.append(repo._to_domain(model))
     session.flush()
 
-    activity_service.emit_for_write(
+    _emit_system(
         session,
         project_id,
         "link.resolved",
-        "system",
+        _SYSTEM_AUTHOR,
         scope_kind="section",
         scope_id=str(section_id),
         payload={
@@ -668,11 +705,11 @@ def verify_section(session: Session, section_id: int) -> VerifyReport:
             broken += 1
     session.flush()
 
-    activity_service.emit_for_write(
+    _emit_system(
         session,
         project_id,
         "link.verified",
-        "system",
+        _SYSTEM_AUTHOR,
         scope_kind="section",
         scope_id=str(section_id),
         payload={"ok": ok, "broken": broken, "skipped": skipped},
