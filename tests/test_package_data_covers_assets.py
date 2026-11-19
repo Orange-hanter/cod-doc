@@ -18,9 +18,8 @@ Editable-инстал это скрывает: он подставляет пу�
 
 from __future__ import annotations
 
-import fnmatch
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = PROJECT_ROOT / "cod_doc"
@@ -55,14 +54,16 @@ def _asset_files() -> list[str]:
 
 
 def _matches(rel_path: str, pattern: str) -> bool:
-    """`fnmatch` с оговоркой про `**`.
+    """Glob с семантикой setuptools: `*` — внутри одного сегмента, `**` — на любой глубине.
 
-    setuptools трактует `skills/**/*.md` как «на любой глубине», а `fnmatch`
-    про `**` не знает вовсе — его `*` и так проходит сквозь `/`. Поэтому
-    схлопываем `**/` перед сравнением, иначе тест забракует то, что
-    setuptools честно упакует.
+    Раньше здесь стоял `fnmatch`, у которого `*` проходит сквозь `/`:
+    `templates/web/*.html` «покрывал» `templates/web/_ui/ledger.html`, а
+    setuptools этот файл в колесо не клал. Тест был зелёным, пока список
+    вопросов, историй и документов на проде падал с `TemplateNotFound`
+    (2026-11-19). `PurePosixPath.full_match` (3.13+) различает `*` и `**`
+    так же, как setuptools.
     """
-    return fnmatch.fnmatch(rel_path, pattern.replace("**/", "*"))
+    return PurePosixPath(rel_path).full_match(pattern)
 
 
 def test_every_asset_is_covered_by_package_data() -> None:
@@ -81,12 +82,17 @@ def test_every_asset_is_covered_by_package_data() -> None:
 
 
 def test_known_regressions_stay_covered() -> None:
-    """Два конкретных файла, на которых дефект и был пойман.
+    """Конкретные файлы, на которых дефект и был пойман.
 
     Отдельным кейсом, потому что общий тест выше пройдёт и на пустом
     наборе ассетов — например, если кто-то сузит `_asset_files`.
+    `_ui/ledger.html` — кит Ledger, вложенный каталог шаблонов (2026-11-19).
     """
     patterns = _package_data_patterns()
-    for rel in ("static/favicon.svg", "infra/migrations/script.py.mako"):
+    for rel in (
+        "static/favicon.svg",
+        "infra/migrations/script.py.mako",
+        "templates/web/_ui/ledger.html",
+    ):
         assert (PACKAGE_ROOT / rel).exists(), f"{rel} исчез из репозитория — тест устарел"
         assert any(_matches(rel, p) for p in patterns), f"{rel} снова не попадает в колесо"
