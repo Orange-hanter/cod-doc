@@ -117,6 +117,7 @@ include = ["cod_doc*"]
     "templates/web/*.html",
     "templates/web/_layout/*.html",
     "templates/web/_frag/*.html",
+    "templates/web/_ui/*.html",
     "templates/web/project/*.html",
     "templates/web/standards/*.html",
     "static/*.css",
