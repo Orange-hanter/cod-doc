@@ -1,0 +1,36 @@
+# Litestream на Гермесе: непрерывная репликация всех SQLite cod-doc.
+# Реплика — локальный каталог /replica (= /root/cod-doc/replica на хосте);
+# arch забирает его pull'ом по rsync раз в минуту (../README.md §«Почему pull»).
+#
+# Две директории, а не перечень файлов: новый проект на узле подхватывается
+# сам (`watch: true`), без правки этого файла.
+
+# Полный снапшот раз в 12 ч, хвост LTX живёт 48 ч: окно точечного
+# восстановления на самом узле — двое суток. Длинная история — на arch
+# (ежечасные восстановленные копии, `cod-doc-replica snapshot`).
+snapshot:
+  interval: 12h
+  retention: 48h
+
+dbs:
+  # state.db всех проектов: /projects/<slug>/.cod-doc/state.db
+  - dir: /projects
+    pattern: "*.db"
+    recursive: true
+    watch: true
+    # Служебные файлы Litestream — в своём томе, а не рядом с БД: каталоги
+    # проектов — это ещё и проекции markdown.
+    meta-dir: /meta/projects
+    replica:
+      type: file
+      path: /replica/projects
+
+  # Хранилище сервера: access.db (токены, роли) и прочие *.db в home.
+  - dir: /home-data
+    pattern: "*.db"
+    recursive: false
+    watch: true
+    meta-dir: /meta/home
+    replica:
+      type: file
+      path: /replica/home

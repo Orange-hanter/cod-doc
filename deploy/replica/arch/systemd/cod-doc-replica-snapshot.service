@@ -1,0 +1,9 @@
+[Unit]
+Description=cod-doc replica: восстановить и проверить снапшот всех БД
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cod-doc-replica snapshot
+TimeoutStartSec=1h
+Nice=15
+IOSchedulingClass=idle
