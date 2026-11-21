@@ -62,12 +62,14 @@ M=$T/root/mirror
 [[ -f $M/replica/projects/alpha/.cod-doc/state.db/src.db ]] || fail "реплика не скопирована"
 [[ -f $M/replica/home/access.db/src.db ]] || fail "реплика home не скопирована"
 [[ -f $M/projects/alpha/README.md ]] || fail "проекция не скопирована"
-[[ -f $M/home/config.yaml && -f $M/.env && -f $M/src/Dockerfile && -f $M/tokens/x.token ]] \
+[[ -f $M/home/config.yaml && -f $M/.env && -f $M/tokens/x.token ]] \
     || fail "конфиги/исходники не скопированы"
 [[ ! -e $M/projects/alpha/.cod-doc/state.db ]] || fail "живая state.db попала в зеркало"
 [[ ! -e $M/projects/alpha/.cod-doc/state.db-wal ]] || fail "WAL попал в зеркало"
 [[ ! -e $M/home/access.db ]] || fail "живая access.db попала в зеркало"
 [[ ! -e $M/backups ]] || fail "backups/ попал в зеркало"
+[[ ! -e $M/src ]] || fail "src/ узла попал в зеркало: образ собирается из своего клона"
+[[ $(stat -c %a "$M/.env") == 600 ]] || fail "секреты в зеркале не 600: $(stat -c %a "$M/.env")"
 
 # --- snapshot --------------------------------------------------------------
 "$R" snapshot 2>/dev/null

@@ -6,7 +6,7 @@
 
 ```text
 Гермес                                         arch (pull по ssh, ключ rrsync -ro)
-cod-doc ─ пишет ─▶ state.db/access.db          ┌─ каждую минуту: rsync replica/ + конфиги, проекции, src
+cod-doc ─ пишет ─▶ state.db/access.db          ┌─ каждую минуту: rsync replica/ + конфиги, проекции
                      │ WAL                     │
 litestream ─ 1 с ──▶ /root/cod-doc/replica ────┘─▶ mirror/
                      (LTX, окно 48 ч)              │ каждый час: restore → quick_check → .zst
@@ -14,7 +14,7 @@ litestream ─ 1 с ──▶ /root/cod-doc/replica ────┘─▶ mirror
                                                snapshots/<время>/   48 часовых + 30 суточных
                                                    │ promote
                                                    ▼
-                                               standby/ cod-doc + MCP :8801 (тот же образ, те же токены)
+                                               standby/ cod-doc + MCP 127.0.0.1:8801 (тот же коммит, те же токены)
 ```
 
 | Параметр | Значение |
@@ -65,14 +65,18 @@ bash deploy/replica/arch/install.sh --enable   # первый pull + snapshot, �
 cod-doc-replica status
 ```
 
+Образ standby собирается из **своего** клона arch (`~/Git/cod-doc`, `COD_DOC_REPLICA_REPO`)
+на коммите `COD_DOC_TAG` узла и только если он в `origin/main`; исходники с узла на arch не
+возятся — взломанный узел не получает через сборку исполнение кода на arch.
+
 Проверка без сети и без Litestream: `bash deploy/replica/arch/selftest.sh`.
 
 Таймеры (`systemctl --user list-timers 'cod-doc-replica*'`):
 
 | Таймер | Период | Что делает |
 |---|---|---|
-| `cod-doc-replica-pull` | 1 мин | rsync `replica/`, `home/`, `projects/` (без живых `*.db`), `src/`, `tokens/`, `.env` |
-| `cod-doc-replica-snapshot` | 1 ч | `litestream restore` каждой БД + `quick_check`, манифест (alembic, TXID), ротация, пересборка образа standby при смене тега на узле |
+| `cod-doc-replica-pull` | 1 мин | rsync `replica/`, `home/`, `projects/` (без живых `*.db`), `tokens/`, `.env` — права 600/700 |
+| `cod-doc-replica-snapshot` | 1 ч | `litestream restore` каждой БД + `quick_check`, манифест (alembic, TXID), ротация, пересборка образа standby при смене `COD_DOC_TAG` на узле |
 | `cod-doc-replica-check` | 15 мин | pull старше 15 мин или снапшот старше 150 мин → `notify-send` + `~/.config/cod-doc-replica/alert` |
 
 Ежечасный снапшот — это ещё и проверка восстановления: реплика, из которой не
@@ -84,10 +88,12 @@ cod-doc-replica status
 2. На arch: `cod-doc-replica promote` — стоп таймеров, последний pull, restore в
    `standby/data`, `compose up`. Откат к проверенной копии: `cod-doc-replica status` →
    `cod-doc-replica promote --snapshot 20261121T140000Z`.
-3. Харнесс: сменить URL MCP-сервера `cod-doc` на `http://192.168.1.120:8801/mcp`
-   (заголовок `Authorization` прежний — `access.db` приехала с репликой). Вне дома — через WireGuard до arch.
-   Другим участникам (stas, permyakov, simakov) arch из интернета недоступен: MCP без TLS
-   наружу не выставляется.
+3. Харнесс: `ssh -fN -L 8801:127.0.0.1:8801 arch-lan` и URL MCP-сервера `cod-doc` →
+   `http://127.0.0.1:8801/mcp` (заголовок `Authorization` прежний — `access.db` приехала с
+   репликой). MCP standby слушает только loopback arch: TLS нет, а Bearer по голому HTTP в LAN
+   читается кем угодно в сети. Открыть в LAN осознанно — `STANDBY_MCP_BIND=192.168.1.120` в
+   `~/cod-doc-replica/standby/.env`. Другим участникам (stas, permyakov, simakov) standby
+   недоступен: наружу без TLS он не выставляется.
 
 **Пока работает standby, узел не должен принимать записи.** Если Гермес поднимется сам,
 `restart: unless-stopped` вернёт его контейнеры, и клиенты со старым URL начнут писать в

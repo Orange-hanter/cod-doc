@@ -1,9 +1,9 @@
 # Standby cod-doc на arch. Поднимает его только `cod-doc-replica promote`:
-# данные в ./data — восстановленные из реплики Гермеса, образ — из тех же
-# исходников, что крутятся на узле (`cod-doc-replica build`).
+# данные в ./data — восстановленные из реплики Гермеса, образ — тот же коммит,
+# что крутится на узле, из клона arch (`cod-doc-replica build`).
 #
 # Отличия от узла (deploy/sync-remote/docker-compose.yml):
-# - нет Caddy и TLS: MCP слушает LAN/WireGuard arch, Bearer-гейт тот же;
+# - нет Caddy и TLS: MCP на loopback arch (клиенты — через ssh -L), Bearer-гейт тот же;
 # - веб только на loopback: OIDC Pocket ID привязан к домену Гермеса, а без
 #   OIDC SessionGate выключен — выставлять такой веб в сеть нельзя;
 # - нет таймера рутин (`cod-doc-routines` на узле): на время аварии рутины
@@ -47,7 +47,9 @@ services:
       - --port=8801
       - --profile=standard
     ports:
-      - "${STANDBY_MCP_BIND:-0.0.0.0}:8801:8801"
+      # Loopback по умолчанию: TLS нет, Bearer по HTTP. Клиенты — через
+      # ssh -L; LAN — явным STANDBY_MCP_BIND в standby/.env.
+      - "${STANDBY_MCP_BIND:-127.0.0.1}:8801:8801"
     env_file:
       - path: ./data/home/.env
         required: false

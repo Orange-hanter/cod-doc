@@ -15,6 +15,8 @@
 #   standby/    compose + data/ поднятого cod-doc (только после promote)
 #   state/      отметки времени, лок, журнал алертов
 set -euo pipefail
+# В зеркале лежат .env узла (ключ OpenRouter), токены и access.db: всё — только владельцу.
+umask 077
 
 ROOT=${COD_DOC_REPLICA_ROOT:-$HOME/cod-doc-replica}
 REMOTE=${COD_DOC_REPLICA_REMOTE:-cod-doc-hermes-replica}
@@ -25,6 +27,8 @@ KEEP_HOURLY=${KEEP_HOURLY:-48}
 KEEP_DAILY=${KEEP_DAILY:-30}
 PULL_STALE_MIN=${PULL_STALE_MIN:-15}
 SNAPSHOT_STALE_MIN=${SNAPSHOT_STALE_MIN:-150}
+# Свой клон cod-doc на arch: из него собирается образ standby.
+REPO=${COD_DOC_REPLICA_REPO:-$HOME/Git/cod-doc}
 
 MIRROR=$ROOT/mirror
 SNAPS=$ROOT/snapshots
@@ -66,11 +70,12 @@ cmd_pull() {
     # (там каталоги *.db) берётся целиком, живые *.db остальных каталогов —
     # нет (копия файла под записью несогласованна; их несёт реплика).
     rsync -a --delete --delete-excluded --partial-dir=.rsync-partial \
+        --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= \
         --timeout=120 \
         --include='/replica/***' \
         --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
         --exclude='*.db-journal' --exclude='.*.db-litestream/' \
-        --include='/home/***' --include='/projects/***' --include='/src/***' \
+        --include='/home/***' --include='/projects/***' \
         --include='/tokens/***' --include='/litestream/***' \
         --include='/.env' --include='/docker-compose*.yml' --include='/*.block' \
         --exclude='*' \
@@ -157,21 +162,31 @@ env_of() { # значение переменной из зеркального .
 
 standby_image() { echo "cod-doc:standby-$(env_of COD_DOC_TAG)"; }
 
-# Образ standby = те же исходники, что сейчас на узле (mirror/src — их
-# `git archive`), поэтому схема реплики и код standby совпадают.
+# Образ standby = тот же коммит, что крутится на узле (COD_DOC_TAG в .env
+# узла — первые 8 символов sha), поэтому схема реплики и код совпадают.
+# Исходники берутся НЕ из зеркала, а из своего клона arch и только если
+# коммит лежит в origin/main: взломанный узел не должен получить исполнение
+# кода на arch через docker build.
 cmd_build() {
-    [[ -f $MIRROR/src/Dockerfile ]] || die "нет $MIRROR/src — сначала pull"
-    local img
+    local img tag sha ver
+    tag=$(env_of COD_DOC_TAG)
+    [[ $tag =~ ^[0-9a-f]{7,40}$ ]] || die "COD_DOC_TAG узла не похож на sha: '$tag'"
+    ver=$(env_of COD_DOC_VERSION)
+    [[ -z $ver || $ver =~ ^[0-9A-Za-z.+_-]+$ ]] || die "COD_DOC_VERSION узла странный: '$ver'"
+    [[ -d $REPO/.git ]] || die "нет клона $REPO (COD_DOC_REPLICA_REPO)"
+    git -C "$REPO" fetch -q origin main
+    sha=$(git -C "$REPO" rev-parse -q --verify "$tag^{commit}") || die "коммита $tag нет в $REPO"
+    git -C "$REPO" merge-base --is-ancestor "$sha" origin/main || die "$tag не в origin/main"
     img=$(standby_image)
-    docker build -q -t "$img" --build-arg "COD_DOC_VERSION=$(env_of COD_DOC_VERSION)" "$MIRROR/src" >/dev/null
+    git -C "$REPO" archive "$sha" | docker build -q -t "$img" --build-arg "COD_DOC_VERSION=$ver" - >/dev/null
     echo "$img" >"$STATE/built_image"
-    log "собран $img"
+    log "собран $img из $sha"
 }
 
 maybe_build() {
-    [[ -f $MIRROR/src/Dockerfile ]] || return 0
+    [[ -n $(env_of COD_DOC_TAG) ]] || return 0
     [[ $(cat "$STATE/built_image" 2>/dev/null) == "$(standby_image)" ]] && return 0
-    cmd_build || log "сборка standby упала — promote соберёт заново"
+    (cmd_build) || log "сборка standby упала — promote попробует снова"
 }
 
 cmd_check() {
@@ -257,14 +272,19 @@ cmd_promote() {
 
     [[ $(cat "$STATE/built_image" 2>/dev/null) == "$(standby_image)" ]] || cmd_build
     # .env рядом с compose: его же читают status/failback без лишних переменных.
-    echo "STANDBY_IMAGE=$(cat "$STATE/built_image")" >"$STANDBY/.env"
+    # Прочие строки (STANDBY_MCP_BIND, STANDBY_MCP_HOSTS) сохраняются.
+    { grep -v '^STANDBY_IMAGE=' "$STANDBY/.env" 2>/dev/null || true
+      echo "STANDBY_IMAGE=$(cat "$STATE/built_image")"; } >"$STANDBY/.env.new"
+    mv "$STANDBY/.env.new" "$STANDBY/.env"
     docker compose -f "$STANDBY/docker-compose.yml" up -d --wait
     mark promoted
     cat <<EOF
 
-standby поднят. MCP: http://$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<NF;i++) if($i=="src") print $(i+1)}'):8801/mcp (Bearer — те же токены).
+standby поднят. MCP слушает 127.0.0.1:8801 на arch (Bearer — те же токены).
+С ноутбука: ssh -fN -L 8801:127.0.0.1:8801 arch-lan, затем URL MCP-сервера cod-doc
+в харнессе → http://127.0.0.1:8801/mcp. Открыть в LAN без туннеля (HTTP, токен
+идёт открытым текстом): STANDBY_MCP_BIND=<ip> в $STANDBY/.env и compose up -d.
 Веб — только 127.0.0.1:8765 на arch (OIDC привязан к домену Гермеса).
-Переключить харнесс: в ~/.claude.json сменить URL MCP-сервера cod-doc на адрес выше.
 Возврат на Гермес — '$0 failback', затем шаги из README §«Возврат».
 EOF
 }
