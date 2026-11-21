@@ -1,0 +1,333 @@
+#!/usr/bin/env bash
+# cod-doc-replica — резервная реплика БД cod-doc на arch (deploy/replica/README.md).
+#
+#   pull      забрать с Гермеса реплику Litestream + конфиги/проекции (таймер, 1 мин)
+#   snapshot  восстановить каждую БД из реплики, проверить, сжать (таймер, 1 ч)
+#   check     упасть, если pull или snapshot протухли (таймер, 15 мин → алерт)
+#   status    что есть на arch: свежесть, снапшоты, БД, standby
+#   build     собрать образ standby из исходников, которые крутятся на Гермесе
+#   promote   поднять cod-doc на arch из реплики (Гермес лежит)
+#   failback  остановить standby и упаковать его БД для возврата на Гермес
+#
+# Каталоги ($COD_DOC_REPLICA_ROOT, по умолчанию ~/cod-doc-replica):
+#   mirror/     зеркало /root/cod-doc узла (без живых *.db; реплика — mirror/replica)
+#   snapshots/  <UTC-время>/ — восстановленные и проверенные копии, .db.zst
+#   standby/    compose + data/ поднятого cod-doc (только после promote)
+#   state/      отметки времени, лок, журнал алертов
+set -euo pipefail
+
+ROOT=${COD_DOC_REPLICA_ROOT:-$HOME/cod-doc-replica}
+REMOTE=${COD_DOC_REPLICA_REMOTE:-cod-doc-hermes-replica}
+# Источник pull; в тестах — локальный каталог.
+SOURCE=${COD_DOC_REPLICA_SOURCE:-$REMOTE:./}
+LITESTREAM=${LITESTREAM:-$HOME/.local/bin/litestream}
+KEEP_HOURLY=${KEEP_HOURLY:-48}
+KEEP_DAILY=${KEEP_DAILY:-30}
+PULL_STALE_MIN=${PULL_STALE_MIN:-15}
+SNAPSHOT_STALE_MIN=${SNAPSHOT_STALE_MIN:-150}
+
+MIRROR=$ROOT/mirror
+SNAPS=$ROOT/snapshots
+STANDBY=$ROOT/standby
+STATE=$ROOT/state
+SELF_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+
+log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
+die() { log "ОШИБКА: $*"; exit 1; }
+now() { date -u +%s; }
+mark() { now >"$STATE/$1"; }
+age_min() { # минут с отметки, или большое число, если её нет
+    local f=$STATE/$1
+    [[ -f $f ]] || { echo 999999; return; }
+    echo $(( ($(now) - $(cat "$f")) / 60 ))
+}
+with_lock() { # pull и snapshot не должны пересекаться: restore читает mirror
+    mkdir -p "$STATE"
+    exec 9>"$STATE/lock"
+    flock -w 600 9 || die "лок занят дольше 10 минут"
+}
+
+# Каталоги БД в реплике Litestream. В режиме `dir:` путь реплики = путь
+# реплики + относительный путь БД, поэтому каждая БД — каталог с именем файла:
+# replica/projects/<slug>/.cod-doc/state.db/, replica/home/access.db/.
+replica_dbs() {
+    [[ -d $MIRROR/replica ]] || return 0
+    find "$MIRROR/replica" -type d -name '*.db' -prune -print | sort
+}
+
+# replica/projects/x/.cod-doc/state.db → projects/x/.cod-doc/state.db
+rel_of() { local d=${1#"$MIRROR/replica/"}; echo "$d"; }
+
+cmd_pull() {
+    with_lock
+    mkdir -p "$MIRROR"
+    # Ключ на узле ограничен `rrsync -ro /root/cod-doc`: пути — от /root/cod-doc,
+    # только чтение. Первое совпавшее правило фильтра выигрывает: реплика
+    # (там каталоги *.db) берётся целиком, живые *.db остальных каталогов —
+    # нет (копия файла под записью несогласованна; их несёт реплика).
+    rsync -a --delete --delete-excluded --partial-dir=.rsync-partial \
+        --timeout=120 \
+        --include='/replica/***' \
+        --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
+        --exclude='*.db-journal' --exclude='.*.db-litestream/' \
+        --include='/home/***' --include='/projects/***' --include='/src/***' \
+        --include='/tokens/***' --include='/litestream/***' \
+        --include='/.env' --include='/docker-compose*.yml' --include='/*.block' \
+        --exclude='*' \
+        "$SOURCE" "$MIRROR/"
+    mark last_pull
+}
+
+cmd_snapshot() {
+    with_lock
+    local ts out dbs=0 failed=0
+    # С секундами: два снапшота в одну минуту иначе дали бы одно имя, и mv
+    # положил бы второй внутрь первого.
+    ts=$(date -u +%Y%m%dT%H%M%SZ)
+    out=$SNAPS/.$ts.partial
+    rm -rf "$out"
+    mkdir -p "$out"
+    local manifest=$out/manifest.tsv
+    printf 'db\tbytes\talembic\tltx_max_txid\tltx_ts\n' >"$manifest"
+
+    while IFS= read -r d; do
+        local rel target ver ltx txid lts
+        rel=$(rel_of "$d")
+        target=$out/$rel
+        mkdir -p "$(dirname "$target")"
+        dbs=$((dbs + 1))
+        if ! "$LITESTREAM" restore -integrity-check quick -o "$target" "file://$d" \
+            >>"$STATE/snapshot.log" 2>&1; then
+            log "restore упал: $rel (подробности — $STATE/snapshot.log)"
+            failed=$((failed + 1))
+            rm -f "$target"
+            continue
+        fi
+        ver=$(sqlite3 -readonly "$target" 'select version_num from alembic_version' 2>/dev/null || echo -)
+        ltx=$("$LITESTREAM" ltx -json "file://$d" 2>/dev/null || echo '[]')
+        txid=$(jq -r 'max_by(.max_txid) | .max_txid // "-"' <<<"$ltx" 2>/dev/null || echo -)
+        lts=$(jq -r 'max_by(.timestamp) | .timestamp // "-"' <<<"$ltx" 2>/dev/null || echo -)
+        printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$(stat -c %s "$target")" "$ver" "$txid" "$lts" >>"$manifest"
+        zstd -q --rm -T0 "$target"
+    done < <(replica_dbs)
+
+    ((dbs > 0)) || { rm -rf "$out"; die "в $MIRROR/replica нет ни одной БД — pull не работает или Litestream на узле стоит"; }
+    if ((failed > 0)); then
+        mv "$out" "$SNAPS/.$ts.failed"
+        die "$failed из $dbs БД не восстановились; частичный снапшот — $SNAPS/.$ts.failed"
+    fi
+    mv "$out" "$SNAPS/$ts"
+    ln -sfn "$ts" "$SNAPS/latest"
+    mark last_snapshot
+    log "снапшот $ts: $dbs БД"
+    prune
+    maybe_build
+}
+
+# Последние KEEP_HOURLY снапшотов + первый снапшот каждого из последних
+# KEEP_DAILY дней; остальное удаляется.
+prune() {
+    local -a all firsts=()
+    local -A keep=() seen=()
+    local s d i n m removed=0
+    mapfile -t all < <(find "$SNAPS" -mindepth 1 -maxdepth 1 -type d -name '2*' -printf '%f\n' | sort)
+    n=${#all[@]}
+    for ((i = n > KEEP_HOURLY ? n - KEEP_HOURLY : 0; i < n; i++)); do keep[${all[i]}]=1; done
+    for s in "${all[@]}"; do
+        d=${s:0:8}
+        [[ -n ${seen[$d]:-} ]] && continue
+        seen[$d]=1
+        firsts+=("$s")
+    done
+    m=${#firsts[@]}
+    for ((i = m > KEEP_DAILY ? m - KEEP_DAILY : 0; i < m; i++)); do keep[${firsts[i]}]=1; done
+    for s in "${all[@]}"; do
+        [[ -n ${keep[$s]:-} ]] && continue
+        rm -rf "${SNAPS:?}/$s"
+        removed=$((removed + 1))
+    done
+    ((removed == 0)) || log "удалено старых снапшотов: $removed"
+    find "$SNAPS" -mindepth 1 -maxdepth 1 -name '.*.failed' -mtime +7 -exec rm -rf {} +
+}
+
+env_of() { # значение переменной из зеркального .env узла
+    [[ -f $MIRROR/.env ]] || return 0
+    sed -n "s/^$1=//p" "$MIRROR/.env" | tail -1 | tr -d '"'"'"
+}
+
+standby_image() { echo "cod-doc:standby-$(env_of COD_DOC_TAG)"; }
+
+# Образ standby = те же исходники, что сейчас на узле (mirror/src — их
+# `git archive`), поэтому схема реплики и код standby совпадают.
+cmd_build() {
+    [[ -f $MIRROR/src/Dockerfile ]] || die "нет $MIRROR/src — сначала pull"
+    local img
+    img=$(standby_image)
+    docker build -q -t "$img" --build-arg "COD_DOC_VERSION=$(env_of COD_DOC_VERSION)" "$MIRROR/src" >/dev/null
+    echo "$img" >"$STATE/built_image"
+    log "собран $img"
+}
+
+maybe_build() {
+    [[ -f $MIRROR/src/Dockerfile ]] || return 0
+    [[ $(cat "$STATE/built_image" 2>/dev/null) == "$(standby_image)" ]] && return 0
+    cmd_build || log "сборка standby упала — promote соберёт заново"
+}
+
+cmd_check() {
+    local p s problems=()
+    p=$(age_min last_pull)
+    s=$(age_min last_snapshot)
+    ((p <= PULL_STALE_MIN)) || problems+=("pull не проходит $p мин (порог $PULL_STALE_MIN): Гермес недоступен или Litestream на нём стоит")
+    ((s <= SNAPSHOT_STALE_MIN)) || problems+=("снапшот не обновлялся $s мин (порог $SNAPSHOT_STALE_MIN)")
+    if ((${#problems[@]})); then
+        printf '%s\n' "${problems[@]}" | tee -a "$STATE/alerts.log" >&2
+        exit 1
+    fi
+}
+
+cmd_alert() {
+    local msg hook=$HOME/.config/cod-doc-replica/alert
+    msg=$(tail -n 3 "$STATE/alerts.log" 2>/dev/null || echo "реплика cod-doc протухла")
+    notify-send -u critical "cod-doc: реплика протухла" "$msg" 2>/dev/null || true
+    if [[ -x $hook ]]; then printf '%s\n' "$msg" | "$hook" || true; fi
+}
+
+cmd_status() {
+    echo "pull:      $(age_min last_pull) мин назад"
+    echo "snapshot:  $(age_min last_snapshot) мин назад → $(readlink "$SNAPS/latest" 2>/dev/null || echo нет)"
+    echo "снапшотов: $(find "$SNAPS" -mindepth 1 -maxdepth 1 -type d -name '2*' 2>/dev/null | wc -l), $(du -sh "$SNAPS" 2>/dev/null | cut -f1)"
+    echo "образ:     $(cat "$STATE/built_image" 2>/dev/null || echo не собран)"
+    if [[ -f $SNAPS/latest/manifest.tsv ]]; then
+        echo
+        column -t -s $'\t' "$SNAPS/latest/manifest.tsv"
+    fi
+    if [[ -f $STANDBY/docker-compose.yml ]]; then
+        echo
+        docker compose -f "$STANDBY/docker-compose.yml" ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}' 2>/dev/null || true
+    fi
+}
+
+# Гермес лежит → cod-doc на arch. Источник по умолчанию — реплика (RPO ≈ минута
+# до последнего pull); `--snapshot <время>` — проверенная ежечасная копия
+# (откат за пределы окна реплики, например после логической порчи).
+cmd_promote() {
+    local snap=''
+    if [[ ${1:-} == --snapshot ]]; then snap=${2:?укажите время снапшота, см. status}; fi
+    [[ -f $STANDBY/docker-compose.yml ]] || install -Dm644 "$SELF_DIR/standby-compose.yml" "$STANDBY/docker-compose.yml"
+    if docker compose -f "$STANDBY/docker-compose.yml" ps -q 2>/dev/null | grep -q .; then
+        die "standby уже запущен; повторный promote перетёр бы записи, сделанные в нём"
+    fi
+
+    log "стоп таймеров pull/snapshot: после promote arch — первичный"
+    systemctl --user stop cod-doc-replica-pull.timer cod-doc-replica-snapshot.timer \
+        cod-doc-replica-check.timer 2>/dev/null || true
+    log "последняя попытка pull (60 с)"
+    timeout 90 "$0" pull || log "pull не прошёл — беру то, что уже на arch"
+
+    with_lock
+    local data=$STANDBY/data
+    [[ -d $data ]] && mv "$data" "$STANDBY/data.prev-$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$data"
+    # Не-БД файлы: config.yaml, .env, проекции.
+    rsync -a "$MIRROR/home/" "$data/home/"
+    rsync -a "$MIRROR/projects/" "$data/projects/"
+
+    local n=0
+    if [[ -n $snap ]]; then
+        [[ -d $SNAPS/$snap ]] || die "нет снапшота $snap"
+        while IFS= read -r z; do
+            local rel=${z#"$SNAPS/$snap/"}; rel=${rel%.zst}
+            mkdir -p "$(dirname "$data/$rel")"
+            zstd -q -d "$z" -o "$data/$rel"
+            n=$((n + 1))
+        done < <(find "$SNAPS/$snap" -name '*.db.zst')
+    else
+        while IFS= read -r d; do
+            local rel
+            rel=$(rel_of "$d")
+            mkdir -p "$(dirname "$data/$rel")"
+            "$LITESTREAM" restore -integrity-check quick -o "$data/$rel" "file://$d"
+            n=$((n + 1))
+        done < <(replica_dbs)
+    fi
+    ((n > 0)) || die "ни одной БД не восстановлено"
+    log "восстановлено БД: $n"
+    exec 9>&-
+
+    [[ $(cat "$STATE/built_image" 2>/dev/null) == "$(standby_image)" ]] || cmd_build
+    # .env рядом с compose: его же читают status/failback без лишних переменных.
+    echo "STANDBY_IMAGE=$(cat "$STATE/built_image")" >"$STANDBY/.env"
+    docker compose -f "$STANDBY/docker-compose.yml" up -d --wait
+    mark promoted
+    cat <<EOF
+
+standby поднят. MCP: http://$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<NF;i++) if($i=="src") print $(i+1)}'):8801/mcp (Bearer — те же токены).
+Веб — только 127.0.0.1:8765 на arch (OIDC привязан к домену Гермеса).
+Переключить харнесс: в ~/.claude.json сменить URL MCP-сервера cod-doc на адрес выше.
+Возврат на Гермес — '$0 failback', затем шаги из README §«Возврат».
+EOF
+}
+
+# Остановить standby и снять его БД (остановленные — согласованные файлы).
+cmd_failback() {
+    [[ -f $STANDBY/docker-compose.yml ]] || die "standby не поднимался"
+    docker compose -f "$STANDBY/docker-compose.yml" stop
+    local ts pack
+    ts=$(date -u +%Y%m%dT%H%M%SZ)
+    # gzip, а не zstd: на узле zstd может не быть, tar с gzip есть везде.
+    pack=$ROOT/failback-$ts.tar.gz
+    # Контейнеры остановлены, но WAL мог остаться: влить его в основной файл,
+    # чтобы в архив ушли самодостаточные .db без -wal/-shm.
+    # Делается образом standby: контейнер работал от root, и -wal/-shm
+    # принадлежат root — sqlite3 хоста их не перепишет.
+    docker compose -f "$STANDBY/docker-compose.yml" run --rm --no-deps \
+        --entrypoint python cod-doc -c '
+import pathlib, sqlite3, sys
+dbs = [*pathlib.Path("/data/cod-doc").glob("*.db"), *pathlib.Path("/projects").rglob("*.db")]
+for p in dbs:
+    c = sqlite3.connect(p)
+    busy = c.execute("pragma wal_checkpoint(TRUNCATE)").fetchone()[0]
+    c.close()
+    if busy:
+        sys.exit(f"checkpoint занят: {p}")
+print(f"checkpoint: {len(dbs)} БД")
+'
+    (cd "$STANDBY/data" && find . -name '*.db' -type f -print0 | tar --null -T - -czf "$pack")
+    log "упаковано: $pack"
+    cat <<EOF
+
+Дальше — README §«Возврат на Гермес»: остановить cod-doc и litestream на узле,
+залить $pack в /root/cod-doc, распаковать, очистить /root/cod-doc/replica и том meta,
+поднять cod-doc, затем litestream. После этого на arch:
+  $0 reset-after-failback
+EOF
+}
+
+# После возврата: реплика узла начата заново — старое зеркало и standby
+# убираются в сторону, таймеры снова включаются.
+cmd_reset_after_failback() {
+    with_lock
+    local ts
+    ts=$(date -u +%Y%m%dT%H%M%SZ)
+    [[ -d $MIRROR/replica ]] && mv "$MIRROR/replica" "$ROOT/replica.prev-$ts"
+    [[ -d $STANDBY/data ]] && mv "$STANDBY/data" "$STANDBY/data.failedback-$ts"
+    rm -f "$STATE/promoted"
+    exec 9>&-
+    systemctl --user start cod-doc-replica-pull.timer cod-doc-replica-snapshot.timer \
+        cod-doc-replica-check.timer
+    log "таймеры включены; старые данные — *.prev-$ts / data.failedback-$ts"
+}
+
+case ${1:-} in
+    pull) cmd_pull ;;
+    snapshot) cmd_snapshot ;;
+    check) cmd_check ;;
+    alert) cmd_alert ;;
+    status) cmd_status ;;
+    build) cmd_build ;;
+    promote) shift; cmd_promote "$@" ;;
+    failback) cmd_failback ;;
+    reset-after-failback) cmd_reset_after_failback ;;
+    *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

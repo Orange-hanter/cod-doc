@@ -1,0 +1,7 @@
+[Unit]
+Description=cod-doc replica: свежесть pull и снапшотов
+OnFailure=cod-doc-replica-alert.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cod-doc-replica check

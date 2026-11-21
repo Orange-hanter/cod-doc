@@ -1,0 +1,8 @@
+[Unit]
+Description=cod-doc replica: алерт о протухшей реплике
+
+[Service]
+Type=oneshot
+# Уведомление в сессию GNOME. Свой канал (почта, Telegram) — исполняемый
+# ~/.config/cod-doc-replica/alert, текст проблемы приходит на stdin.
+ExecStart=%h/.local/bin/cod-doc-replica alert

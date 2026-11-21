@@ -1,0 +1,24 @@
+# Отдельный compose-проект в /root/cod-doc/litestream, а не сервис основного
+# compose: выкатка cod-doc (`cod-doc-ship` → `docker compose up -d`) его не
+# пересоздаёт, а у Litestream свой цикл обновления.
+#
+#   cd /root/cod-doc/litestream && docker compose up -d
+services:
+  litestream:
+    image: litestream/litestream:0.5.17
+    restart: unless-stopped
+    command: ["replicate", "-config", "/etc/litestream.yml"]
+    volumes:
+      - ./litestream.yml:/etc/litestream.yml:ro
+      # БД на запись: Litestream сам делает checkpoint'ы WAL.
+      - ../projects:/projects
+      - ../home:/home-data
+      - ../replica:/replica
+      - meta:/meta
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  meta:

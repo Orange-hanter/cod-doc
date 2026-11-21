@@ -1,0 +1,9 @@
+[Unit]
+Description=cod-doc replica: забрать реплику Litestream с Гермеса
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cod-doc-replica pull
+TimeoutStartSec=10min
+Nice=10

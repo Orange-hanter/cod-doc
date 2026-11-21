@@ -1,0 +1,9 @@
+[Unit]
+Description=cod-doc replica: проверка свежести раз в 15 минут
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

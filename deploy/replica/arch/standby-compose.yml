@@ -1,0 +1,65 @@
+# Standby cod-doc на arch. Поднимает его только `cod-doc-replica promote`:
+# данные в ./data — восстановленные из реплики Гермеса, образ — из тех же
+# исходников, что крутятся на узле (`cod-doc-replica build`).
+#
+# Отличия от узла (deploy/sync-remote/docker-compose.yml):
+# - нет Caddy и TLS: MCP слушает LAN/WireGuard arch, Bearer-гейт тот же;
+# - веб только на loopback: OIDC Pocket ID привязан к домену Гермеса, а без
+#   OIDC SessionGate выключен — выставлять такой веб в сеть нельзя;
+# - нет таймера рутин (`cod-doc-routines` на узле): на время аварии рутины
+#   не нужны, при желании — `docker exec cod-doc-standby cod-doc routine tick`.
+name: cod-doc-standby
+
+services:
+  cod-doc:
+    image: ${STANDBY_IMAGE:?promote задаёт STANDBY_IMAGE}
+    container_name: cod-doc-standby
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    env_file:
+      - path: ./data/home/.env
+        required: false
+    environment:
+      <<: &env
+        COD_DOC_HOME: /data/cod-doc
+        LOG_FORMAT: json
+        LOG_LEVEL: INFO
+        COD_DOC_REQUIRE_AUTH: "1"
+      COD_DOC_BIND: 0.0.0.0
+    volumes: &volumes
+      - ./data/home:/data/cod-doc
+      - ./data/projects:/projects
+    mem_limit: 1g
+
+  cod-doc-mcp:
+    image: ${STANDBY_IMAGE:?promote задаёт STANDBY_IMAGE}
+    container_name: cod-doc-standby-mcp
+    restart: unless-stopped
+    depends_on:
+      cod-doc:
+        condition: service_healthy
+    entrypoint: []
+    command:
+      - cod-doc-mcp
+      - --transport=streamable-http
+      - --host=0.0.0.0
+      - --port=8801
+      - --profile=standard
+    ports:
+      - "${STANDBY_MCP_BIND:-0.0.0.0}:8801:8801"
+    env_file:
+      - path: ./data/home/.env
+        required: false
+    environment:
+      <<: *env
+      # Host-заголовки, под которыми arch виден клиентам (LAN, WireGuard, имя).
+      COD_DOC_MCP_ALLOWED_HOSTS: ${STANDBY_MCP_HOSTS:-192.168.1.120:* arch-lan:* arch:* localhost:* 127.0.0.1:*}
+    volumes: *volumes
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8801/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 768m
