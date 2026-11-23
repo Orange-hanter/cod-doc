@@ -49,6 +49,7 @@ module`, и перебором параметров агент её не най�
 | unlink | **нет** | есть | есть |
 | `to_ref` | String(255) | String(255) | String(512) |
 | Строк (локальная БД) | 0 | 16 | 45 |
+| Событий `*.linked` на Гермесе (оценка сверху, 2026-11-23): orakul / Restate / cod-doc | 508 / 423 / 13 | 1 / 11 / 16 | 211−7 / 389−4 / 45 |
 
 Все три синхронизируются как authored. `to_ref` у них лежит в
 `human_id_refs` с дискриминатором `to_kind` (`infra/sync_registry.py:46-50`),
@@ -424,9 +425,12 @@ class RelationView:
    `adr_link_task`) остаются тонкими обёртками над `relate` с тем же
    контрактом ответа и помечаются deprecated в docstring. Удаление тулов —
    отдельное решение после одного цикла `cod-doc update` на Гермесе.
-   **До миграции** снять счётчики `story_link`/`open_question_link` в
-   orakul на Гермесе: локальная копия устарела (2026-10-20), и объём
-   неизвестен.
+   Объём по событиям на Гермесе (§2.1): около 930 строк `story_link`
+   (orakul + Restate) и около 590 `open_question_link`. Событие — оценка
+   сверху: `task_create(story_id=)` пишет связь тем же событием, а UNIQUE у
+   `story_link` нет. **До миграции** — точный `COUNT(*)` и поиск дублей
+   `(story_id, to_kind, to_ref, relation)` в БД узла: дубли схлопываются,
+   иначе упадёт UNIQUE новой таблицы.
 4. **Фаза D, бэкенды.** Через `relate` начинают писаться `dependency`,
    `adr_relation` и `adr_supersedes`. Их таблицы, тулы и горячий путь
    `plan_ready` не меняются. `task_add_dependency` остаётся основным тулом
@@ -452,6 +456,12 @@ RFC 30 и RFC 31 при реализации заводят типы `decided_in
   нет.
 - **Не переносим ссылки из прозы.** `link` — производная таблица, её
   истина — текст. `relations()` её только читает.
+- **Новый тип рёбер не пишет событий на пересчёт.** `relation.added` /
+  `relation.removed` — только на авторскую мутацию; `relation_verify`
+  меняет `resolved` без события. Причина — `link.*`: на Гермесе
+  `link.synced` + `link.resolved` + `link.verified` дают 780 тыс. из ~795 тыс.
+  событий orakul, 635 тыс. у Restate, 876 тыс. у cod-doc (2026-11-23).
+  Это отдельный долг `link_service`, RFC его не чинит.
 - **Не трогаем `code_edge`, `commit_link`, `link_suggestion`.** Они
   производные (граф кода, git log, эмбеддинги). `link_suggestion` при
   accept может создавать ребро `relation` вместо вставки `[label](key)` в
