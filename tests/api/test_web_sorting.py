@@ -247,7 +247,7 @@ def test_tasks_view_links_keep_sort(sort_client: SimpleNamespace) -> None:
 
 def test_tasks_column_count_marked_for_filter(sort_client: SimpleNamespace) -> None:
     html = sort_client.client.get("/p/demo/tasks").text
-    assert 'class="kanban-col-count" data-filter-count' in html
+    assert 'class="l-group-count" data-filter-count' in html
 
 
 def test_stories_sort_by_priority_and_direction(sort_client: SimpleNamespace) -> None:

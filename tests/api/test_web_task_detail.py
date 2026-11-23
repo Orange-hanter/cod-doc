@@ -805,9 +805,12 @@ def test_task_lists_mark_refresh_regions_and_peek_links(task_detail_client) -> N
     board = client.get(f"/p/{entry.name}/tasks").text
     assert 'id="tasks-body" data-peek-refresh' in board
     assert 'id="tasks-stats" data-peek-refresh' in board
-    cards = re.findall(r'<a id="card-[^"]+"[^>]*>', board, flags=re.S)
+    cards = re.findall(r'<article class="l-row"[^>]*id="card-[^"]+"[^>]*>', board, flags=re.S)
     assert len(cards) == 3
-    assert all("data-peek" in c for c in cards)
+    # WUI-013: ссылка строки — `<a class="l-row-link" … data-peek>` внутри карточки.
+    hits = re.findall(r'<a class="l-row-link"[^>]*>', board, flags=re.S)
+    assert len(hits) == 3
+    assert all("data-peek" in h and "data-peek-off" not in h for h in hits)
     chains = client.get(f"/p/{entry.name}/tasks?view=chains").text
     hits = re.findall(r'<a class="chain-card-hit"[^>]*>', chains, flags=re.S)
     assert len(hits) == 3

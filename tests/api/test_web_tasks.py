@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from cod_doc.api.web.pages.tasks import BOARD_PAGE_ROWS, BOARD_VISIBLE_ROWS
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
@@ -141,19 +143,20 @@ def test_tasks_list_renders_all(tasks_client) -> None:
     assert 'id="card-AUTH-002"' in r.text
     assert 'id="card-AUTH-003"' in r.text
     assert "Implement: account deactivation flow" in r.text
-    # Kanban columns rendered (status = column).
-    assert "kanban-col-todo" in r.text
-    assert "kanban-col-in_progress" in r.text
-    assert "kanban-col-done" in r.text
-    # Card carries status + priority classes used by CSS.
-    # ADO-156: класс собирается из хранимого статуса, а он канонический.
-    assert "status-todo" in r.text
-    assert "status-in_progress" in r.text
-    assert "status-done" in r.text
+    # Status groups rendered (status = group), WUI-013.
+    assert 'data-status-group="todo"' in r.text
+    assert 'data-status-group="in_progress"' in r.text
+    assert 'data-status-group="done"' in r.text
+    # Пустые группы не рендерятся.
+    assert 'data-status-group="blocked"' not in r.text
+    # Row carries a status tag; ADO-156: он собирается из хранимого канона.
+    assert 'l-tag-neutral">todo<' in r.text
+    assert 'l-tag-signal">in_progress<' in r.text
+    assert 'l-tag-ok">done<' in r.text
     # tab strip: Tasks active
     assert 'class="active" href="/p/demo/tasks"' in r.text
     # count footer
-    assert "3 tasks shown." in r.text
+    assert "Показано 3 из 3" in r.text
 
 
 def test_tasks_list_done_column_collapsed_by_default(tasks_client) -> None:
@@ -164,14 +167,14 @@ def test_tasks_list_done_column_collapsed_by_default(tasks_client) -> None:
 
     # Find the Done column markup and confirm it has no `open` attribute.
     # Other columns with tasks should be open.
-    import re
-
-    done_block = re.search(r'<details class="kanban-col kanban-col-done[^"]*"([^>]*)>', r.text)
+    done_block = re.search(
+        r'<details class="l-group[^"]*"([^>]*data-status-group="done"[^>]*)>', r.text
+    )
     assert done_block is not None, "Done column must render"
     assert "open" not in done_block.group(1), "Done column should be collapsed by default"
 
     in_progress_block = re.search(
-        r'<details class="kanban-col kanban-col-in_progress[^"]*"([^>]*)>', r.text
+        r'<details class="l-group[^"]*"([^>]*data-status-group="in_progress"[^>]*)>', r.text
     )
     assert in_progress_block is not None
     assert "open" in in_progress_block.group(1), "Non-empty active lane should start open"
@@ -182,18 +185,24 @@ def test_tasks_list_status_highlights_column(tasks_client) -> None:
     client, entry = tasks_client
     r = client.get(f"/p/{entry.name}/tasks?status=done")
     assert r.status_code == 200
-    # Highlight applied to the Done column.
-    assert "kanban-col-done kanban-col-highlighted" in r.text
+    # Highlight applied to the Done group.
+    assert re.search(
+        r'<details class="l-group l-group-highlighted"[^>]*data-status-group="done"', r.text
+    )
     # Other tasks are still on the board (kanban shows everything).
     assert 'id="card-AUTH-001"' in r.text
     assert 'id="card-AUTH-003"' in r.text
 
 
 def test_tasks_list_status_in_progress_highlights_column(tasks_client) -> None:
+
     client, entry = tasks_client
     r = client.get(f"/p/{entry.name}/tasks?status=in-progress")
     assert r.status_code == 200
-    assert "kanban-col-in_progress kanban-col-highlighted" in r.text
+    assert re.search(
+        r'<details class="l-group l-group-highlighted"[^>]*data-status-group="in_progress"',
+        r.text,
+    )
     assert 'id="card-AUTH-002"' in r.text
 
 
@@ -203,7 +212,7 @@ def test_tasks_list_plan_filter(tasks_client) -> None:
     # All three demo tasks belong to plan `auth-bootstrap` — they remain visible.
     r = client.get(f"/p/{entry.name}/tasks?plan=auth-bootstrap")
     assert r.status_code == 200
-    assert "plan-chip-active" in r.text
+    assert "l-filter-active" in r.text
     assert 'id="card-AUTH-001"' in r.text
     # Unknown plan → no tasks shown.
     r2 = client.get(f"/p/{entry.name}/tasks?plan=does-not-exist")
@@ -492,3 +501,130 @@ def test_chain_cards_have_no_nested_anchors(tasks_client) -> None:
     parser = _AnchorNesting()
     parser.feed(body)
     assert parser.nested == [], f"вложенные <a>: {parser.nested}"
+
+
+# ── WUI-013: доска не рендерит бакет целиком ────────────────────────────────
+
+_ROW = re.compile(r'<article class="l-row"[^>]*\bid="card-([^"]+)"')
+
+
+def _seed_todo(entry: ProjectEntry, extra: int, other_plan: int = 0) -> None:
+    """Довести `todo` до `1 + extra` задач в auth-bootstrap и `other_plan` — в плане `side`."""
+    db_path = Path(entry.path) / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    with transactional(make_session_factory(engine)) as session:
+        anchor = tasks.get(
+            session, task_id="AUTH-001", project_id=require_project_id(session, entry.name)
+        )
+        side_plan_id = side_section_id = None
+        if other_plan:
+            side = PlanRepository(session).add(
+                Plan(project_id=anchor.project_id, scope="side", principle="x")
+            )
+            session.flush()
+            side_plan_id = side.row_id
+            side_section = PlanSectionRepository(session).add(
+                PlanSection(plan_id=side_plan_id, letter="S", title="Side", slug="side", position=0)
+            )
+            session.flush()
+            side_section_id = side_section.row_id
+        for i in range(extra):
+            tasks.create(
+                session,
+                project_id=anchor.project_id,
+                plan_id=anchor.plan_id,
+                section_id=anchor.section_id,
+                title=f"Bulk task {i}",
+                type=TaskType.FEATURE,
+                priority=Priority.MEDIUM,
+                author="human:dakh",
+                id_prefix="AUTH",
+            )
+        for i in range(other_plan):
+            tasks.create(
+                session,
+                project_id=anchor.project_id,
+                plan_id=side_plan_id,
+                section_id=side_section_id,
+                title=f"Side task {i}",
+                type=TaskType.FEATURE,
+                priority=Priority.MEDIUM,
+                author="human:dakh",
+                id_prefix="SIDE",
+            )
+    engine.dispose()
+
+
+def _group_block(html: str, key: str) -> str:
+    start = html.index(f'data-status-group="{key}"')
+    end = html.find("</details>", start)
+    return html[start:end]
+
+
+def test_board_renders_only_first_rows_of_big_group(tasks_client) -> None:
+    """В бакете 60 задач: страница несёт 25 строк и кнопку «Показать ещё 35 из 60»."""
+    client, entry = tasks_client
+    _seed_todo(entry, extra=59)
+    body = client.get(f"/p/{entry.name}/tasks").text
+    todo = _group_block(body, "todo")
+    assert len(_ROW.findall(todo)) == BOARD_VISIBLE_ROWS == 25
+    assert "Показать ещё 35 из 60" in todo
+    assert "/tasks/rows?group=todo&amp;offset=25" in todo
+    assert 'hx-swap="outerHTML"' in todo
+    # Счётчик группы — полный размер бакета, а не число отрендеренных строк.
+    assert '<span class="l-group-count" data-filter-count>60</span>' in todo
+    assert "Показано 27 из 62" in body
+
+
+def test_board_rows_endpoint_continues_page_order(tasks_client) -> None:
+    """`/tasks/rows` продолжает очередь страницы: те же порядок и сортировка."""
+    client, entry = tasks_client
+    _seed_todo(entry, extra=59)
+    base = f"/p/{entry.name}/tasks"
+    page_ids = _ROW.findall(_group_block(client.get(f"{base}?sort=id").text, "todo"))
+    rest = client.get(f"{base}/rows?group=todo&offset=25&sort=id")
+    assert rest.status_code == 200
+    rest_ids = _ROW.findall(rest.text)
+    assert len(page_ids) == 25
+    assert [*page_ids, *rest_ids] == [f"AUTH-{n:03d}" for n in range(1, 63) if n not in (2, 3)]
+    assert "l-more-btn" not in rest.text  # всё догружено
+
+    # offset=0 забирает весь бакет разом (60 < BOARD_PAGE_ROWS): кнопки нет.
+    first = client.get(f"{base}/rows?group=todo&offset=0&sort=id")
+    assert len(_ROW.findall(first.text)) == 60
+    assert "Показать ещё" not in first.text
+
+
+def test_board_rows_endpoint_pages_by_page_size(tasks_client) -> None:
+    client, entry = tasks_client
+    _seed_todo(entry, extra=BOARD_PAGE_ROWS + 29)  # todo = PAGE + 30
+    r = client.get(f"/p/{entry.name}/tasks/rows?group=todo&offset=0&sort=id&dir=desc")
+    assert len(_ROW.findall(r.text)) == BOARD_PAGE_ROWS
+    assert f"/tasks/rows?group=todo&amp;offset={BOARD_PAGE_ROWS}" in r.text
+    assert "sort=id&amp;dir=desc" in r.text
+    assert f"Показать ещё 30 из {BOARD_PAGE_ROWS + 30}" in r.text
+    # offset < 0 приводится к 0.
+    neg = client.get(f"/p/{entry.name}/tasks/rows?group=todo&offset=-5&sort=id&dir=desc")
+    assert _ROW.findall(neg.text) == _ROW.findall(r.text)
+
+
+def test_board_rows_endpoint_respects_plan_filter(tasks_client) -> None:
+    client, entry = tasks_client
+    _seed_todo(entry, extra=30, other_plan=3)
+    base = f"/p/{entry.name}/tasks/rows?group=todo&offset=0"
+    side = _ROW.findall(client.get(f"{base}&plan=side").text)
+    assert len(side) == 3
+    assert all(i.startswith("SIDE") for i in side)
+    main = _ROW.findall(client.get(f"{base}&plan=auth-bootstrap").text)
+    assert len(main) == 31
+    assert not any(i.startswith("SIDE") for i in main)
+    # Кнопка страницы с фильтром плана переносит его в догрузку.
+    page = client.get(f"/p/{entry.name}/tasks?plan=auth-bootstrap").text
+    assert "Показать ещё 6 из 31" in page
+    assert "plan=auth-bootstrap" in _group_block(page, "todo")
+
+
+def test_board_rows_endpoint_unknown_group_404(tasks_client) -> None:
+    client, entry = tasks_client
+    assert client.get(f"/p/{entry.name}/tasks/rows?group=nope").status_code == 404
+    assert client.get("/p/nope/tasks/rows?group=todo").status_code == 404

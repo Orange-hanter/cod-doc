@@ -1,0 +1,27 @@
+{#- WUI-013: строка задачи доски на ките Ledger. Нужна и странице списка, и
+    фрагменту догрузки `/tasks/rows`, поэтому живёт отдельно. Макросы не видят
+    контекст страницы — адрес проекта (`slug`) передаётся явно. -#}
+{% import "_ui/ledger.html" as ui %}
+
+{%- macro task_row(t, slug) -%}
+  {% call ui.row(id=t.task_id, href="/p/" ~ slug ~ "/tasks/" ~ t.task_id, peek=True, title=t.title, attrs={"id": "card-" ~ t.task_id, "data-task-id": t.task_id}) %}
+    <div class="l-row-body">
+      <span class="l-row-text l-clamp-2">{{ t.title }}</span>
+      <div class="l-row-meta">
+        {%- if t.plan_scope %}<span>{{ t.plan_scope }}</span>{% endif -%}
+        {%- if t.section_letter %}<span title="{{ t.section_title or 'Section' }}">§{{ t.section_letter }}</span>{% endif -%}
+        {%- if not t.has_acceptance and t.status not in ('done', 'cancelled') %}{{ ui.tag("AC", "warn", title="No acceptance criteria") }}{% endif -%}
+        {%- if t.blocked_reason %}<span title="{{ t.blocked_reason }}">⊘</span>{% endif -%}
+      </div>
+    </div>
+    <div class="l-row-aside">{{ ui.status(t.status) }}<span class="l-mono l-prio-{{ t.priority }}">{{ t.priority }}</span></div>
+  {% endcall %}
+{%- endmacro -%}
+
+{#- Кнопка «Показать ещё N из M»: htmx берёт следующую порцию строк группы и
+    заменяет собой кнопку. plan и sort_query переносят фильтр и порядок. -#}
+{%- macro more_button(slug, group, offset, remaining, total, plan="", sort_query="") -%}
+  <button type="button" class="l-more-btn"
+          hx-get="/p/{{ slug }}/tasks/rows?group={{ group }}&amp;offset={{ offset }}{% if plan %}&amp;plan={{ plan | urlencode }}{% endif %}{% if sort_query %}&amp;{{ sort_query }}{% endif %}"
+          hx-swap="outerHTML" hx-target="this">Показать ещё {{ remaining }} из {{ total }}</button>
+{%- endmacro -%}
