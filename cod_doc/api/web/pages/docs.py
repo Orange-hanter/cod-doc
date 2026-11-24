@@ -1373,6 +1373,7 @@ def doc_show(
                 "status": doc.status.value,
                 "sensitivity": doc.sensitivity.value if doc.sensitivity else "internal",
                 "owner": doc.owner or "",
+                "source_of_truth": doc.source_of_truth,
                 "preamble": doc.preamble or "",
                 "last_updated": doc.last_updated,
             },

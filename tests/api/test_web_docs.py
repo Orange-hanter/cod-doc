@@ -711,6 +711,80 @@ def test_doc_peek_returns_read_only_fragment(docs_client) -> None:
         assert page_only not in body, page_only
 
 
+def _seed_doc(entry, doc_key: str, preamble: str) -> None:
+    engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        docs.create(
+            session,
+            project_id=proj.row_id,
+            doc_key=doc_key,
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            title="Preamble probe",
+            author="human:dakh",
+            owner="human:dakh",
+            sensitivity=Sensitivity.INTERNAL,
+            preamble=preamble,
+        )
+    engine.dispose()
+
+
+def _preamble_card(body: str) -> str:
+    """Открывающий тег `<details>` карточки preamble."""
+    marker = body.index("data-doc-preamble")
+    start = body.rindex("<details", 0, marker)
+    return body[start : body.index(">", marker) + 1]
+
+
+def test_doc_preamble_is_a_card_open_when_short(docs_client) -> None:
+    """ADO-113: короткий preamble — открытая карточка со сводкой «N строк»."""
+    client, _entry = docs_client
+    body = client.get(_DOC_URL).text
+    assert "Preamble · 1 строка" in body
+    card = _preamble_card(body)
+    assert 'class="l-group' in card
+    assert " open" in card
+    assert "Top preamble." in body
+
+
+def test_doc_preamble_long_is_collapsed(docs_client) -> None:
+    """ADO-113: preamble длиннее 600 знаков — свёрнутый `<details>`, не простыня."""
+    client, entry = docs_client
+    _seed_doc(entry, "long/pre", "\n".join(f"Строка преамбулы номер {i}." for i in range(40)))
+    body = client.get(f"/p/{entry.name}/docs/long/pre").text
+    assert "Preamble · 40 строк" in body
+    card = _preamble_card(body)
+    assert " open" not in card
+    assert "Строка преамбулы номер 39." in body
+
+
+def test_doc_page_uses_ledger_kit(docs_client) -> None:
+    client, _entry = docs_client
+    body = client.get(_DOC_URL).text
+    assert 'class="l-page-title' in body
+    assert "l-group" in body
+    assert "doc · module-spec" in body
+    assert "l-tag-ok" in body  # статус active — метка кита
+
+
+def test_doc_peek_renders_the_kit_card_without_script(docs_client) -> None:
+    client, _entry = docs_client
+    body = client.get(f"{_DOC_URL}?peek=1", headers={"HX-Request": "true"}).text
+    assert 'class="l-page-title' in body
+    assert "data-doc-preamble" in body
+    assert "<script" not in body
+
+
+def test_doc_links_are_groups_with_counts(docs_client) -> None:
+    client, _entry = docs_client
+    body = client.get(_DOC_URL).text
+    for title in ("Outgoing", "Incoming"):
+        assert f'<span class="l-group-title" title="{title}">{title}</span>' in body
+    assert body.count('<span class="l-group-count" data-filter-count>0</span>') >= 2
+
+
 def test_doc_peek_ignores_raw_mode(docs_client) -> None:
     """Сырой режим — переключатель страницы; шторка всегда отрисованная."""
     client, _entry = docs_client

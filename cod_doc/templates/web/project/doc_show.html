@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ doc.doc_key }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
+{% import "_ui/ledger.html" as ui %}
 <nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <a href="/p/{{ project.name }}/docs">Docs</a>{% for n in doc_node_chain %} / <a href="/p/{{ project.name }}/docs?group=node&amp;node={{ n.key }}">{{ n.title }}</a>{% endfor %} / <span>{{ doc.doc_key }}</span></nav>
 
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
@@ -9,28 +10,25 @@
 {% include "_frag/doc_detail.html" %}
 
 {# ── Comments ──────────────────────────────────────────────────────────── #}
-<section class="ds-panel" id="comments">
-  <header class="ds-panel-header">
-    <h2>💬 Comments
-      <span class="count-chip">{{ open_comment_count }} open · {{ comment_total }} total</span>
-    </h2>
-    {% if open_comment_count and open_comment_count > 0 %}
-      <form method="post"
-            action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/apply"
-            id="comments-apply-form"
-            style="margin-left:auto;">
-        <button type="submit" class="btn btn-primary btn-sm" id="comments-apply-btn"
-                title="Use AI to rework the document using all open comments">
-          <span class="btn-label">✨ Apply with AI</span>
-          <span class="btn-loading" hidden>
-            <span class="spinner-inline"></span>
-            AI обрабатывает {{ open_comment_count }} комментарий(ев)…
-          </span>
-        </button>
-      </form>
-    {% endif %}
-  </header>
-  <p class="muted-tiny" style="margin: var(--space-1) 0 var(--space-3);">
+<section class="l-list ds-card" id="comments">
+{% call ui.group("💬 Comments", count=open_comment_count ~ " open · " ~ comment_total ~ " total", filter=False) %}
+<div class="ds-card-body">
+  {% if open_comment_count and open_comment_count > 0 %}
+    <form method="post"
+          action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/apply"
+          id="comments-apply-form"
+          class="ds-card-action">
+      <button type="submit" class="l-btn l-btn-primary l-btn-sm" id="comments-apply-btn"
+              title="Use AI to rework the document using all open comments">
+        <span class="btn-label">✨ Apply with AI</span>
+        <span class="btn-loading" hidden>
+          <span class="spinner-inline"></span>
+          AI обрабатывает {{ open_comment_count }} комментарий(ев)…
+        </span>
+      </button>
+    </form>
+  {% endif %}
+  <p class="muted-tiny">
     Выделите фрагмент секции и нажмите «💬 Добавить» — комментарий появится облачком справа.
     Внизу — общая зона для замечаний ко всему документу.
   </p>
@@ -38,7 +36,7 @@
   {# Doc-level comments — the "review zone" #}
   {% if doc_level_comments %}
     <div class="ds-comment-doclevel-list">
-      <h3 class="ds-links-col-title">Общие замечания</h3>
+      {{ ui.label("Общие замечания") }}
       {% for c in doc_level_comments %}
         <div class="comment-bubble comment-{{ c.status }} comment-doclevel" id="comment-{{ c.row_id }}">
           <div class="comment-bubble-head">
@@ -52,20 +50,20 @@
               <form method="post"
                     action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/resolve"
                     class="inline-form">
-                <button type="submit" class="btn btn-ghost btn-xs">✓ Resolve</button>
+                <button type="submit" class="l-btn l-btn-ghost l-btn-sm">✓ Resolve</button>
               </form>
             {% else %}
               <form method="post"
                     action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/reopen"
                     class="inline-form">
-                <button type="submit" class="btn btn-ghost btn-xs">↺ Reopen</button>
+                <button type="submit" class="l-btn l-btn-ghost l-btn-sm">↺ Reopen</button>
               </form>
             {% endif %}
             <form method="post"
                   action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/delete"
                   class="inline-form"
                   onsubmit="return confirm('Удалить комментарий?');">
-              <button type="submit" class="btn btn-ghost btn-xs">✕</button>
+              <button type="submit" class="l-btn l-btn-ghost l-btn-sm">✕</button>
             </form>
           </div>
         </div>
@@ -77,13 +75,15 @@
   <form method="post"
         action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments"
         class="ds-comment-doclevel-form">
-    <h3 class="ds-links-col-title">Добавить общий комментарий к документу</h3>
+    {{ ui.label("Добавить общий комментарий к документу") }}
     <textarea name="body"
               rows="3"
               placeholder="Например: «упростить раздел про rate limiting, добавить пример с redis»"
               required></textarea>
-    <button type="submit" class="btn btn-primary btn-sm">💬 Сохранить</button>
+    <button type="submit" class="l-btn l-btn-primary l-btn-sm">💬 Сохранить</button>
   </form>
+</div>
+{% endcall %}
 </section>
 
 {# Full-page veil shown during the AI-apply round-trip — the rework request
@@ -96,7 +96,7 @@
 
 {# Floating selection toolbar — appears when the user highlights text inside a section. #}
 <div id="comment-selection-toolbar" hidden>
-  <button type="button" class="btn btn-primary btn-xs" id="comment-add-btn">💬 Комментарий</button>
+  <button type="button" class="l-btn l-btn-primary l-btn-sm" id="comment-add-btn">💬 Комментарий</button>
 </div>
 
 {# Modal for entering the comment body once the user clicks "💬 Комментарий" #}
@@ -115,28 +115,27 @@
       <textarea name="body" id="comment-modal-body" rows="4"
                 placeholder="Замечание или предложение…" required></textarea>
       <div style="display:flex; gap:var(--space-2); margin-top:var(--space-2);">
-        <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="comment-modal-cancel">Отмена</button>
+        <button type="submit" class="l-btn l-btn-primary l-btn-sm">Сохранить</button>
+        <button type="button" class="l-btn l-btn-ghost l-btn-sm" id="comment-modal-cancel">Отмена</button>
       </div>
     </form>
   </div>
 </div>
 
 {# ── Suggested links ────────────────────────────────────────────────────── #}
-<section class="ds-panel" id="doc-suggestions">
-  <header class="ds-panel-header">
-    <h2>💡 Suggested links
-      <span class="count-chip" id="sugg-count">
-        {% set total = namespace(n=0) %}
-        {% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.suggestions | length) %}{% endfor %}
-        {{ total.n }} pending
-      </span>
-    </h2>
-    <button id="run-suggestions-btn" class="btn btn-secondary btn-sm" style="margin-left:auto;">
-      🔍 Run suggestions
-    </button>
-  </header>
-  <p class="muted-tiny" style="margin: var(--space-1) 0 var(--space-3);">
+{% set total = namespace(n=0) %}
+{% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.suggestions | length) %}{% endfor %}
+<section class="l-list ds-card" id="doc-suggestions">
+<details class="l-group" open>
+  <summary class="l-group-head">
+    <span class="l-group-title">💡 Suggested links</span>
+    <span class="l-group-count" id="sugg-count">{{ total.n }} pending</span>
+  </summary>
+<div class="ds-card-body">
+  <div class="ds-card-action">
+    <button id="run-suggestions-btn" class="l-btn l-btn-secondary l-btn-sm">🔍 Run suggestions</button>
+  </div>
+  <p class="muted-tiny">
     Semantic candidates from the ChromaDB index — accepting appends a «See also» block.
   </p>
   {% if suggestions_by_section %}
@@ -149,8 +148,8 @@
               <code class="mono">{{ s.to_doc_key }}</code>
               <span class="ds-sugg-score">{{ s.score }}</span>
               <div class="ds-sugg-actions">
-                <button class="btn btn-success btn-sm sugg-accept" data-row-id="{{ s.row_id }}">✓ Accept</button>
-                <button class="btn btn-secondary btn-sm sugg-reject" data-row-id="{{ s.row_id }}">✗</button>
+                <button class="l-btn l-btn-primary l-btn-sm sugg-accept" data-row-id="{{ s.row_id }}">✓ Accept</button>
+                <button class="l-btn l-btn-secondary l-btn-sm sugg-reject" data-row-id="{{ s.row_id }}">✗</button>
               </div>
             </li>
           {% endfor %}
@@ -160,7 +159,9 @@
   {% else %}
     <p class="muted-tiny">No pending suggestions. Click «Run suggestions» to generate.</p>
   {% endif %}
-  <p id="sugg-status" class="muted-tiny" style="margin-top: var(--space-2);"></p>
+  <p id="sugg-status" class="muted-tiny"></p>
+</div>
+</details>
 </section>
 
 
