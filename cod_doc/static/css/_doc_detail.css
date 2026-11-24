@@ -21,33 +21,22 @@
 .ds-banner-body { flex: 1; }
 .ds-banner-action { margin-left: auto; flex-shrink: 0; }
 
-/* Header */
-.ds-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin: 0 0 var(--space-3);
-  flex-wrap: wrap;
-}
-.ds-header-main { flex: 1; min-width: 0; }
-.ds-title {
-  font-size: calc(26px * var(--text-scale, 1));
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--fg-strong);
-  margin: 0 0 var(--space-1);
-  line-height: 1.25;
-}
-.ds-path {
+/* Header (WUI-016): ui.page_header; путь — mono, длинные ключи переносятся. */
+.ds-banners { display: flex; flex-direction: column; gap: var(--space-2); margin: 0 0 var(--space-4); }
+.ds-banners:empty { display: none; }
+.ds-banners .l-banner { flex-wrap: wrap; }
+.ds-banner-action { margin-left: auto; flex-shrink: 0; }
+.ds-header { margin: 0 0 var(--space-3); }
+.ds-header .l-page-header { margin: 0; flex-wrap: wrap; gap: var(--space-3); }
+.ds-header .l-page-title { font-size: calc(26px * var(--text-scale, 1)); overflow-wrap: anywhere; }
+.ds-header .l-page-title-long { font-size: calc(20px * var(--text-scale, 1)); }
+.ds-header .l-page-lead {
   font-family: var(--font-mono);
   font-size: calc(12px * var(--text-scale, 1));
-  color: var(--muted);
-  display: block;
+  overflow-wrap: anywhere;
 }
-.ds-header-actions { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; }
 
-/* Meta chips */
+/* Meta tags */
 .ds-meta {
   display: flex;
   flex-wrap: wrap;
@@ -55,6 +44,9 @@
   gap: var(--space-2);
   margin: 0 0 var(--space-5);
 }
+.ds-meta-updated { margin-left: auto; }
+
+/* Design-system chips — остались у stories/draft/summary-страниц */
 .ds-chip {
   display: inline-flex;
   align-items: center;
@@ -73,10 +65,6 @@
 .ds-chip-active { background: var(--success-soft-bg); color: var(--success-soft-fg); border-color: var(--success-border); }
 .ds-chip-review { background: var(--info-soft-bg); color: var(--info-soft-fg); border-color: var(--info-border); }
 .ds-chip-deprecated { background: var(--bg-alt); color: var(--muted); border-color: var(--border); }
-.ds-chip-owner { background: var(--bg-soft); }
-.ds-chip-sensitivity { background: var(--danger-soft-bg); color: var(--danger-soft-fg); border-color: var(--danger-border); }
-.ds-meta-updated { margin-left: auto; }
-
 /* Layout */
 .ds-layout {
   display: grid;
@@ -95,34 +83,19 @@
   flex-direction: column;
   gap: var(--space-3);
 }
-.ds-toc {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-}
-.ds-toc-label {
-  font-size: calc(10px * var(--text-scale, 1));
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-weight: 700;
-  margin-bottom: var(--space-2);
-}
-.ds-toc ul { list-style: none; padding: 0; margin: 0; }
-.ds-toc li { padding: 2px 0; }
-.ds-toc li.toc-lvl-2 { padding-left: 0; }
-.ds-toc li.toc-lvl-3 { padding-left: var(--space-3); }
-.ds-toc li.toc-lvl-4 { padding-left: var(--space-5); }
-.ds-toc a { font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); }
-.ds-toc a:hover { color: var(--accent); text-decoration: none; }
+.ds-toc { min-width: 0; }
+.ds-toc .l-row { padding: 6px 16px; }
+.ds-toc .ds-toc-link { color: var(--muted-strong); overflow-wrap: anywhere; }
+.ds-toc .ds-toc-link:hover { color: var(--accent); text-decoration: none; }
+.ds-toc .toc-lvl-3 { padding-left: var(--space-3); }
+.ds-toc .toc-lvl-4 { padding-left: var(--space-5); }
 .ds-sidebar-empty { font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); padding: var(--space-1) 0; }
 
 /* AI expand */
 .ds-ai-expand {
-  background: linear-gradient(135deg, var(--accent-soft-bg) 0%, var(--bg) 100%);
-  border: 1px solid var(--accent-soft-bg);
-  border-radius: var(--radius-md);
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
@@ -141,6 +114,7 @@
   width: 100%;
 }
 .ds-ai-expand-mini { padding: var(--space-1) 0; }
+.ds-ai-expand-full { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
 
 /* Body */
 .ds-body { min-width: 0; }
@@ -153,6 +127,8 @@
   font-size: calc(14px * var(--text-scale, 1));
   line-height: 1.65;
 }
+.ds-preamble-card { margin-bottom: var(--space-4); }
+.ds-preamble-card .ds-preamble { border: 0; border-radius: 0; margin-bottom: 0; background: transparent; }
 .ds-preamble p { margin: 0 0 var(--space-2); }
 .ds-preamble p:last-child { margin-bottom: 0; }
 .ds-sections { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -210,24 +186,17 @@
 }
 .ds-panel-header h2 { margin: 0; font-size: calc(13px * var(--text-scale, 1)); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-strong); font-weight: 700; }
 
-/* Links */
-.ds-links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+/* Links (WUI-016): две ui.group в сетке, строки ui.row */
+.ds-links { margin-bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.ds-links-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
+.ds-links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); align-items: start; }
 @media (max-width: 700px) { .ds-links-grid { grid-template-columns: 1fr; } }
-.ds-links-col-title { font-size: calc(12px * var(--text-scale, 1)); font-weight: 600; color: var(--fg-strong); margin: 0 0 var(--space-2); }
-.ds-link-list { list-style: none; padding: 0; margin: 0; }
-.ds-link-item {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-  border-bottom: 1px solid var(--border-soft);
-  font-size: calc(12px * var(--text-scale, 1));
-}
-.ds-link-item:last-child { border-bottom: 0; }
-.ds-link-broken { color: var(--danger); }
-.ds-link-section { margin-left: auto; }
-.ds-link-sections { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 2px; width: 100%; }
+.ds-link-key { overflow-wrap: anywhere; }
+
+/* Карточки комментариев и подсказок: ui.group + тело с отступом */
+.ds-card { margin-bottom: var(--space-4); }
+.ds-card-body { padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.ds-card-action { display: flex; justify-content: flex-end; }
 
 /* Suggestions */
 .ds-sugg-group { margin-bottom: var(--space-3); }
@@ -463,8 +432,12 @@
 .ai-apply-veil .veil-hint { opacity: .8; font-size: calc(12px * var(--text-scale, 1)); max-width: 380px; text-align:center; }
 
 /* AI expand button states */
-.btn .btn-label { display: inline; }
-.btn .btn-loading { display: none; }
-.btn.is-loading .btn-label { display: none; }
-.btn.is-loading .btn-loading { display: inline; }
-.btn.is-loading { opacity: 0.75; cursor: not-allowed; pointer-events: none; }
+.btn .btn-label, .l-btn .btn-label { display: inline; }
+.btn .btn-loading, .l-btn .btn-loading { display: none; }
+.btn.is-loading .btn-label, .l-btn.is-loading .btn-label { display: none; }
+.btn.is-loading .btn-loading, .l-btn.is-loading .btn-loading { display: inline; }
+.btn.is-loading, .l-btn.is-loading { opacity: 0.75; cursor: not-allowed; pointer-events: none; }
+
+/* Таблицы из markdown в теле документа шире телефона (у MASTER — 488px при
+   ширине 375): прокручиваются внутри себя, а не растягивают страницу. */
+.ds-body .md-table { display: block; max-width: 100%; overflow-x: auto; }

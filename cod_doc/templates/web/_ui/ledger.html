@@ -146,6 +146,7 @@
   <div class="l-banner l-banner-{{ tone }}" role="{{ 'alert' if tone == 'signal' else 'status' }}">
     <span class="l-banner-text">{{ text }}</span>
     {%- if action_label and action_href %}<a href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+    {%- if caller is defined %}{{ caller() }}{% endif %}
   </div>
 {%- endmacro -%}
 
