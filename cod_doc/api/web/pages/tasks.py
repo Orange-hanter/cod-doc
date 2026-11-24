@@ -47,6 +47,23 @@ _KANBAN_COLS: list[tuple[str, str, str, set[str]]] = [
     ("cancelled", "Cancelled", "—", {"cancelled"}),
 ]
 
+# WUI-013: порядок групп на доске — «что требует внимания» сверху. Бакеты те
+# же, что в `_KANBAN_COLS`; меняется только порядок показа.
+_BOARD_ORDER: tuple[str, ...] = (
+    "in_progress",
+    "in_review",
+    "blocked",
+    "todo",
+    "done",
+    "cancelled",
+)
+
+# WUI-013: сколько строк группы сервер кладёт в страницу (в orakul одна группа
+# `done` — сотни задач, и рендерить их все ради свёрнутого списка незачем), и
+# сколько отдаёт одной догрузкой `/tasks/rows`. Остальное — кнопка «ещё».
+BOARD_VISIBLE_ROWS = 25
+BOARD_PAGE_ROWS = 100
+
 # Type-letter glyphs for compact task cards.
 _TYPE_GLYPHS: dict[str, str] = {
     "feature": "F",
@@ -79,6 +96,64 @@ def _column_for(status: str) -> str | None:
         if status in members:
             return key
     return None
+
+
+def _task_rows(
+    session: Session, project_db_id: int, plans_models: list[Any]
+) -> list[dict[str, Any]]:
+    """Все задачи проекта плоскими строками для доски (общий источник страницы и `/tasks/rows`)."""
+    scope_by_pid: dict[int, str] = {}
+    sections_by_pid: dict[int, dict[int, dict[str, str]]] = {}
+    for p in plans_models:
+        if p.row_id is None:
+            continue
+        scope_by_pid[p.row_id] = p.scope
+        sects = plans.list_sections(session, p.row_id, project_id=project_db_id)
+        sections_by_pid[p.row_id] = {
+            s.row_id: {"letter": s.letter or "", "title": s.title}
+            for s in sects
+            if s.row_id is not None
+        }
+
+    rows: list[dict[str, Any]] = []
+    for t in tasks.list_for_project(session, project_db_id):
+        plan_scope = scope_by_pid.get(t.plan_id, "")
+        sect = sections_by_pid.get(t.plan_id, {}).get(t.section_id, {})
+        has_ac = bool(t.acceptance and t.acceptance.strip())
+        has_desc = bool(t.description and t.description.strip())
+        rows.append(
+            {
+                "task_id": t.task_id,
+                "title": t.title,
+                "status": t.status.value,
+                "type": t.type.value,
+                "type_glyph": _TYPE_GLYPHS.get(t.type.value, "?"),
+                "priority": t.priority.value,
+                "plan_id": t.plan_id,
+                "plan_scope": plan_scope,
+                "section_letter": sect.get("letter", ""),
+                "section_title": sect.get("title", ""),
+                "has_acceptance": has_ac,
+                "has_description": has_desc,
+                "blocked_reason": t.blocked_reason or "",
+                "created": t.created,
+                "last_updated": t.last_updated,
+            }
+        )
+    return rows
+
+
+def _bucket_rows(
+    rows: list[dict[str, Any]], key: str, plan: str | None, sort: SortState
+) -> list[dict[str, Any]]:
+    """Строки одного статусного бакета: фильтр плана, затем `?sort=`.
+
+    Единственное место, где собирается порядок группы: страница и `/tasks/rows`
+    идут через него, поэтому догруженные строки продолжают ту же очередь.
+    """
+    return sort.apply(
+        r for r in rows if _column_for(r["status"]) == key and (not plan or r["plan_scope"] == plan)
+    )
 
 
 def _enrich_chain(
@@ -158,49 +233,16 @@ def tasks_list(
 
             plans_models = plans.list_for_project(session, project_db_id)
             progress_map = plans.recalc_for_project(session, project_db_id)
-            scope_by_pid: dict[int, str] = {}
-            sections_by_pid: dict[int, dict[int, dict[str, str]]] = {}
+            all_rows = _task_rows(session, project_db_id, plans_models)
             for p in plans_models:
                 if p.row_id is None:
                     continue
-                scope_by_pid[p.row_id] = p.scope
-                sects = plans.list_sections(session, p.row_id, project_id=project_db_id)
-                sections_by_pid[p.row_id] = {
-                    s.row_id: {"letter": s.letter or "", "title": s.title}
-                    for s in sects
-                    if s.row_id is not None
-                }
                 prog = progress_map.get(p.row_id)
                 plan_list.append(
                     {
                         "scope": p.scope,
                         "done": prog.done if prog else 0,
                         "total": prog.total if prog else 0,
-                    }
-                )
-
-            for t in tasks.list_for_project(session, project_db_id):
-                plan_scope = scope_by_pid.get(t.plan_id, "")
-                sect = sections_by_pid.get(t.plan_id, {}).get(t.section_id, {})
-                has_ac = bool(t.acceptance and t.acceptance.strip())
-                has_desc = bool(t.description and t.description.strip())
-                all_rows.append(
-                    {
-                        "task_id": t.task_id,
-                        "title": t.title,
-                        "status": t.status.value,
-                        "type": t.type.value,
-                        "type_glyph": _TYPE_GLYPHS.get(t.type.value, "?"),
-                        "priority": t.priority.value,
-                        "plan_id": t.plan_id,
-                        "plan_scope": plan_scope,
-                        "section_letter": sect.get("letter", ""),
-                        "section_title": sect.get("title", ""),
-                        "has_acceptance": has_ac,
-                        "has_description": has_desc,
-                        "blocked_reason": t.blocked_reason or "",
-                        "created": t.created,
-                        "last_updated": t.last_updated,
                     }
                 )
 
@@ -241,20 +283,31 @@ def tasks_list(
     }
     stats["pct_done"] = int(stats["done"] / total * 100) if total else 0
 
-    # Bucket rows into kanban columns; order inside a column — `?sort=`.
+    # Группы доски в порядке `_BOARD_ORDER`; пустые не показываем. Счётчик —
+    # полный размер бакета, строк в странице — не больше BOARD_VISIBLE_ROWS.
+    meta = {key: (label, icon, members) for key, label, icon, members in _KANBAN_COLS}
     columns: list[dict[str, Any]] = []
-    for key, label, icon, _members in _KANBAN_COLS:
-        col_tasks = sort.apply(r for r in rows if _column_for(r["status"]) == key)
+    shown = 0
+    for key in _BOARD_ORDER:
+        label, icon, members = meta[key]
+        col_tasks = _bucket_rows(rows, key, None, sort)
+        if not col_tasks:
+            continue
+        visible = col_tasks[:BOARD_VISIBLE_ROWS]
+        shown += len(visible)
+        highlighted = status_filter is not None and status_filter.value in members
         columns.append(
             {
                 "key": key,
                 "label": label,
                 "icon": icon,
                 "count": len(col_tasks),
-                "tasks": col_tasks,
-                # Collapsed by default if Done/Cancelled — least scanned columns.
-                "collapsed_default": key in ("done", "cancelled"),
-                "highlighted": status_filter is not None and status_filter.value in _members,
+                "tasks": visible,
+                "remaining": len(col_tasks) - len(visible),
+                # Done/Cancelled свёрнуты — их меньше всего сканируют; группа
+                # из `?status=` открыта всегда.
+                "open": highlighted or key not in ("done", "cancelled"),
+                "highlighted": highlighted,
             }
         )
 
@@ -264,7 +317,7 @@ def tasks_list(
         "project/tasks_list.html",
         {
             "project": {"name": proj.entry.name},
-            "tasks": rows,
+            "shown": shown,
             "columns": columns,
             "chains": chains,
             "view": view,
@@ -275,6 +328,51 @@ def tasks_list(
             "status_filter": status_filter.value if status_filter else "",
             "status_invalid": status_invalid,
             "legacy_count": legacy_count,
+            "sort": sort,
+        },
+    )
+
+
+@router.get("/p/{slug}/tasks/rows", response_class=HTMLResponse)
+def tasks_rows(
+    request: Request,
+    slug: str,
+    group: str,
+    offset: int = 0,
+    plan: str | None = None,
+) -> HTMLResponse:
+    """WUI-013: следующая порция строк группы доски (htmx, `hx-swap="outerHTML"` кнопки «ещё»).
+
+    Фильтр плана и порядок те же, что у страницы, — оба идут через
+    `_bucket_rows`. Отдаёт до BOARD_PAGE_ROWS строк и новую кнопку, если
+    в группе что-то осталось.
+    """
+    get_project(slug)
+    if group not in _BOARD_ORDER:
+        raise HTTPException(status_code=404, detail=f"Unknown group: {group}")
+    offset = max(offset, 0)
+    sort = sort_state(request, TASK_SORT)
+
+    rows: list[dict[str, Any]] = []
+    with try_open_project_db(slug) as (session, project_db_id):
+        if session is not None and project_db_id is not None:
+            rows = _task_rows(
+                session, project_db_id, plans.list_for_project(session, project_db_id)
+            )
+    bucket = _bucket_rows(rows, group, plan, sort)
+    page = bucket[offset : offset + BOARD_PAGE_ROWS]
+    next_offset = offset + len(page)
+    return templates.TemplateResponse(
+        request,
+        "_frag/task_rows.html",
+        {
+            "project": {"name": slug},
+            "tasks": page,
+            "group": group,
+            "total": len(bucket),
+            "next_offset": next_offset,
+            "remaining": len(bucket) - next_offset,
+            "selected_plan": plan or "",
             "sort": sort,
         },
     )

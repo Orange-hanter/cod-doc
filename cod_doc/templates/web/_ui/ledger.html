@@ -104,8 +104,8 @@
     виде. `filter=True` вешает data-filter-group: быстрый фильтр раскрывает
     группу с совпадениями (cod_doc_palette.js::syncDetails). -#}
 {#- prefix — короткий ключ перед заголовком (буква секции плана), mono. -#}
-{%- macro group(title, count=None, meta=None, open=True, filter=True, progress_html=None, prefix=None) -%}
-  <details class="l-group"{% if open %} open{% endif %}{% if filter %} data-filter-group{% endif %}>
+{%- macro group(title, count=None, meta=None, open=True, filter=True, progress_html=None, prefix=None, highlighted=False, attrs={}) -%}
+  <details class="l-group{{ ' l-group-highlighted' if highlighted }}"{% if open %} open{% endif %}{% if filter %} data-filter-group{% endif %}{{ attrs | xmlattr }}>
     <summary class="l-group-head">
       {%- if prefix %}<span class="l-group-prefix">{{ prefix }}</span>{% endif %}
       <span class="l-group-title" title="{{ title }}">{{ title }}</span>

@@ -126,6 +126,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/roadmap/plans/{scope}/move` | HTMX: план выше/ниже соседа на дорожной карте, ответ — перерисованное тело экрана | `plan_service.move_plan` | ✅ | ROAD-008 |
 | **Задачи — список и detail**  | | | |
 | `GET /p/{slug}/tasks` | Список задач (kanban board / chains, фильтр plan/status) | `task_service.list_for_project` + `plan_service` | ✅ | WEB-010 |
+| `GET /p/{slug}/tasks/rows` | htmx-догрузка строк группы доски (`group`, `offset`, `plan`, `?sort=`): страница несёт 25 строк группы, «Показать ещё» тянет следующие 100 | `task_service.list_for_project` | ✅ | WUI-013 |
 | `GET /p/{slug}/tasks/{task_id}` | Деталь задачи (header + chains + history + trace) | `task_service.get` + `plan_service.forward/reverse_chain` + `revision_service` + `trace_service` | ✅ | WEB-070 |
 | `POST /p/{slug}/tasks/audit` | AI-аудит consistency всех задач проекта | `ai_text._call_lite_raw` + `task_service.list_for_project` | ✅ | OBI-tasks |
 | `GET /p/{slug}/tasks/legacy` | Список legacy YAML-задач (paginated) | `Project.get_tasks` | ✅ | PCA-410 |

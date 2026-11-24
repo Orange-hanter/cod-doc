@@ -1,0 +1,4 @@
+{#- WUI-013: фрагмент догрузки группы доски — строки и (если осталось) новая кнопка. -#}
+{% from "_frag/board_task_row.html" import task_row, more_button %}
+{%- for t in tasks %}{{ task_row(t, project.name) }}{% endfor -%}
+{%- if remaining > 0 %}{{ more_button(project.name, group, next_offset, remaining, total, selected_plan, sort.query) }}{% endif -%}

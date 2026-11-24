@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% import "_frag/sort.html" as sorting %}
+{% import "_ui/ledger.html" as ui %}
+{% from "_frag/board_task_row.html" import task_row, more_button %}
 {% block title %}Tasks · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
@@ -23,59 +25,25 @@
     <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
   {% else %}
 
-    {# ── Stats strip ─────────────────────────────────────────────────────── #}
-    <header class="tasks-stats" id="tasks-stats" data-peek-refresh>
-      <div class="tasks-stats-progress">
-        <div class="tasks-stats-progress-head">
-          <span class="tasks-stats-title">{{ project.name }} · Tasks</span>
-          <span class="tasks-stats-pct">{{ stats.pct_done }}%</span>
-        </div>
-        <div class="tasks-stats-bar">
-          <div class="tasks-stats-bar-fill" style="width: {{ stats.pct_done }}%"></div>
-        </div>
-        <div class="tasks-stats-counts">
-          <span><strong>{{ stats.total }}</strong> total</span>
-          <span><strong>{{ stats.done }}</strong> done</span>
-        </div>
-      </div>
-
-      <div class="tasks-stats-metrics">
-        <a class="tasks-stat tasks-stat-progress" href="?status=in_progress{% if selected_plan %}&plan={{ selected_plan }}{% endif %}">
-          <span class="tasks-stat-value">{{ stats.in_progress }}</span>
-          <span class="tasks-stat-label">in progress</span>
-        </a>
-        <a class="tasks-stat tasks-stat-review" href="?status=in_review{% if selected_plan %}&plan={{ selected_plan }}{% endif %}">
-          <span class="tasks-stat-value">{{ stats.in_review }}</span>
-          <span class="tasks-stat-label">in review</span>
-        </a>
-        <a class="tasks-stat tasks-stat-blocked" href="?status=blocked{% if selected_plan %}&plan={{ selected_plan }}{% endif %}">
-          <span class="tasks-stat-value">{{ stats.blocked }}</span>
-          <span class="tasks-stat-label">blocked</span>
-        </a>
-        <div class="tasks-stat tasks-stat-warn"
-             title="Tasks (not done) missing acceptance criteria">
-          <span class="tasks-stat-value">{{ stats.missing_ac }}</span>
-          <span class="tasks-stat-label">no AC</span>
-        </div>
-        <div class="tasks-stat tasks-stat-critical"
-             title="Open critical-priority tasks">
-          <span class="tasks-stat-value">{{ stats.critical_open }}</span>
-          <span class="tasks-stat-label">critical</span>
-        </div>
-      </div>
-
-      <div class="tasks-stats-actions">
+    {# ── Шапка на ките Ledger. Метрики — чипы со счётчиками: три ссылаются на
+       `?status=`, «no AC» и «critical» — метки без ссылки. ─────────────────── #}
+    {%- set _q = (("&plan=" ~ (selected_plan | urlencode)) if selected_plan else "") ~ (("&" ~ sort.query) if sort.query else "") %}
+    <div id="tasks-stats" data-peek-refresh>
+      {% call ui.page_header("Задачи", eyebrow="tasks · " ~ project.name, lead=stats.total ~ " задач · " ~ stats.pct_done ~ "% готово") %}
         <form hx-post="/p/{{ project.name }}/tasks/audit"
               hx-target="#task-audit-panel"
-              hx-swap="innerHTML"
-              hx-indicator="#audit-spinner">
-          <button type="submit" class="btn btn-primary btn-sm">
-            <span id="audit-spinner" class="htmx-indicator spinner" style="margin-right:6px;"></span>
-            🔍 Audit consistency
-          </button>
+              hx-swap="innerHTML">
+          {{ ui.button("🔍 Audit consistency", kind="primary", size="sm", type="submit") }}
         </form>
+      {% endcall %}
+      <div class="l-filters">
+        {{ ui.filter_chip("in progress", stats.in_progress, href="?status=in_progress" ~ _q, active=(status_filter == "in_progress")) }}
+        {{ ui.filter_chip("in review", stats.in_review, href="?status=in_review" ~ _q, active=(status_filter == "in_review")) }}
+        {{ ui.filter_chip("blocked", stats.blocked, href="?status=blocked" ~ _q, active=(status_filter == "blocked")) }}
+        {{ ui.tag(stats.missing_ac ~ " no AC", "warn", title="Tasks (not done) missing acceptance criteria") }}
+        {{ ui.tag(stats.critical_open ~ " critical", "signal", title="Open critical-priority tasks") }}
       </div>
-    </header>
+    </div>
 
     {# ── View toggle: Board (kanban) | Chains (dependency graph) ────────── #}
     {# Смена вида и плана сохраняет сортировку (WUI-006). Адрес собирается
@@ -102,18 +70,10 @@
       </nav>
 
       {% if plans and (plans | length > 1 or selected_plan) %}
-        <nav class="plan-filter" aria-label="Filter tasks by plan">
-          <span class="plan-filter-label muted-tiny">Plan</span>
-          <a class="plan-chip {% if not selected_plan %}plan-chip-active{% endif %}"
-             href="{{ tasks_url(chains=(view == 'chains')) }}">All</a>
+        <nav class="l-filters l-filters-scroll" style="margin:0" aria-label="Filter tasks by plan">
+          {{ ui.filter_chip("All", href=tasks_url(chains=(view == 'chains')), active=not selected_plan) }}
           {% for p in plans %}
-            <a class="plan-chip {% if selected_plan == p.scope %}plan-chip-active{% endif %}"
-               href="{{ tasks_url(chains=(view == 'chains'), plan=p.scope) }}">
-              <span class="plan-chip-scope">{{ p.scope }}</span>
-              {% if p.total > 0 %}
-                <span class="plan-chip-ratio">{{ p.done }}/{{ p.total }}</span>
-              {% endif %}
-            </a>
+            {{ ui.filter_chip(p.scope, (p.done ~ "/" ~ p.total) if p.total > 0 else none, href=tasks_url(chains=(view == 'chains'), plan=p.scope), active=(selected_plan == p.scope)) }}
           {% endfor %}
         </nav>
       {% endif %}
@@ -121,7 +81,7 @@
 
     <div class="list-controls">
       {{ sorting.toggle(sort) }}
-      {% if view == 'board' %}{{ sorting.filter("#tasks-body", "Filter tasks… (/)") }}{% endif %}
+      {% if view == 'board' %}{{ sorting.filter("#tasks-body", "Фильтр по загруженным задачам… (/)") }}{% endif %}
     </div>
 
     {% if status_invalid %}
@@ -172,30 +132,16 @@
         {% endfor %}
       {% endif %}
     {% else %}
-      <div class="kanban">
-        {% for col in columns %}
-          <details class="kanban-col kanban-col-{{ col.key }}{% if col.highlighted %} kanban-col-highlighted{% endif %}" data-filter-group
-                   {% if not col.collapsed_default and col.count > 0 %}open{% endif %}>
-            <summary class="kanban-col-head">
-              <span class="kanban-col-icon" aria-hidden="true">{{ col.icon }}</span>
-              <span class="kanban-col-label">{{ col.label }}</span>
-              <span class="kanban-col-count" data-filter-count>{{ col.count }}</span>
-            </summary>
-            <div class="kanban-col-body">
-              {% for t in col.tasks %}
-                {% include "_frag/task_card.html" %}
-              {% else %}
-                <p class="kanban-col-empty muted-tiny">—</p>
-              {% endfor %}
-            </div>
-          </details>
-        {% endfor %}
-      </div>
+      {% for col in columns %}
+        {% call ui.group(col.label, count=col.count, open=col.open, highlighted=col.highlighted, attrs={"data-status-group": col.key}) %}
+          {% for t in col.tasks %}{{ task_row(t, project.name) }}{% endfor %}
+          {% if col.remaining > 0 %}{{ more_button(project.name, col.key, col.tasks | length, col.remaining, col.count, selected_plan, sort.query) }}{% endif %}
+        {% endcall %}
+      {% endfor %}
+      <p class="muted" style="margin-top:var(--space-2); font-size:calc(12px * var(--text-scale, 1));">
+        Показано {{ shown }} из {{ stats.total }}
+      </p>
     {% endif %}
-
-    <p class="muted" style="margin-top:var(--space-2); font-size:calc(12px * var(--text-scale, 1));">
-      {{ tasks | length }} task{% if tasks | length != 1 %}s{% endif %} shown.
-    </p>
     </div>
 
   {% endif %}
