@@ -1,167 +1,99 @@
 {% extends "base.html" %}
+{% import "_ui/ledger.html" as ui %}
+{% from "_frag/overview_ready_row.html" import ready_row %}
 {% block title %}{{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="/">Projects</a> / <span>{{ project.name }}</span></nav>
 
-<h1>{{ project.name }}{% if not project.enabled %} <span class="muted">(disabled)</span>{% endif %}</h1>
-<p class="mono muted">{{ project.path }}</p>
+{#- WUI-014: Overview на ките Ledger. Шапка: имя проекта, путь моноширинно; у
+    выключенного проекта — метка. -#}
+{% call ui.page_header(project.name, eyebrow="overview", lead=project.path) %}
+  {% if not project.enabled %}{{ ui.tag("disabled", "warn") }}{% endif %}
+{% endcall %}
 
 {% with slug=project.name, active="overview" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<section class="cards">
-  <div class="card">
-    <div class="card-label">Status</div>
-    <div class="card-value">{{ stats.status }}</div>
+{#- Сводка одной строкой вместо восьми карточек. ADO-156: «remaining» — незакрытое
+    и не начатое (backlog, todo, blocked, review); отменённая задача закрыта и
+    сюда не попадает (ADO-078). Чипы ведут в список задач. -#}
+{%- set _slug = project.name -%}
+{%- set _drift_tone = {"success": "ok", "warning": "warn", "error": "signal"}.get(drift_health.level, "neutral") -%}
+<section class="l-ov-summary" aria-label="Сводка по задачам">
+  <div class="l-ov-progress">
+    {{ ui.progress(stats.done, stats.total, active=stats.in_progress, width=240) }}
+    <span class="l-ov-progress-text">{{ stats.done }} из {{ stats.total }}</span>
   </div>
-  <div class="card">
-    <div class="card-label">Tasks total</div>
-    <div class="card-value">{{ stats.total }}</div>
+  <div class="l-filters">
+    {{ ui.filter_chip("in progress", stats.in_progress, href="/p/" ~ _slug ~ "/tasks?status=in_progress") }}
+    {{ ui.filter_chip("remaining", stats.pending, href="/p/" ~ _slug ~ "/tasks") }}
+    {% if stats.failed %}<a class="l-ov-failed" href="/p/{{ _slug }}/tasks?status=failed">{{ ui.tag("failed " ~ stats.failed, "signal") }}</a>{% endif %}
   </div>
-  <div class="card">
-    <div class="card-label">Done</div>
-    <div class="card-value">{{ stats.done }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">In&nbsp;progress</div>
-    <div class="card-value">{{ stats.in_progress }}</div>
-  </div>
-  {# ADO-156: карточка считает незакрытое и не начатое — backlog, todo, blocked,
-     review. Подпись «Pending» совпадала с легаси-написанием статуса и читалась как
-     счётчик задач в `pending` — это не он. ADO-078: `cancelled` сюда больше не
-     попадает — отменённая задача закрыта. #}
-  <div class="card">
-    <div class="card-label" title="Not done and not in progress — backlog, to-do, blocked, in review">Remaining</div>
-    <div class="card-value">{{ stats.pending }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Failed</div>
-    <div class="card-value">{{ stats.failed }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Last run</div>
-    <div class="card-value muted" title="{{ stats.last_run | ts_tooltip }}">{{ stats.last_run | relative_time }}</div>
-  </div>
-  <div class="card card-health card-health-{{ drift_health.level }}">
-    <div class="card-label">Doc drift</div>
-    <div class="card-value">
-      {% if drift_health.href %}
-      <a class="badge badge-{{ drift_health.level }}" href="{{ drift_health.href }}">{{ drift_health.label }}</a>
-      {% else %}
-      <span class="badge badge-{{ drift_health.level }}">{{ drift_health.label }}</span>
-      {% endif %}
-    </div>
-    <div class="card-subvalue muted-tiny">
-      {% if drift_health.findings is not none %}
-        {{ drift_health.findings }} findings
-        {% if drift_health.last_run_at %} · {{ drift_health.last_run_at | relative_time }}{% endif %}
-      {% else %}
-        routine unavailable
-      {% endif %}
-    </div>
+  <div class="l-ov-meta">
+    <span title="Status">{{ ui.tag(stats.status, ui.tone_of(stats.status)) }}</span>
+    <span title="{{ stats.last_run | ts_tooltip }}">last run {{ stats.last_run | relative_time }}</span>
   </div>
 </section>
+
+{#- Плашка дрейфа целиком — одна ссылка. Страница профиля дрейфа — ADO-132. -#}
+{%- set _drift_el = "a" if drift_health.href else "div" %}
+<{{ _drift_el }} class="l-ov-drift"{% if drift_health.href %} href="{{ drift_health.href }}"{% endif %}>
+  {{ ui.tag(drift_health.label, _drift_tone) }}
+  <span class="l-ov-drift-label">Doc drift</span>
+  <span class="l-ov-drift-sub">
+    {% if drift_health.findings is not none %}{{ drift_health.findings }} findings{% if drift_health.last_run_at %} · {{ drift_health.last_run_at | relative_time }}{% endif %}{% else %}routine unavailable{% endif %}
+  </span>
+</{{ _drift_el }}>
 
 {% if db_available %}
-<section class="overview-grid">
-  <div class="overview-block">
-    <h2>Ready to start</h2>
+<div class="l-ov-blocks">
+  {% call ui.group("Готовы к старту", count=ready_tasks | length, filter=False) %}
     {% if ready_tasks %}
-    <ul class="ready-list">
-      {% for t in ready_tasks %}
-      <li class="ready-row" id="task-{{ t.task_id }}">
-        <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
-        <a class="ready-title" href="/p/{{ project.name }}/tasks/{{ t.task_id }}" data-peek>
-          <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
-        </a>
-        <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>
-        {# ADO-152: у кнопки был только `title="Mark done"` — по пиктограмме
-           невозможно понять, что произойдёт, а скринридер читал «галочка».
-           Подпись видна без наведения; действие названо честно: это закрытие
-           задачи, а не старт работы. Взять задачу в работу можно только через
-           checkout (ADO-039 / SCN-069), и отдельной кнопки для этого на
-           overview нет — см. описание задачи. #}
-        <form class="ready-complete"
-              method="post"
-              action="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete">
-          <button type="submit"
-                  class="btn btn-xs"
-                  hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete"
-                  hx-target="#task-{{ t.task_id }}"
-                  hx-swap="outerHTML"
-                  aria-label="Закрыть задачу {{ t.task_id }}"
-                  title="Отметить {{ t.task_id }} выполненной">✓ Закрыть</button>
-        </form>
-      </li>
-      {% endfor %}
-    </ul>
+      {% for t in ready_tasks %}{{ ready_row(t, _slug) }}{% endfor %}
     {% else %}
-    <p class="muted">Нет задач, готовых к старту.</p>
+      {{ ui.empty("Нет задач, готовых к старту.") }}
     {% endif %}
-  </div>
+  {% endcall %}
 
-  <div class="overview-block">
-    <h2>Plan progress</h2>
+  {% call ui.group("Планы", count=plan_rows | length, filter=False) %}
     {% if plan_rows %}
-    <div class="table-scroll">
-    <table class="grid plan-progress-table">
-      <thead>
-        <tr><th>Plan</th><th class="num">Done</th><th class="num">Total</th><th>Status</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for p in plan_rows %}
-        <tr>
-          <td class="mono">{{ p.scope }}</td>
-          <td class="num">{{ p.done }}</td>
-          <td class="num">{{ p.total }}</td>
-          <td><span class="badge badge-{{ p.status }}">{{ p.status }}</span></td>
-          <td>
-            <div class="progress-bar" title="{{ p.percent }}%">
-              <span class="progress-fill" style="width: {{ p.percent }}%"></span>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p class="muted">Планов в этом проекте пока нет.</p>
-    {% endif %}
-  </div>
-
-  <div class="overview-block">
-    <h2>Recent revisions</h2>
-    {% if recent_revs %}
-    <ul class="rev-list">
-      {% for r in recent_revs %}
-      {# ADO-153: ровно три ячейки сетки, независимо от наличия reason —
-         иначе колонки разъезжаются на строках без причины. #}
-      <li>
-        <span class="rev-who"><span class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</span>
-          <span class="muted">{{ r.author }}</span></span>
-        <span class="muted rev-reason" {% if r.reason %}title="{{ r.reason }}"{% endif %}>{{ r.reason or "" }}</span>
-        <span class="muted ts" title="{{ r.at | ts_tooltip }}">{{ r.at | relative_time }}</span>
-      </li>
+      {% for p in plan_rows %}
+        {% call ui.row(href="/p/" ~ _slug ~ "/plans/" ~ p.plan_id, filter=False) %}
+          <div class="l-row-body"><span class="l-row-text l-mono">{{ p.scope }}</span></div>
+          <div class="l-row-aside">
+            {{ ui.progress(p.done, p.total, active=p.in_progress, width=120) }}
+            <span class="l-mono">{{ p.done }}/{{ p.total }}</span>
+            {{ ui.status(p.status) }}
+          </div>
+        {% endcall %}
       {% endfor %}
-    </ul>
     {% else %}
-    <p class="muted">Ревизий пока нет.</p>
+      {{ ui.empty("Планов в этом проекте пока нет.", glyph="∅") }}
     {% endif %}
-  </div>
-</section>
+  {% endcall %}
+
+  {% call ui.group("Последние правки", count=recent_revs | length, open=False, filter=False) %}
+    {% if recent_revs %}
+      {# ADO-153: у каждой строки один и тот же набор ячеек — с причиной и без. #}
+      {% for r in recent_revs %}
+        {% call ui.row(id=r.entity_kind ~ "#" ~ r.entity_id, filter=False, title=r.reason or None) %}
+          <div class="l-row-body">
+            <span class="l-row-text l-clamp-2">{{ r.reason or "" }}</span>
+            <div class="l-row-meta"><span>{{ r.author }}</span></div>
+          </div>
+          <div class="l-row-aside"><span title="{{ r.at | ts_tooltip }}">{{ r.at | relative_time }}</span></div>
+        {% endcall %}
+      {% endfor %}
+    {% else %}
+      {{ ui.empty("Ревизий пока нет.", glyph="∅") }}
+    {% endif %}
+  {% endcall %}
+</div>
 {% else %}
-<section class="empty-db-banner">
-  <div class="empty-db-text">
-    <h2>База проекта не инициализирована</h2>
-    <p class="muted">
-      <code>{{ project.path }}/.cod-doc/state.db</code> ещё не создан.
-      Нажми <strong>Initialize DB</strong> — выполнятся alembic-миграции,
-      добавится project-row, появятся таблицы для задач/документов/планов.
-    </p>
-  </div>
-  <form method="post" action="/p/{{ project.name }}/init" class="empty-db-form">
-    <button type="submit" class="btn-primary btn-lg">Initialize DB</button>
-    <span class="muted-tiny">или: <code>cod-doc project init {{ project.name }}</code></span>
+<section class="l-ov-empty-db">
+  {{ ui.banner("База проекта не инициализирована: " ~ project.path ~ "/.cod-doc/state.db ещё не создан. Initialize DB выполнит миграции и добавит project-row, таблицы для задач, документов и планов.", tone="warn") }}
+  <form method="post" action="/p/{{ project.name }}/init" class="l-ov-init-form">
+    {{ ui.button("Initialize DB", kind="primary", type="submit") }}
+    <span class="l-ov-hint">или {{ ui.cmd("cod-doc project init " ~ project.name) }}</span>
   </form>
 </section>
 {% endif %}
@@ -174,34 +106,46 @@
 </div>
 
 {% if db_available %}
-<section class="overview-block">
-  <header class="task-card-header">
-    <h2>Import from folder</h2>
-    <span class="muted-tiny">AI scans the repo and proposes a fresh MASTER.md + coverage tasks.</span>
-  </header>
+{#- ADO-155: блок импорта. Заголовок и лид говорят, что это предложение, а не
+    запись: файл и задачи меняются только по Save. -#}
+<section class="l-ov-import" id="import-master">
+  <h2 class="l-ov-h2">Предложить MASTER.md</h2>
+  <ol class="l-ov-steps">
+    <li>AI сканирует markdown-файлы репозитория (.md, .rst, .txt).</li>
+    <li>Ниже появится превью: предложенный MASTER.md и задачи покрытия.</li>
+    <li>В файл и в БД ничего не пишется, пока вы не нажмёте Save.</li>
+  </ol>
+  {{ ui.banner("Save может перезаписать текущий MASTER.md — галочка перезаписи в превью по умолчанию снята.", tone="warn") }}
   <form hx-post="/p/{{ project.name }}/import_master/scan"
         hx-target="#master-draft"
         hx-swap="innerHTML"
+        hx-indicator="#master-scan-indicator"
+        hx-disabled-elt="find button"
         class="ai-gen-form">
-    <label class="field">
-      <span class="muted-tiny">Scan intent (optional)</span>
-      <input type="text" name="intent"
-             placeholder="e.g. focus on architecture, ignore changelogs">
+    <label class="field l-ov-intent">
+      <span class="muted-tiny">Intent сканирования (необязательно): на чём сфокусировать AI, что игнорировать.
+        Например: «упор на архитектуру, changelog не читать». Без intent AI смотрит на все найденные файлы одинаково.</span>
+      <input type="text" name="intent" placeholder="например: упор на архитектуру, changelog не читать">
     </label>
-    <button type="submit" class="btn-primary">✨ Scan &amp; propose</button>
+    {{ ui.button("✨ Сканировать и предложить", kind="primary", type="submit") }}
+    <span id="master-scan-indicator" class="htmx-indicator l-ov-hint" role="status">сканирую…</span>
   </form>
   <div id="master-draft"></div>
 </section>
 {% endif %}
 
-<section class="master-preview">
-  {# ADO-109: раньше href строился из `project.master_md` — это имя файла на
-     диске, а страница документа ищет по doc_key, и обе ссылки давали 404.
-     Нет документа в БД — ссылок нет вовсе, вместо битых. #}
+{#- ADO-109: раньше href строился из `project.master_md` — это имя файла на
+    диске, а страница документа ищет по doc_key, и обе ссылки давали 404.
+    Нет документа в БД — ссылок нет вовсе, вместо битых. ADO-155: блок отделён
+    от импорта — это текущий файл, а не предложение. -#}
+<section class="master-preview l-ov-current">
   <header class="master-header">
-    <h2>{{ project.master_md }}</h2>
+    <h2>Текущий {{ project.master_md }}</h2>
     {% if master_doc_key %}
-      <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ master_doc_key }}?raw=1">View raw</a>
+      <span class="l-ov-links">
+        <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ master_doc_key }}?raw=1">View raw</a>
+        <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ master_doc_key }}" data-peek>Открыть целиком</a>
+      </span>
     {% else %}
       <span class="master-raw-link muted-tiny" title="Файл есть на диске, но в БД его нет — выполните doc import">не импортирован</span>
     {% endif %}

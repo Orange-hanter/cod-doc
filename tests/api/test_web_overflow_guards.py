@@ -5,7 +5,7 @@
 * карточки kanban шире колонки (`min-width:auto` у grid/flex-элемента),
 * колонка Diff в `/revisions` уезжает за экран (`max-width` на `<td>` в
   таблице с `border-collapse` браузером игнорируется),
-* строка «Recent revisions» разъезжается при переносе (`flex-wrap` плюс
+* строка «Последние правки» разъезжается при переносе (`flex-wrap` плюс
   `margin-left:auto` у метки времени),
 * hover-превью на code-refs уходит за правый край экрана.
 
@@ -132,32 +132,32 @@ def test_task_history_diff_cell_is_clamped() -> None:
 # ── ADO-153: строка recent revisions ────────────────────────────────────
 
 
-def test_rev_list_row_is_a_grid() -> None:
-    body = _rule(".rev-list li")
-    assert "display: grid" in body
-    assert "flex-wrap" not in body, "flex-wrap и был причиной разъезжающейся строки"
+def test_recent_revisions_row_is_a_kit_row() -> None:
+    """WUI-014: строка правок — `ui.row` кита, а не самодельный `.rev-list`."""
+    html = (TEMPLATES / "project" / "show.html").read_text(encoding="utf-8")
+    assert "rev-list" not in html
+    assert "rev-list" not in CSS, "осталось мёртвое правило .rev-list"
+    start = html.index('ui.group("Последние правки"')
+    block = html[start : html.index("{% endfor %}", start)]
+    assert "ui.row(" in block
+    assert "l-clamp-2" in block, "длинная причина не обрезается"
 
 
-def test_rev_list_row_always_has_three_cells() -> None:
-    """Сетка из трёх колонок ломается, если ячеек то три, то четыре.
+def test_recent_revisions_row_always_has_same_cells() -> None:
+    """Ячейки строки не должны зависеть от наличия `reason` (ADO-153).
 
-    До ADO-153 `reason` рендерился условным `{% if %}` вокруг всего span —
-    строки без причины имели другой набор детей, и время уезжало в чужую
-    колонку. Условным теперь может быть только атрибут `title`.
+    Раньше условным `{% if %}` оборачивался весь span причины — строки без
+    причины имели другой набор детей, и время уезжало в чужую колонку.
+    Условным теперь может быть только значение, а не сама ячейка.
     """
     html = (TEMPLATES / "project" / "show.html").read_text(encoding="utf-8")
-    start = html.index('<ul class="rev-list">')
-    block = html[start : html.index("</ul>", start)]
-    row_start = block.index("<li>")
-    row = block[row_start : block.index("</li>", row_start)]
-
-    for cell in ('class="rev-who"', "rev-reason", 'class="muted ts"'):
+    start = html.index('ui.group("Последние правки"')
+    block = html[start : html.index("{% endfor %}", start)]
+    row_start = block.index("{% call ui.row(")
+    row = block[row_start : block.index("{% endcall %}", row_start)]
+    for cell in ("l-row-body", "l-row-text", "l-row-aside"):
         assert cell in row, f"ячейка {cell} исчезла из строки"
-
-    without_title_guard = row.replace('{% if r.reason %}title="{{ r.reason }}"{% endif %}', "")
-    assert "{% if" not in without_title_guard, (
-        "ячейка строки снова стала условной — сетка разъедется на строках без причины"
-    )
+    assert "{% if" not in row, "ячейка строки стала условной — колонки разъедутся"
 
 
 # ── ADO-126: hover-превью code-refs ─────────────────────────────────────

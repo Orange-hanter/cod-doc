@@ -271,7 +271,7 @@ def import_master_scan(
 ) -> Response:
     """Scan the repo, run AI, return a preview of MASTER.md + coverage tasks."""
     proj = get_project(slug)
-    session, _project_db_id = db
+    session, project_db_id = db
     cfg = get_config()
     files = _walk_doc_files(Path(proj.entry.path))
 
@@ -318,6 +318,8 @@ def import_master_scan(
             ],
             "notice": notice,
             "intent": intent,
+            # WUI-014 / ADO-155: планы проекта для select вместо свободной строки.
+            "plan_scopes": [p.scope for p in plans.list_for_project(session, project_db_id)],
         },
     )
 
