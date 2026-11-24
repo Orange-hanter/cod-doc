@@ -123,10 +123,14 @@ def test_wide_revision_cells_are_clamped() -> None:
     assert 'title="{{ r.diff_preview }}"' in html
 
 
-def test_task_history_diff_cell_is_clamped() -> None:
+def test_task_history_diff_line_is_clamped() -> None:
+    """WUI-015: история ревизий — строки кита; первая строка diff режется до одной."""
     # Тело карточки — общий фрагмент страницы и шторки (WUI-001).
     html = (TEMPLATES / "_frag" / "task_detail.html").read_text(encoding="utf-8")
-    assert 'class="cell-clamp"' in html
+    assert "<table" not in html
+    assert "l-clamp-1" in html
+    kit = (ROOT / "static" / "css" / "_ledger.css").read_text(encoding="utf-8")
+    assert ".l-clamp-1 { -webkit-line-clamp: 1;" in kit
 
 
 # ── ADO-153: строка recent revisions ────────────────────────────────────

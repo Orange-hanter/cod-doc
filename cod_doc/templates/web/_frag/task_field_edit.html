@@ -1,7 +1,9 @@
 {# Editable task field — textarea + save/cancel + AI-improve buttons. #}
-<section data-field="{{ field }}" class="task-card task-field-card editing">
-  <header class="task-card-header">
-    <h2>{{ label }} <span class="muted-tiny">— editing</span></h2>
+{% import "_ui/ledger.html" as ui %}
+<section data-field="{{ field }}" class="t-section task-field-card editing">
+  <header class="t-section-head">
+    {{ ui.label(label) }}
+    <span class="t-section-aside">editing</span>
   </header>
   {% if notice %}
     <p class="ai-notice muted">{{ notice }}</p>
@@ -19,13 +21,13 @@
              placeholder="e.g. make it more concise, add bullet points, fix grammar…">
     </label>
     <div class="card-edit-actions">
-      <button type="submit" class="btn-primary">Save</button>
+      <button type="submit" class="l-btn l-btn-primary l-btn-sm">Save</button>
       <button type="button"
               hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}/improve"
               hx-include="closest form"
               hx-target="closest .task-field-card"
               hx-swap="outerHTML"
-              class="btn-secondary"
+              class="l-btn l-btn-secondary l-btn-sm"
               title="Send the current draft through the LLM and replace it with the suggestion">
         ✨ Improve via AI
       </button>
@@ -33,7 +35,7 @@
               hx-get="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}/view"
               hx-target="closest .task-field-card"
               hx-swap="outerHTML"
-              class="btn-secondary">Cancel</button>
+              class="l-btn l-btn-secondary l-btn-sm">Cancel</button>
     </div>
   </form>
 </section>

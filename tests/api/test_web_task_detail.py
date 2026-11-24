@@ -160,15 +160,13 @@ def test_task_detail_renders_header_and_badges(task_detail_client) -> None:
     body = r.text
     assert "DET-001" in body
     assert "Set up DB schema" in body
-    # Hero: status badge + priority chip + type chip
-    assert "badge-lg badge-in_progress" in body  # status badge prominent
-    assert "prio-chip prio-high" in body  # priority chip
+    # Шапка на ките: id-чип, метка статуса, приоритета и типа
+    assert '<span class="l-id">DET-001</span>' in body
+    assert '<span class="l-tag l-tag-signal">in_progress</span>' in body
+    assert '<span class="l-tag l-tag-warn" title="priority">high</span>' in body
     assert "type: feature" in body
-    # Plan link rendered as a meta-chip
-    assert 'class="meta-chip meta-chip-link"' in body
-    assert 'href="/p/demo/plans/' in body
-    # Priority stripe class on hero (visual accent)
-    assert "prio-stripe-high" in body
+    # План — ссылкой с меткой
+    assert 'class="task-head-link" href="/p/demo/plans/' in body
 
 
 def test_task_detail_renders_description_markdown(task_detail_client) -> None:
@@ -213,9 +211,10 @@ def test_task_detail_shows_revision_history(task_detail_client) -> None:
     client, entry = task_detail_client
     r = client.get(f"/p/{entry.name}/tasks/DET-001")
     body = r.text
-    # 2 revisions: create + status update — count rendered in <span class="count-chip">
+    # 2 revisions: create + status update — счётчик в шапке группы кита
     assert "Revision history" in body
-    assert '<span class="count-chip">2</span>' in body
+    group = body[body.index('data-task-group="history"') :]
+    assert '<span class="l-group-count" data-filter-count>2</span>' in group.split("</summary>")[0]
     assert "human:dakh" in body
 
 
@@ -606,7 +605,7 @@ def test_task_detail_trace_section_lists_calls(task_detail_client) -> None:
     assert "task.list" in body
     # Error row gets the error notice
     assert "rate limited" in body
-    assert "trace-err" in body
+    assert '<span class="l-tag l-tag-signal">rate limited</span>' in body
 
 
 def _patch_field_service(monkeypatch, exc: Exception) -> None:  # type: ignore[no-untyped-def]
@@ -676,8 +675,10 @@ def test_peek_returns_fragment_not_page(task_detail_client) -> None:
 def test_peek_dependency_links_open_in_sheet(task_detail_client) -> None:
     client, entry = task_detail_client
     r = client.get(f"/p/{entry.name}/tasks/DET-002?peek=1")
-    assert 'href="/p/demo/tasks/DET-001" class="dep-link" data-peek' in r.text
-    assert 'href="/p/demo/tasks/DET-003" class="dep-link" data-peek' in r.text
+    for dep in ("DET-001", "DET-003"):
+        assert re.search(
+            rf'<a class="l-row-link" href="/p/demo/tasks/{dep}"[^>]*\sdata-peek(?!-)', r.text
+        )
 
 
 def test_peek_unknown_task_is_html_404(task_detail_client) -> None:
@@ -715,7 +716,7 @@ def test_status_detail_view_returns_head_and_trigger(task_detail_client) -> None
     )
     assert r.status_code == 200
     assert 'class="task-head"' in r.text
-    assert "badge-lg badge-in_review" in r.text
+    assert '<span class="l-tag l-tag-warn">in_review</span>' in r.text
     assert "<tr" not in r.text
     assert json.loads(r.headers["HX-Trigger"]) == {"cod_doc:task-changed": {"task_id": "DET-001"}}
 
@@ -740,7 +741,7 @@ def test_complete_detail_view_returns_head(task_detail_client) -> None:
         headers={"HX-Request": "true"},
     )
     assert r.status_code == 200
-    assert "badge-lg badge-done" in r.text
+    assert '<span class="l-tag l-tag-ok">done</span>' in r.text
     assert "Mark done" not in r.text
     assert "cod_doc:task-changed" in r.headers["HX-Trigger"]
 
@@ -901,7 +902,7 @@ def test_done_card_links_commit_pr_and_shows_summary(task_detail_client) -> None
     page = client.get("/p/demo/tasks/DET-001").text
     assert 'href="https://github.com/o/r/commit/4b770e4abc"' in page
     assert ">⇄ PR #261</a>" in page
-    assert 'class="task-card task-summary-card"' in page
+    assert 'class="t-section task-summary-card"' in page
     assert "Сделано <strong>всё</strong>" in page
 
 
@@ -936,7 +937,9 @@ def test_mark_done_rejects_garbage_sha(task_detail_client) -> None:
     r = _close_via_web(client, commit_sha="not-a-sha")
     assert r.status_code == 400
     assert "sha" in r.text
-    assert "badge-lg badge-done" not in client.get("/p/demo/tasks/DET-001").text
+    assert (
+        '<span class="l-tag l-tag-ok">done</span>' not in client.get("/p/demo/tasks/DET-001").text
+    )
 
 
 def test_mark_done_form_has_optional_fields(task_detail_client) -> None:
@@ -965,7 +968,7 @@ def test_done_card_lists_affected_files_at_closing_sha(task_detail_client) -> No
         engine.dispose()
     _close_via_web(client, commit_sha="4b770e4")
     page = client.get("/p/demo/tasks/DET-001").text
-    assert 'class="task-card task-files-card"' in page
+    assert 'class="l-list task-files-card"' in page
     assert 'href="https://github.com/o/r/blob/4b770e4/docs/a.md"' in page
     # Порядок — по пути.
     assert page.index(">cod_doc/b.py<") < page.index(">docs/a.md<")
@@ -1122,3 +1125,50 @@ def test_task_acceptance_without_repo_url_links_only_entities(task_detail_client
     page = client.get("/p/demo/tasks/DET-001").text
     assert 'href="/p/demo/tasks/DET-003" data-peek>DET-003</a>' in page
     assert "/issues/5" not in page
+
+
+# ── WUI-015: карточка задачи на ките Ledger ─────────────────────────────
+
+
+def test_task_card_has_no_grid_tables(task_detail_client) -> None:
+    client, entry = task_detail_client
+    for url in (f"/p/{entry.name}/tasks/DET-001", f"/p/{entry.name}/tasks/DET-001?peek=1"):
+        body = client.get(url).text
+        assert '<table class="grid' not in body
+        assert "<table" not in body.split('<dialog id="peek"')[0]
+
+
+def test_task_card_imports_the_kit(task_detail_client) -> None:
+    client, entry = task_detail_client
+    body = client.get(f"/p/{entry.name}/tasks/DET-001").text
+    assert 'class="l-group"' in body or 'class="l-group ' in body
+    assert "l-page-title" in body
+
+
+def test_task_card_dependency_groups_link_rows_to_the_sheet(task_detail_client) -> None:
+    client, entry = task_detail_client
+    body = client.get(f"/p/{entry.name}/tasks/DET-002").text
+    assert 'data-task-group="blocked-by"' in body
+    assert 'data-task-group="unblocks"' in body
+    blocked_by = body.split('data-task-group="blocked-by"')[1].split("</details>")[0]
+    assert re.search(
+        r'<a class="l-row-link" href="/p/demo/tasks/DET-001"[^>]*\sdata-peek', blocked_by
+    )
+    # Пустая сторона — пустое состояние кита с прежним текстом.
+    empty = client.get(f"/p/{entry.name}/tasks/DET-001").text
+    assert "Зависимостей нет — задача готова к старту." in empty
+    assert 'class="l-empty"' in empty
+
+
+def test_peek_body_matches_page_body_without_scripts(task_detail_client) -> None:
+    client, entry = task_detail_client
+    sheet = client.get(f"/p/{entry.name}/tasks/DET-002?peek=1").text
+    page = client.get(f"/p/{entry.name}/tasks/DET-002").text
+    assert "<script" not in sheet
+    for marker in (
+        'class="task-head"',
+        'data-task-group="blocked-by"',
+        'data-task-group="history"',
+    ):
+        assert marker in sheet
+        assert marker in page

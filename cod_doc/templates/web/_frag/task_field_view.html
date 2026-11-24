@@ -1,7 +1,8 @@
 {# Read-only task field card. Reused by task_show.html and after a successful patch. #}
-<section data-field="{{ field }}" class="task-card task-field-card">
-  <header class="task-card-header">
-    <h2>{{ label }}</h2>
+{% import "_ui/ledger.html" as ui %}
+<section data-field="{{ field }}" class="t-section task-field-card">
+  <header class="t-section-head">
+    {{ ui.label(label) }}
     <button type="button"
             class="card-edit-btn"
             hx-get="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}/edit"

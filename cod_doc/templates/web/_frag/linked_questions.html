@@ -1,21 +1,20 @@
 {# OQM-005: вопросы, ссылающиеся на эту задачу/документ (обратная навигация).
    Variables: linked_questions (list), project.name. Пусто — блок не рендерится.
-   `peek` (WUI-001): в шторке без id — страница под ней несёт свой #questions. #}
+   `peek` (WUI-001): в шторке без id — страница под ней несёт свой #questions.
+   WUI-015: группа и строки кита; ссылка на вопрос — на всю строку. #}
+{% import "_ui/ledger.html" as ui %}
 {% if linked_questions %}
-<section class="task-card"{% if not peek %} id="questions"{% endif %}>
-  <div class="task-card-header">
-    <h2>❓ Вопросы</h2>
-    <span class="count-chip">{{ linked_questions | length }}</span>
-  </div>
-  <ul class="question-links">
+<div class="l-list t-full"{% if not peek %} id="questions"{% endif %}>
+  {% call ui.group("❓ Вопросы", count=linked_questions | length, filter=False) %}
     {% for lq in linked_questions %}
-      <li>
-        <span class="badge badge-q-{{ lq.status }}">{{ lq.status }}</span>
-        <a class="mono" href="/p/{{ project.name }}/questions/{{ lq.question_id }}">{{ lq.question_id }}</a>
-        {{ lq.title }}
-        {% if lq.relation %}<code class="muted">{{ lq.relation }}</code>{% endif %}
-      </li>
+      {% call ui.row(id=lq.question_id, href="/p/" ~ project.name ~ "/questions/" ~ lq.question_id, filter=False) %}
+        <div class="l-row-body">
+          <span class="l-row-text l-clamp-2">{{ lq.title }}</span>
+          {% if lq.relation %}<div class="l-row-meta"><code>{{ lq.relation }}</code></div>{% endif %}
+        </div>
+        <div class="l-row-aside"><span class="badge badge-q-{{ lq.status }}">{{ lq.status }}</span></div>
+      {% endcall %}
     {% endfor %}
-  </ul>
-</section>
+  {% endcall %}
+</div>
 {% endif %}

@@ -97,34 +97,6 @@
   border-radius: var(--radius-md);
   font-size: calc(13px * var(--text-scale, 1));
 }
-.task-status-form {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-}
-.task-status-form select {
-  padding: 4px 12px;
-  font: inherit;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
-}
-.task-complete-form { margin: 0; }
-.task-complete-form button {
-  padding: 5px 18px;
-  font: inherit;
-  font-weight: 600;
-  border: 1px solid var(--success-border);
-  border-radius: var(--radius-sm);
-  background: var(--success-soft-bg);
-  color: var(--success);
-  cursor: pointer;
-  transition: all var(--motion-fast);
-}
-.task-complete-form button:hover { background: var(--success); color: #fff; border-color: var(--success); }
-
 .task-layout {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -176,49 +148,6 @@
 .empty-hint em { font-style: italic; color: var(--muted); }
 .empty-hint code { font-size: calc(11px * var(--text-scale, 1)); background: var(--bg-alt); padding: 1px 6px; border-radius: var(--radius-sm); }
 
-.dep-list { list-style: none; padding: 0; margin: 0; }
-.dep-item {
-  display: grid;
-  grid-template-columns: 24px auto 1fr;
-  gap: var(--space-2);
-  align-items: center;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border-soft);
-  font-size: calc(13px * var(--text-scale, 1));
-}
-.dep-item:last-child { border-bottom: 0; }
-.dep-depth {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: var(--bg-alt);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  font-size: calc(11px * var(--text-scale, 1));
-  font-weight: 600;
-}
-.dep-link {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  text-decoration: none;
-  color: var(--fg);
-}
-.dep-link:hover { text-decoration: none; }
-.dep-link:hover .dep-id { color: var(--accent); }
-.dep-id { font-size: calc(12px * var(--text-scale, 1)); color: var(--accent); }
-.dep-title {
-  font-size: calc(12px * var(--text-scale, 1));
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
 /* Поля задачи — та же проза, что тело секций документа, и регулятор
  * «Шрифт/межстрочный/ширина строки документов» действует на них нарочно.
  * При дефолтах :root вид прежний: шрифт интерфейса, 1.6, без ограничения
@@ -257,19 +186,7 @@
 .card-edit-actions { margin-top: var(--space-2); display: flex; gap: var(--space-2); }
 .task-field-card.editing { background: var(--accent-soft-bg); border-color: var(--accent); }
 
-.task-history { margin-top: var(--space-1); }
-.task-history table.grid { font-size: calc(12px * var(--text-scale, 1)); }
-.task-history table.grid td { padding: 6px 12px; }
-
 /* ── ADO-148: done card — summary, files, Mark done extras ──────────── */
-.task-summary-card { border-left: 4px solid var(--success-border); }
-.task-files { list-style: none; margin: 0; padding: 0; }
-.task-files li {
-  padding: 3px 0;
-  font-size: calc(12px * var(--text-scale, 1));
-  overflow-wrap: anywhere;
-}
-.task-files li + li { border-top: 1px solid var(--border-soft); }
 .task-complete-form {
   display: flex;
   flex: 1 1 auto;
@@ -281,7 +198,7 @@
 /* Открытые поля — отдельной строкой под кнопкой, а не в той же строке:
    иначе ряд действий растягивается и «Set status» уезжает в середину. */
 .task-complete-more[open] { flex-basis: 100%; }
-.task-actions:has(.task-complete-more[open]) { align-items: flex-start; }
+.task-head-actions:has(.task-complete-more[open]) { align-items: flex-start; }
 .task-complete-fields {
   display: grid;
   grid-template-columns: minmax(0, 16rem) minmax(0, 8rem);
@@ -302,3 +219,84 @@
 @media (max-width: 640px) {
   .task-complete-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── WUI-015: карточка задачи на ките Ledger ─────────────────────────── */
+.task-detail { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.task-detail > * { min-width: 0; }
+
+/* Шапка: метки в ряд, заголовок — как у ui.page_header. */
+.task-head { display: flex; flex-direction: column; gap: var(--space-3); }
+.task-head-hero { padding-bottom: 0; }
+.task-head-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.task-head-meta .l-tag code { font-size: inherit; background: transparent; padding: 0; }
+.task-head-link { text-decoration: none; }
+.task-head-link:hover { text-decoration: none; }
+.task-head .l-page-title { overflow-wrap: anywhere; }
+
+.task-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: calc(13px * var(--text-scale, 1));
+}
+.task-status-form { display: inline-flex; align-items: center; gap: var(--space-2); margin: 0; }
+.task-head-select {
+  height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--fg);
+}
+.task-complete-form { margin: 0; }
+
+/* Секции прозы: заголовок-ярлык кита, тело — doc-body. */
+.t-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg);
+  min-width: 0;
+}
+.t-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.t-section-aside { font-size: calc(12px * var(--text-scale, 1)); color: var(--muted); overflow-wrap: anywhere; }
+.task-summary-card { border-left: 4px solid var(--success-border); }
+
+/* Тело | зависимости: две колонки на десктопе, одна — до 960px. */
+.t-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+@media (max-width: 960px) { .t-cols { grid-template-columns: minmax(0, 1fr); } }
+.t-main, .t-deps { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.t-full { min-width: 0; }
+
+/* Строки группы: длинные id, пути и ревизии переносятся или обрезаются. */
+.task-detail .l-row-id { overflow-wrap: anywhere; }
+.task-detail .l-row-text { overflow-wrap: anywhere; }
+.t-depth { color: var(--muted); font-size: calc(11px * var(--text-scale, 1)); }
+.t-path { word-break: break-all; }
+.t-diff { color: var(--muted); font-size: calc(12px * var(--text-scale, 1)); }
+.t-rev-id { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.t-trace-model { overflow-wrap: anywhere; }
+.t-trace-tools code { font-size: inherit; background: transparent; padding: 0; }
+.t-group-foot { padding: 8px 16px; font-size: calc(12px * var(--text-scale, 1)); border-top: 1px solid var(--border); }
+.task-detail .l-empty { padding: var(--space-4); gap: var(--space-2); }
+.task-detail .l-empty-badge { display: none; }
+.task-detail .l-empty-title { font: 400 calc(13px * var(--text-scale, 1))/1.4 var(--font-sans); color: var(--muted); }
