@@ -1222,8 +1222,6 @@ a.nav-card-title:hover { color: var(--accent); }
    в столбик по слову. Ширины посчитаны по составу колонок — заголовки плюс
    типичное значение, — а не подобраны на глаз. Кто добавит таблицу без
    `min-width`, узнает об этом от `test_web_overflow_guards`. */
-.task-trace-table { min-width: 980px; }   /* 8 колонок: модель, токены, tools, ошибка */
-.task-history-table { min-width: 760px; } /* ULID 26 симв. + автор + дата + две обрезки */
 .costs-table { min-width: 860px; }        /* 7 колонок, из них пять числовых */
 .plans-table { min-width: 880px; }        /* scope + принцип прозой + прогресс-бар 100px */
 .roadmap-table { min-width: 960px; }      /* задача прозой + план + две даты + отметки */
@@ -1238,7 +1236,6 @@ a.nav-card-title:hover { color: var(--accent); }
 .scn-table { min-width: 600px; }
 .question-table { min-width: 760px; }
 
-.task-col-when,
 .plans-col-when,
 .tasks-legacy-col-when,
 .adr-col-when,
@@ -3999,8 +3996,6 @@ main:has(> .back-bar) .sections-nav {
   border-color: var(--border);
   text-decoration: line-through;
 }
-.question-links { padding-left: 0; list-style: none; margin: 0 0 var(--space-3); }
-.question-links > li { padding: var(--space-1) 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .question-excerpt-body { display: flex; align-items: stretch; margin: var(--space-1) 0 0; min-width: 0; }
 .question-excerpt-body pre { margin: 0; padding: 0; font-size: calc(12px * var(--text-scale, 1)); line-height: 1.5; }
 .question-excerpt-body pre code,

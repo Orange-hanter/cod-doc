@@ -1,18 +1,67 @@
 {# Task detail body — shared by the task page and the peek sheet (WUI-001).
    No <script> here: the sheet injects this markup into a live page, and htmx
-   would run any script once per opening. #}
+   would run any script once per opening.
+   WUI-015: тело на ките Ledger — группы, строки и метки из `_ui/ledger.html`,
+   таблиц `grid` нет. #}
+{% import "_ui/ledger.html" as ui %}
+{%- set _slug = project.name -%}
+
+{#- Строка зависимости: id, заголовок в две строки, статус и глубина цепочки.
+    Макрос не видит контекст страницы — адрес проекта едет аргументом. -#}
+{%- macro dep_row(e, slug) -%}
+  {% call ui.row(id=e.task_id, href="/p/" ~ slug ~ "/tasks/" ~ e.task_id, peek=True, filter=False, title=e.title) %}
+    <div class="l-row-body"><span class="l-row-text l-clamp-2">{{ e.title }}</span></div>
+    <div class="l-row-aside">{{ ui.status(e.status) }}<span class="l-mono t-depth" title="depth {{ e.depth }}">d{{ e.depth }}</span></div>
+  {% endcall %}
+{%- endmacro -%}
+
+{#- Вызов ИИ: модель и тип — в теле, время, токены, длительность и tools — в мете. -#}
+{%- macro trace_row(t) -%}
+  {% call ui.row(filter=False) %}
+    <div class="l-row-body">
+      <span class="l-row-text"><span class="l-mono t-trace-model">{{ t.model }}</span> · {{ t.kind }}</span>
+      <div class="l-row-meta">
+        <span title="{{ t.ts | ts_tooltip }}">{{ t.ts | short_datetime }}</span>
+        <span class="l-mono">{{ t.input_tokens }} in / {{ t.output_tokens }} out</span>
+        <span class="l-mono">{{ t.duration_ms }} ms</span>
+        {% if t.tool_calls -%}
+          <span class="l-mono t-trace-tools">{{ t.tool_calls | length }} call{% if t.tool_calls | length != 1 %}s{% endif %}:
+            {% for tc in t.tool_calls %}<code>{{ tc.name or tc.tool or "?" }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</span>
+        {%- endif %}
+        {% if t.error %}{{ ui.tag(t.error, "signal") }}{% endif %}
+      </div>
+    </div>
+  {% endcall %}
+{%- endmacro -%}
+
+{#- Ревизия: причина и первая строка diff — с обрезкой, полное значение в title. -#}
+{%- macro rev_row(r) -%}
+  {% call ui.row(filter=False) %}
+    <div class="l-row-body">
+      <span class="l-row-text l-clamp-2">{{ r.reason or "—" }}</span>
+      <span class="l-row-text l-mono l-clamp-1 t-diff" title="{{ r.diff_first_line }}">{{ r.diff_first_line }}</span>
+      <div class="l-row-meta">
+        <span class="l-mono t-rev-id" title="{{ r.revision_id }}">{{ r.revision_id }}</span>
+        <span>{{ r.author }}</span>
+        <span title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</span>
+      </div>
+    </div>
+  {% endcall %}
+{%- endmacro -%}
+
+<div class="task-detail">
 {% include "_frag/task_head.html" %}
 
 {# ── BODY (2-col): content | deps sidebar ──────────────────────────── #}
-<div class="task-layout">
-  <main class="task-content">
+<div class="t-cols">
+  <main class="t-main">
     {#- ADO-148: итог закрытия — отчёт «что сделано», отдельно от исходной
         постановки (description). Источник — reason закрывающей ревизии. #}
     {% if completion %}
-      <section class="task-card task-summary-card">
-        <header class="task-card-header">
-          <h2>Итог</h2>
-          <span class="muted-tiny">{{ completion.author }} · <span title="{{ completion.at | ts_tooltip }}">{{ completion.at | short_datetime }}</span></span>
+      <section class="t-section task-summary-card">
+        <header class="t-section-head">
+          {{ ui.label("Итог") }}
+          <span class="t-section-aside">{{ completion.author }} · <span title="{{ completion.at | ts_tooltip }}">{{ completion.at | short_datetime }}</span></span>
         </header>
         <div class="doc-body">{{ completion.summary_html | safe }}</div>
       </section>
@@ -24,170 +73,69 @@
       {% include "_frag/task_field_view.html" %}
     {% endwith %}
     {% if affected_files %}
-      <section class="task-card task-files-card">
-        <header class="task-card-header">
-          <h2>Файлы <span class="count-chip">{{ affected_files | length }}</span></h2>
-          <span class="muted-tiny">affects_files</span>
-        </header>
-        <ul class="task-files">
+      <div class="l-list task-files-card">
+        {% call ui.group("Файлы", count=affected_files | length, meta="affects_files", filter=False) %}
           {% for f in affected_files %}
-            <li class="mono">
-              {%- if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.path }}</a>
-              {%- else %}{{ f.path }}{% endif -%}
-            </li>
+            {% call ui.row(filter=False) %}
+              <div class="l-row-body"><span class="l-row-text l-mono t-path">
+                {%- if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.path }}</a>
+                {%- else %}{{ f.path }}{% endif -%}
+              </span></div>
+            {% endcall %}
           {% endfor %}
-        </ul>
-      </section>
+        {% endcall %}
+      </div>
     {% endif %}
   </main>
 
-  <aside class="task-deps">
-    <section class="task-card task-deps-card">
-      <header class="task-card-header">
-        <h2>Blocked by <span class="count-chip">{{ forward | length }}</span></h2>
-        <span class="muted-tiny">↑ must complete BEFORE</span>
-      </header>
-      {% if forward %}
-        <ul class="dep-list">
-          {% for e in forward %}
-            <li class="dep-item">
-              <span class="dep-depth" title="depth {{ e.depth }}">{{ e.depth }}</span>
-              <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
-              <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="dep-link" data-peek>
-                <span class="mono dep-id">{{ e.task_id }}</span>
-                <span class="dep-title">{{ e.title }}</span>
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="empty-hint"><em>Зависимостей нет — задача готова к старту.</em></p>
-      {% endif %}
-    </section>
-
-    <section class="task-card task-deps-card">
-      <header class="task-card-header">
-        <h2>Unblocks <span class="count-chip">{{ reverse | length }}</span></h2>
-        <span class="muted-tiny">↓ depends on this</span>
-      </header>
-      {% if reverse %}
-        <ul class="dep-list">
-          {% for e in reverse %}
-            <li class="dep-item">
-              <span class="dep-depth" title="depth {{ e.depth }}">{{ e.depth }}</span>
-              <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
-              <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="dep-link" data-peek>
-                <span class="mono dep-id">{{ e.task_id }}</span>
-                <span class="dep-title">{{ e.title }}</span>
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="empty-hint"><em>— не блокирует никаких задач.</em></p>
-      {% endif %}
-    </section>
+  <aside class="t-deps">
+    <div class="l-list">
+      {% call ui.group("Blocked by", count=forward | length, meta="↑ must complete BEFORE", filter=False, attrs={"data-task-group": "blocked-by"}) %}
+        {% if forward %}
+          {#- Длинные цепочки (у живых задач до двух десятков) — хвост под «ещё». -#}
+          {%- macro _dep(e) %}{{ dep_row(e, _slug) }}{% endmacro %}
+          {{ ui.rows_with_more(forward, _dep, visible=8) }}
+        {% else %}
+          {{ ui.empty("Зависимостей нет — задача готова к старту.", glyph="✓") }}
+        {% endif %}
+      {% endcall %}
+    </div>
+    <div class="l-list">
+      {% call ui.group("Unblocks", count=reverse | length, meta="↓ depends on this", filter=False, attrs={"data-task-group": "unblocks"}) %}
+        {% if reverse %}
+          {#- Длинные цепочки (у живых задач до двух десятков) — хвост под «ещё». -#}
+          {%- macro _dep(e) %}{{ dep_row(e, _slug) }}{% endmacro %}
+          {{ ui.rows_with_more(reverse, _dep, visible=8) }}
+        {% else %}
+          {{ ui.empty("— не блокирует никаких задач.", glyph="–") }}
+        {% endif %}
+      {% endcall %}
+    </div>
   </aside>
 </div>
 
 {# ── AI TRACE (full-width) ─────────────────────────────────────────── #}
-<section class="task-card task-trace">
-  <header class="task-card-header">
-    <h2>AI trace <span class="count-chip">{{ trace_totals.calls }}</span></h2>
-    {% if trace_totals.calls %}
-      <span class="muted-tiny">
-        ∑ {{ trace_totals.input_tokens }} in / {{ trace_totals.output_tokens }} out tok
-        · {{ trace_totals.duration_ms }} ms
-      </span>
+<div class="l-list t-full">
+  {% set _trace_meta = ("∑ " ~ trace_totals.input_tokens ~ " in / " ~ trace_totals.output_tokens ~ " out tok · " ~ trace_totals.duration_ms ~ " ms") if trace_totals.calls else None %}
+  {% call ui.group("AI trace", count=trace_totals.calls, meta=_trace_meta, open=trace_totals.calls > 0, filter=False, attrs={"data-task-group": "ai-trace"}) %}
+    {% if trace %}
+      {% for t in trace %}{{ trace_row(t) }}{% endfor %}
+    {% else %}
+      {{ ui.empty("Ещё не было вызовов ИИ для этой задачи.", glyph="–") }}
     {% endif %}
-  </header>
-  {% if trace %}
-    <div class="table-scroll">
-    <table class="grid task-trace-table">
-      <thead>
-        <tr>
-          <th class="task-col-when">When</th>
-          <th>Model</th>
-          <th>Kind</th>
-          <th class="num">In tok</th>
-          <th class="num">Out tok</th>
-          <th class="num">Duration</th>
-          <th>Tools</th>
-          <th>Error</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for t in trace %}
-          <tr {% if t.error %}class="trace-err"{% endif %}>
-            <td class="muted mono task-col-when" title="{{ t.ts | ts_tooltip }}">{{ t.ts | short_datetime }}</td>
-            <td class="mono">{{ t.model }}</td>
-            <td>{{ t.kind }}</td>
-            <td class="num">{{ t.input_tokens }}</td>
-            <td class="num">{{ t.output_tokens }}</td>
-            <td class="num">{{ t.duration_ms }} ms</td>
-            <td>
-              {% if t.tool_calls %}
-                <span class="muted-tiny">
-                  {{ t.tool_calls | length }} call{% if t.tool_calls | length != 1 %}s{% endif %}:
-                </span>
-                {% for tc in t.tool_calls %}
-                  <code>{{ tc.name or tc.tool or "?" }}</code>{% if not loop.last %}, {% endif %}
-                {% endfor %}
-              {% else %}
-                <span class="muted-tiny">—</span>
-              {% endif %}
-            </td>
-            <td class="diff-preview">
-              {% if t.error %}<span class="warn">{{ t.error }}</span>{% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  {% else %}
-    <p class="empty-hint"><em>Ещё не было вызовов ИИ для этой задачи.</em></p>
-  {% endif %}
-</section>
+  {% endcall %}
+</div>
 
 {# ── HISTORY (full-width) ─────────────────────────────────────────── #}
-<section class="task-card task-history">
-  <header class="task-card-header">
-    <h2>Revision history <span class="count-chip">{{ history | length }}</span></h2>
+<div class="l-list t-full">
+  {% call ui.group("Revision history", count=history | length, filter=False, attrs={"data-task-group": "history"}) %}
     {% if history %}
-      <a class="muted-tiny"
-         href="/p/{{ project.name }}/revisions?entity_kind=task">
-        all task revisions →
-      </a>
+      {{ ui.rows_with_more(history, rev_row, visible=10) }}
+      <div class="t-group-foot"><a href="/p/{{ _slug }}/revisions?entity_kind=task">all task revisions →</a></div>
+    {% else %}
+      {{ ui.empty("Ревизий по этой задаче пока нет.", glyph="–") }}
     {% endif %}
-  </header>
-  {% if history %}
-    <div class="table-scroll">
-    <table class="grid task-history-table">
-      <thead>
-        <tr>
-          <th>Revision</th>
-          <th>Author</th>
-          <th class="task-col-when">At</th>
-          <th>Reason</th>
-          <th>Diff (first line)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in history %}
-          <tr>
-            <td class="mono">{{ r.revision_id }}</td>
-            <td>{{ r.author }}</td>
-            <td class="muted task-col-when" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
-            <td>{{ r.reason }}</td>
-            <td class="mono diff-preview"><span class="cell-clamp" title="{{ r.diff_first_line }}">{{ r.diff_first_line }}</span></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  {% else %}
-    <p class="empty-hint"><em>Ревизий по этой задаче пока нет.</em></p>
-  {% endif %}
-</section>
+  {% endcall %}
+</div>
 {% include "_frag/linked_questions.html" %}
+</div>

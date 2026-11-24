@@ -42,11 +42,12 @@
 .l-display { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; color: var(--fg-strong); }
 .l-mono { font-family: var(--font-mono); }
 .l-muted { color: var(--muted); }
-.l-clamp-2, .l-clamp-3 {
+.l-clamp-1, .l-clamp-2, .l-clamp-3 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.l-clamp-1 { -webkit-line-clamp: 1; line-clamp: 1; }
 .l-clamp-2 { -webkit-line-clamp: 2; line-clamp: 2; }
 .l-clamp-3 { -webkit-line-clamp: 3; line-clamp: 3; }
 
