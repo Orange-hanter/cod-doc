@@ -1,0 +1,31 @@
+{#- WUI-014: строка «Готовы к старту» на Overview. Нужна и странице, и ответу
+    `POST /tasks/{id}/complete` с `view=overview` (htmx заменяет строку на месте),
+    поэтому живёт отдельно. ADO-152: у кнопки видимая подпись — действие названо
+    честно: это закрытие задачи, а не старт работы (взять в работу можно только
+    через checkout, ADO-039). -#}
+{% import "_ui/ledger.html" as ui %}
+
+{%- macro ready_row(t, slug) -%}
+  {% call ui.row(id=t.task_id, href="/p/" ~ slug ~ "/tasks/" ~ t.task_id, peek=True, title=t.title, attrs={"id": "ready-" ~ t.task_id}) %}
+    <div class="l-row-body">
+      <span class="l-row-text l-clamp-2">{{ t.title }}</span>
+    </div>
+    <div class="l-row-aside">
+      {{ ui.status(t.status) }}
+      <span class="l-mono l-prio-{{ t.priority }}">{{ t.priority }}</span>
+      {#- Закрытая строка остаётся на месте до перезагрузки — без кнопки. -#}
+      {%- if t.status not in ("done", "cancelled") %}
+      <form method="post" action="/p/{{ slug }}/tasks/{{ t.task_id }}/complete">
+        <input type="hidden" name="view" value="overview">
+        {{ ui.button("✓ Закрыть", kind="secondary", size="sm", type="submit", attrs={
+          "hx-post": "/p/" ~ slug ~ "/tasks/" ~ t.task_id ~ "/complete",
+          "hx-target": "#ready-" ~ t.task_id,
+          "hx-swap": "outerHTML",
+          "aria-label": "Закрыть задачу " ~ t.task_id,
+          "title": "Отметить " ~ t.task_id ~ " выполненной",
+        }) }}
+      </form>
+      {%- endif %}
+    </div>
+  {% endcall %}
+{%- endmacro -%}

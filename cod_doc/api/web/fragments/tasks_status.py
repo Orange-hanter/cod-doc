@@ -28,7 +28,13 @@ from cod_doc.services.sync_service.errors import SyncError
 from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
 from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
-from ._shared import _is_htmx, _log_write_failure, _render_task_head, _render_task_row
+from ._shared import (
+    _is_htmx,
+    _log_write_failure,
+    _render_overview_ready_row,
+    _render_task_head,
+    _render_task_row,
+)
 
 router = APIRouter()
 logger = logging.getLogger("cod_doc.api")
@@ -41,6 +47,10 @@ _GENERIC_SAVE_ERROR = "Не удалось сохранить изменения
 # `view=detail` шлют контролы шапки задачи (страница и шторка, WUI-001): им
 # нужна обновлённая шапка, а не строка таблицы. Без поля — прежний ответ.
 _VIEW_DETAIL = "detail"
+
+# `view=overview` шлёт кнопка «✓ Закрыть» в «Готовы к старту» на Overview (WUI-014):
+# htmx заменяет строку `#ready-{id}`, а не строку таблицы задач.
+_VIEW_OVERVIEW = "overview"
 
 # ADO-148: sha коммита закрытия — от короткого (7) до полного (40, SHA-1;
 # 64 — SHA-256), только hex. Номер PR — положительное целое.
@@ -236,6 +246,12 @@ def task_complete(
             task=updated,
             inline_alert=inline_alert,
             repo_url=Config.project_repo_url(proj.entry.name),
+        )
+    if _is_htmx(request) and view == _VIEW_OVERVIEW:
+        return _render_overview_ready_row(
+            project_name=proj.entry.name,
+            task=updated,
+            inline_alert=inline_alert,
         )
     if _is_htmx(request):
         return _render_task_row(

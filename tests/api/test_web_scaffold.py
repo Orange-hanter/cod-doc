@@ -132,8 +132,8 @@ def test_project_show_renders(web_client) -> None:
         assert f'href="/p/{entry.name}/{disabled}"' not in r.text
         assert f">{disabled.capitalize()}<" in r.text
     # stats card labels
-    assert "Tasks total" in r.text
-    assert "Last run" in r.text
+    assert "из" in r.text  # сводка «done из total»
+    assert "last run" in r.text
 
 
 def test_project_show_404_unknown(web_client) -> None:

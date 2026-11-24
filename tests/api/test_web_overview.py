@@ -157,22 +157,24 @@ def test_overview_ready_block_visible(overview_client) -> None:
     client, entry = overview_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
-    assert ">Ready to start<" in r.text
+    assert "Готовы к старту" in r.text
     # Each ready row is identifiable by task id.
-    assert 'id="task-OVR-001"' in r.text
-    # Complete button is wired with HTMX
+    assert 'id="ready-OVR-001"' in r.text
+    # Complete button is wired with HTMX and tells the server which view to answer
     assert 'hx-post="/p/demo/tasks/OVR-001/complete"' in r.text
+    assert 'name="view" value="overview"' in r.text
 
 
 def test_overview_plan_progress_visible(overview_client) -> None:
     client, entry = overview_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
-    assert ">Plan progress<" in r.text
-    # The seeded scope name + total/done columns.
+    assert ">Планы<" in r.text
+    # The seeded scope name + done/total.
     assert "ov-bootstrap" in r.text
-    # progress-bar with width style — 1 done out of 4 = 25%
-    assert "progress-fill" in r.text
+    assert "1/4" in r.text
+    # Ledger progress — 1 done out of 4 = 25%
+    assert "l-progress-done" in r.text
     assert 'style="width: 25%"' in r.text
 
 
@@ -180,7 +182,7 @@ def test_overview_recent_revisions_visible(overview_client) -> None:
     client, entry = overview_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
-    assert ">Recent revisions<" in r.text
+    assert ">Последние правки<" in r.text
     # Author tag of the seeded revisions.
     assert "human:dakh" in r.text
     # task entities show up as "task#NN"
@@ -193,8 +195,36 @@ def test_overview_doc_drift_health_badge_visible(overview_client) -> None:
     assert r.status_code == 200
     assert "Doc drift" in r.text
     assert 'href="/p/demo/routines#routine-doc_drift_daily"' in r.text
-    assert ">clean</a>" in r.text
+    assert "clean" in r.text
     assert "0 findings" in r.text
+
+
+def test_overview_drift_plaque_is_a_single_link(overview_client) -> None:
+    """WUI-014: вся плашка дрейфа — один <a> на drift_health.href, тон — из level."""
+    import re
+
+    client, entry = overview_client
+    r = client.get(f"/p/{entry.name}")
+    plaques = re.findall(r'<a class="l-ov-drift"[^>]*>.*?</a>', r.text, flags=re.S)
+    assert len(plaques) == 1
+    plaque = plaques[0]
+    assert 'href="/p/demo/routines#routine-doc_drift_daily"' in plaque
+    assert "l-tag-ok" in plaque  # success → ok
+    assert "Doc drift" in plaque
+    assert "0 findings" in plaque
+
+
+def test_overview_is_on_ledger_kit(overview_client) -> None:
+    """WUI-014: Overview — на ките Ledger, а не на карточках и таблице `grid`."""
+    client, entry = overview_client
+    r = client.get(f"/p/{entry.name}")
+    assert "l-page-header" in r.text
+    assert "l-ov-summary" in r.text
+    assert "plan-progress-table" not in r.text
+    assert "card-health" not in r.text
+    # Чипы сводки ведут в список задач.
+    assert 'href="/p/demo/tasks?status=in_progress"' in r.text
+    assert 'href="/p/demo/tasks"' in r.text
 
 
 def test_api_project_health_json(overview_client) -> None:
@@ -236,7 +266,8 @@ def test_overview_empty_db_renders_placeholder(tmp_path: Path) -> None:
     assert "База проекта не инициализирована" in r.text
     assert 'action="/p/bare/init"' in r.text
     assert "Initialize DB" in r.text
-    assert "Ready to start" not in r.text
+    assert "Готовы к старту" not in r.text
+    assert "cod-doc project init bare" in r.text
 
 
 def test_api_project_health_without_db(tmp_path: Path) -> None:
@@ -281,6 +312,23 @@ def test_complete_post_htmx_swaps_done_row(overview_client) -> None:
     assert "OVR-001" in r2.text
 
 
+def test_complete_post_htmx_overview_swaps_same_ready_row(overview_client) -> None:
+    """WUI-014: `view=overview` — ответ та же строка `ready-…`, уже со статусом done."""
+    client, entry = overview_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/OVR-001/complete",
+        data={"view": "overview"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert 'id="ready-OVR-001"' in r.text
+    assert 'id="task-OVR-001"' not in r.text
+    assert "l-tag-ok" in r.text
+    assert ">done<" in r.text
+    # Закрытую задачу второй раз «закрыть» нечего — кнопки в строке нет.
+    assert "✓ Закрыть" not in r.text
+
+
 def test_complete_post_form_redirects_to_overview(overview_client) -> None:
     client, entry = overview_client
     r = client.post(
@@ -312,6 +360,55 @@ def test_complete_post_unknown_task_404(overview_client) -> None:
     )
     assert r.status_code == 404
     assert "alert-error" in r.text  # via WebError handler
+
+
+# ── ADO-155: черновик импорта MASTER.md ──────────────────────────────────
+
+
+def _scan_draft(client, entry, monkeypatch):  # type: ignore[no-untyped-def]
+    from cod_doc.services import ai_generate
+
+    def fake(files, *, cfg, intent=""):  # type: ignore[no-untyped-def]
+        draft = ai_generate.MasterDraft(
+            master_md="# Proposed\n",
+            coverage_tasks=[ai_generate.TaskDraft(title="Cover X", section_letter="A")],
+            files_seen=["README.md", "docs/a.md"],
+        )
+        return draft, ai_generate.GenerationMeta(model="test/model")
+
+    monkeypatch.setattr(ai_generate, "generate_master_from_folder", fake)
+    return client.post(f"/p/{entry.name}/import_master/scan", data={"intent": "x"})
+
+
+def test_master_draft_is_safe_by_default(overview_client, monkeypatch) -> None:
+    """ADO-155: перезапись снята, список файлов свёрнут, план — select из планов проекта."""
+    import re
+
+    client, entry = overview_client
+    r = _scan_draft(client, entry, monkeypatch)
+    assert r.status_code == 200
+    overwrite = re.search(r'<input[^>]*name="write_master"[^>]*>', r.text)
+    assert overwrite is not None
+    assert "checked" not in overwrite.group(0)
+    files = re.search(r"<details[^>]*>(?=\s*<summary><strong>Files scanned)", r.text)
+    assert files is not None
+    assert " open" not in files.group(0)
+    assert "(2)" in r.text
+    select = re.search(r'<select name="plan_scope">(.*?)</select>', r.text, re.S)
+    assert select is not None
+    assert '<option value="">— не создавать задачи —</option>' in select.group(1)
+    assert '<option value="ov-bootstrap">ov-bootstrap</option>' in select.group(1)
+    assert 'type="text" name="plan_scope"' not in r.text
+
+
+def test_overview_import_block_explains_proposal(overview_client) -> None:
+    client, entry = overview_client
+    r = client.get(f"/p/{entry.name}")
+    assert "Предложить MASTER.md" in r.text
+    assert 'hx-disabled-elt="find button"' in r.text
+    assert 'hx-indicator="#master-scan-indicator"' in r.text
+    assert "сканирую…" in r.text
+    assert "Текущий MASTER.md" in r.text
 
 
 # ── ADO-112: MASTER-превью не показывает YAML-frontmatter ────────────────
@@ -444,7 +541,8 @@ def test_plan_progress_status_is_a_badge(overview_client) -> None:
     """ADO-107: статус плана — цветной бейдж, не голый текст."""
     client, entry = overview_client
     r = client.get(f"/p/{entry.name}")
-    assert 'class="badge badge-in-progress"' in r.text or 'class="badge badge-pending"' in r.text
+    assert "l-tag" in r.text
+    assert "l-group-title" in r.text
 
 
 def test_ready_row_button_says_what_it_does(overview_client) -> None:

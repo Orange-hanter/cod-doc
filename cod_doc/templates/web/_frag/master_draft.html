@@ -5,7 +5,7 @@
 
 {% if master_md %}
   <form method="post" action="/p/{{ project.name }}/import_master/save" class="draft-form">
-    <details open class="overview-block">
+    <details class="overview-block">
       <summary><strong>Files scanned</strong> ({{ files_seen | length }})</summary>
       <ul>
         {% for f in files_seen %}
@@ -15,13 +15,13 @@
     </details>
 
     <fieldset class="draft-card">
-      <legend>Proposed MASTER.md</legend>
+      <legend>Предложение: MASTER.md</legend>
       <label class="field">
         <textarea name="master_md" rows="20" class="mono">{{ master_md }}</textarea>
       </label>
       <label class="field-checkbox">
-        <input type="checkbox" name="write_master" checked>
-        <span>Overwrite existing MASTER.md on Save</span>
+        <input type="checkbox" name="write_master">
+        <span>Overwrite existing MASTER.md — при Save текущий файл будет заменён этим текстом. Без галочки файл не меняется.</span>
       </label>
     </fieldset>
 
@@ -29,8 +29,13 @@
       <legend>Coverage tasks ({{ coverage_tasks | length }})</legend>
       {% if coverage_tasks %}
         <label class="field">
-          <span class="muted-tiny">Plan scope to attach tasks to (e.g. <code>cod-doc</code>)</span>
-          <input type="text" name="plan_scope" placeholder="leave blank to skip task creation">
+          <span class="muted-tiny">План, в который попадут отмеченные задачи</span>
+          <select name="plan_scope">
+            <option value="">— не создавать задачи —</option>
+            {% for scope in plan_scopes %}
+              <option value="{{ scope }}">{{ scope }}</option>
+            {% endfor %}
+          </select>
         </label>
         {% for d in coverage_tasks %}
           <fieldset class="draft-card">
@@ -76,7 +81,8 @@
     </fieldset>
 
     <div class="form-actions">
-      <button type="submit" class="btn-primary">Save MASTER.md &amp; tasks</button>
+      <button type="submit" class="btn-primary">Сохранить: MASTER.md и/или {{ coverage_tasks | length }} задач</button>
+      <span class="muted-tiny">Запишется MASTER.md (если стоит галочка перезаписи) и отмеченные задачи покрытия (если выбран план).</span>
     </div>
   </form>
 {% endif %}

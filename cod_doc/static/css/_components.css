@@ -1182,33 +1182,6 @@ a.nav-card-title:hover { color: var(--accent); }
   white-space: pre;
 }
 
-/* ── Revisions list ───────────────────────────────────────────────────── */
-.rev-list { list-style: none; padding: 0; margin: 0; }
-/* ADO-153: flex-wrap вместе с `margin-left:auto` у метки времени разъезжались,
-   как только строка переносилась — время улетало в начало второй строки.
-   Сетка держит колонки на месте, длинная причина обрезается. */
-.rev-list li {
-  padding: var(--space-1) 0;
-  border-bottom: 1px solid var(--border-soft);
-  font-size: calc(12px * var(--text-scale, 1));
-  display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr) max-content;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.rev-list li:last-child { border-bottom: 0; }
-.rev-list li > * { min-width: 0; }
-.rev-list .rev-reason {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rev-list .ts { justify-self: end; white-space: nowrap; }
-@media (max-width: 700px) {
-  .rev-list li { grid-template-columns: minmax(0, 1fr) max-content; }
-  .rev-list .rev-reason { grid-column: 1 / -1; }
-}
-
 /* ADO-122: `max-width` на <td> в таблице с border-collapse браузером
    игнорируется, поэтому многоточие никогда не срабатывало, а `nowrap`
    растягивал строку — колонка Diff уезжала за экран. Обрезку делает

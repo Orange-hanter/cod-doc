@@ -79,6 +79,30 @@ def _render_task_row(
     return HTMLResponse(row_html + _render_oob_alert(inline_alert))
 
 
+_READY_ROW_CALL = (
+    '{% from "_frag/overview_ready_row.html" import ready_row %}{{ ready_row(t, slug) }}'
+)
+
+
+def _render_overview_ready_row(
+    *,
+    project_name: str,
+    task: Any,
+    inline_alert: tuple[str, str] | None = None,
+) -> HTMLResponse:
+    """Строка «Готовы к старту» Overview (WUI-014) плюс OOB-алерт, как у `_render_task_row`."""
+    row_html = templates.env.from_string(_READY_ROW_CALL).render(
+        t={
+            "task_id": task.task_id,
+            "title": task.title,
+            "status": task.status.value,
+            "priority": task.priority.value,
+        },
+        slug=project_name,
+    )
+    return HTMLResponse(row_html + _render_oob_alert(inline_alert))
+
+
 def _render_oob_alert(inline_alert: tuple[str, str] | None) -> str:
     if inline_alert is None:
         return ""
