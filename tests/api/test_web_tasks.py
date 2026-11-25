@@ -628,3 +628,86 @@ def test_board_rows_endpoint_unknown_group_404(tasks_client) -> None:
     client, entry = tasks_client
     assert client.get(f"/p/{entry.name}/tasks/rows?group=nope").status_code == 404
     assert client.get("/p/nope/tasks/rows?group=todo").status_code == 404
+
+
+_HIDE_BOX = re.compile(r'<input type="checkbox" name="hide_closed" value="1"( checked)?')
+
+
+def test_board_hide_closed_drops_closed_group(tasks_client) -> None:
+    client, entry = tasks_client
+    plain = client.get(f"/p/{entry.name}/tasks").text
+    box = _HIDE_BOX.search(plain)
+    assert box is not None
+    assert box.group(1) is None
+    assert "Скрыть закрытые (1)" in plain
+    assert 'data-status-group="done"' in plain
+
+    hidden = client.get(f"/p/{entry.name}/tasks?hide_closed=1").text
+    box = _HIDE_BOX.search(hidden)
+    assert box is not None
+    assert box.group(1) == " checked"
+    assert 'data-status-group="done"' not in hidden
+    assert 'id="card-AUTH-003"' not in hidden
+    assert 'id="card-AUTH-001"' in hidden
+    assert "Показано 2 из 2 · скрыто закрытых: 1" in hidden
+    # Счётчик шапки по-прежнему считает все задачи.
+    assert "3 задач" in hidden
+
+
+def test_hide_closed_survives_other_controls(tasks_client) -> None:
+    """Сортировка, вид и план не сбрасывают чекбокс, чекбокс не сбрасывает их."""
+    client, entry = tasks_client
+    url = f"/p/{entry.name}/tasks?plan=auth-bootstrap&sort=title&status=blocked&hide_closed=1"
+    body = client.get(url).text
+    for name, value in (("plan", "auth-bootstrap"), ("sort", "title"), ("status", "blocked")):
+        assert f'<input type="hidden" name="{name}" value="{value}">' in body
+    assert '<input type="hidden" name="hide_closed"' not in body
+    chains_href = re.search(r'href="([^"]*view=chains[^"]*)"', body)
+    assert chains_href is not None
+    assert "hide_closed=1" in chains_href.group(1)
+    sort_href = re.search(r'href="([^"]*sort=updated[^"]*)"', body)
+    assert sort_href is not None
+    assert "hide_closed=1" in sort_href.group(1)
+
+
+def test_chains_hide_closed_drops_cards_and_dangling_refs(tasks_client) -> None:
+    client, entry = tasks_client
+    factory = make_session_factory(make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db"))
+    with transactional(factory) as session:
+        tasks.add_dependency(
+            session,
+            task_id="AUTH-001",
+            blocker_task_id="AUTH-003",
+            note="needs token rotation",
+            author="human:test",
+            project_id=sole_project_id(session),
+        )
+    full = client.get(f"/p/{entry.name}/tasks?view=chains").text
+    assert 'id="card-AUTH-003"' in full
+    assert "#card-AUTH-003" in full
+
+    hidden = client.get(f"/p/{entry.name}/tasks?view=chains&hide_closed=1").text
+    assert 'id="card-AUTH-003"' not in hidden
+    assert "#card-AUTH-003" not in hidden
+    assert 'id="card-AUTH-001"' in hidden
+    # Шапка цепочки считает закрытые, пустых колонок нет.
+    assert "<strong>1</strong> done" in hidden
+    lanes = hidden.count('class="chain-lane"')
+    assert f"repeat({lanes}," in hidden
+
+
+def test_hide_closed_when_everything_is_closed(tasks_client) -> None:
+    client, entry = tasks_client
+    factory = make_session_factory(make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db"))
+    with transactional(factory) as session:
+        for task_id in ("AUTH-001", "AUTH-002"):
+            tasks.complete(
+                session,
+                task_id=task_id,
+                author="human:test",
+                project_id=sole_project_id(session),
+            )
+    for view in ("board", "chains"):
+        body = client.get(f"/p/{entry.name}/tasks?view={view}&hide_closed=1").text
+        assert "Открытых задач нет, закрытые скрыты: 3." in body
+        assert 'id="card-' not in body

@@ -243,6 +243,15 @@
   border-radius: var(--radius-md);
 }
 .list-filter:focus { outline: 2px solid var(--accent-soft-bg); border-color: var(--accent); }
+.list-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: calc(13px * var(--text-scale, 1));
+  white-space: nowrap;
+  cursor: pointer;
+}
+.list-check input { width: auto; margin: 0; accent-color: var(--accent); }
 .list-filter.list-filter-empty { border-color: var(--warning-border); }
 
 /* Status-tinted accents for specific buttons when active. */
