@@ -93,13 +93,20 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from sqlalchemy import func, insert, select
 
 from cod_doc.domain.entities import EntityKind
+from cod_doc.domain.relations import RefKind
 from cod_doc.infra import ordering
 from cod_doc.infra import sync_capture as cap
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra import sync_withdraw as cap_withdraw
 from cod_doc.infra.hlc import MAX_DRIFT_MS, Hlc, clock_for, self_replica, wall_ms
-from cod_doc.infra.models import Base, EntityAliasModel, SyncConflictModel, SyncOpModel
-from cod_doc.services import search_service
+from cod_doc.infra.models import (
+    Base,
+    EntityAliasModel,
+    SectionModel,
+    SyncConflictModel,
+    SyncOpModel,
+)
+from cod_doc.services import entity_events, search_service
 from cod_doc.services.sync_service import _local, markers, merge
 from cod_doc.services.sync_service._values import from_wire
 from cod_doc.services.sync_service.errors import ObjectMissingError
@@ -814,6 +821,25 @@ def _natural_twin(
     return None
 
 
+def _publish_deleted(session: Session, project_id: int, table: str, uid: str, obj: object) -> None:
+    """`EntityDeleted` для рёбер графа связей (RFC 39 §3.5); автора нет — снимаются молча.
+
+    Удаление документа сносит и его секции каскадом без собственных операций,
+    поэтому рёбра секций снимаются здесь же.
+    """
+    kind = entity_events.KIND_BY_TABLE.get(table)
+    if kind is None:
+        return
+    if table == "document":
+        for (sec_uid,) in session.execute(
+            select(SectionModel.uid).where(SectionModel.document_id == getattr(obj, _ROW_ID))
+        ).all():
+            entity_events.publish_deleted(
+                session, project_id, RefKind.SECTION, sec_uid, key=None, author=None
+            )
+    entity_events.publish_deleted(session, project_id, RefKind(kind), uid, key=None, author=None)
+
+
 def _apply_delete(
     session: Session, project: ProjectRef, op: Op, touched: Touched, ctx: merge.Context
 ) -> None:
@@ -843,6 +869,7 @@ def _apply_delete(
         _check_cascade(session, project, info.table, row_id)
         tombstone.before_delete(session, ctx, info.table, row_id, op)
     _note(touched, info.table, obj, deleted=True, base=op.base)
+    _publish_deleted(session, project.row_id, info.table, op.entity_uid, obj)
     session.delete(obj)
     # Сразу в БД: следующая операция того же uid (ребро снято и поставлено снова)
     # иначе нашла бы удаляемый объект в identity map и легла правкой в него (CLO-027).
@@ -1214,7 +1241,6 @@ def _rebuild_links(session: Session, section_ids: Iterable[int]) -> None:
     секции до ``cod-doc link backfill``. SAVEPOINT — чтобы сбой не испортил
     транзакцию применения.
     """
-    from cod_doc.infra.models import SectionModel
     from cod_doc.services import link_service
 
     for section_id in sorted(section_ids):

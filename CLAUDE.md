@@ -370,6 +370,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_project_lookup_single_source.py` | `cod_doc/{cli,api,mcp}` не ищут проект по слагу сами: только `services.project_lookup` (в CLI — `cli/_common.require_project_id[_click]`) (SVC-008) |
 | `services/test_presentation_no_orm_writes.py` | `cod_doc/{mcp,cli,api}` не пишут в ORM мимо сервисов: ни `session.add/delete/merge`, ни `*Repository(...).add/update/delete` (включая форму через локальную переменную); allowlist пуст (ADO-208, RFC 26 §5.1) |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
+| `services/test_entity_deleted_published.py` | каждая функция services, что удаляет строку сущности (`RefKind`), публикует `entity_events.EntityDeleted`; прочие удаления — в `NOT_ENTITY` с обоснованием, список только сокращается (RFC 39 §3.5, REL-007) |
 | `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
 | `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); долга нет — `update_status` и `delete` выставлены в DEBT-005/006 |

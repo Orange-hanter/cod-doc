@@ -383,3 +383,30 @@ def test_event_errors_are_not_swallowed(w: W) -> None:
         pytest.raises(RuntimeError, match="boom"),
     ):
         w.relate("story:US-064", "see_also", "story:US-007")
+
+
+def test_deleting_an_endpoint_removes_edges_in_both_directions(w: W) -> None:
+    """REL-007: question_service.delete публикует EntityDeleted: рёбра сняты, след остался."""
+    from cod_doc.services import question_service
+
+    w.question("Q-002")
+    w.relate("question:Q-001", "about", "story:US-007")  # удаляемый — источник
+    w.relate("question:Q-002", "duplicates", "question:Q-001")  # удаляемый — цель
+    w.relate("question:Q-002", "about", "story:US-007")  # чужое ребро остаётся
+    question_service.delete(w.s, project_id=w.pid, question_id="Q-001", author=AUTHOR)
+    left = w.s.scalars(select(RelationModel)).all()
+    assert [(r.from_kind, r.to_kind, r.type) for r in left] == [("question", "story", "about")]
+    removed = w.s.scalars(
+        select(ActivityEventModel).where(ActivityEventModel.kind == "relation.removed")
+    ).all()
+    assert len(removed) == 2
+    assert {e.payload["reason"] for e in removed} == {"endpoint_deleted"}
+    # источник пережил удаление цели: ревизия на нём (Q-002)
+    q2 = w.s.scalars(
+        select(OpenQuestionModel).where(OpenQuestionModel.question_id == "Q-002")
+    ).one()
+    assert w.s.scalars(
+        select(RevisionModel).where(
+            RevisionModel.entity_id == q2.row_id, RevisionModel.reason == "endpoint_deleted"
+        )
+    ).all()

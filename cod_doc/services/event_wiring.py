@@ -1,7 +1,8 @@
 """Точка сборки подписчиков событий services (SVC-007).
 
 `doc_service` публикует события (`doc_events`), `link_service` на них
-реагирует; связывает их этот модуль, и только он знает обе стороны. Его
+реагирует; связывает их этот модуль, и только он знает обе стороны. Так же
+`EntityDeleted` (`entity_events`) → `relation_service` (RFC 39 §3.5). Его
 зовут точки входа до первой записи документа: корневая группа CLI, модуль
 MCP-сервера, модуль web-приложения; в тестах — autouse-фикстура
 `tests/conftest.py`. Пропущенная точка входа не молчит: публикация без
@@ -15,8 +16,10 @@ CLI зовёт `install()` не на импорте, а в колбэке кор
 from __future__ import annotations
 
 from cod_doc.services.link_service import doc_event_handlers
+from cod_doc.services.relation_service import cleanup as relation_cleanup
 
 
 def install() -> None:
     """Подписать обработчики на события документов. Идемпотентна."""
     doc_event_handlers.register()
+    relation_cleanup.register()
