@@ -69,6 +69,8 @@ MIGRATIONS: Mapping[str, bool] = MappingProxyType(
         "0056_oidc_web_login": False,
         # project_member.role — колонка local-таблицы хранилища доступа (0057).
         "0057_responder_role": False,
+        # relation, relation_type — новые authored-таблицы (RFC 39, REL-005).
+        "0058_relation_graph": True,
     }
 )
 

@@ -39,6 +39,9 @@ from tests._alembic import run_alembic
 if TYPE_CHECKING:
     from types import ModuleType
 
+#: Authored-таблицы, появившиеся после 0049: бэкфилл 0049 их не знает.
+_AFTER_0049 = frozenset({"relation", "relation_type"})
+_AT_0049 = UID_TABLES - _AFTER_0049
 _THIS = "0049_sync_identity"
 _MIGRATIONS = Path(__file__).resolve().parents[2] / "cod_doc" / "infra" / "migrations"
 _UUID7 = 7
@@ -408,7 +411,7 @@ def test_every_authored_row_has_unique_uid(upgraded: tuple[Path, dict[str, int]]
     db_path, _ = upgraded
     conn = sqlite3.connect(db_path)
     try:
-        for table in sorted(UID_TABLES):
+        for table in sorted(_AT_0049):
             rows = conn.execute(f"SELECT row_id, uid FROM {_ident(table)}").fetchall()
             assert all(uid for _, uid in rows), f"{table}: строка без uid"
             assert len({uid for _, uid in rows}) == len(rows), f"{table}: uid повторяется"
@@ -455,7 +458,7 @@ def test_edge_uid_matches_registry(upgraded: tuple[Path, dict[str, int]]) -> Non
     db_path, _ = upgraded
     conn = sqlite3.connect(db_path)
     try:
-        edges = sorted(t for t in UID_TABLES if spec_for(t).deterministic_uid)
+        edges = sorted(t for t in _AT_0049 if spec_for(t).deterministic_uid)
         assert edges, "в реестре нет рёбер с uid"
         for table in edges:
             for row_id, uid in conn.execute(f"SELECT row_id, uid FROM {_ident(table)}"):
@@ -471,9 +474,9 @@ def test_migration_freezes_registry_contract() -> None:
     уже выданные uid рёбер с ним не сойдутся.
     """
     module = _script(_THIS)
-    assert frozenset(module.UID_TABLES) == UID_TABLES
+    assert frozenset(module.UID_TABLES) == _AT_0049
     assert {t: cols for t, (cols, _) in module.EDGE_KEYS.items()} == {
-        t: spec_for(t).deterministic_uid for t in UID_TABLES if spec_for(t).deterministic_uid
+        t: spec_for(t).deterministic_uid for t in _AT_0049 if spec_for(t).deterministic_uid
     }
     assert (
         str(importlib.import_module("cod_doc.infra.sync_registry").EDGE_UID_NAMESPACE)

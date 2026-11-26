@@ -53,6 +53,7 @@ from .plans import (
 )
 from .project import ProjectModel
 from .questions import OpenQuestionModel, QuestionLinkModel, QuestionOptionModel
+from .relations import RelationModel, RelationTypeModel
 from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
 from .revisions import AgentRunModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
@@ -147,6 +148,8 @@ __all__ = [
     "ProjectModel",
     "QuestionLinkModel",
     "QuestionOptionModel",
+    "RelationModel",
+    "RelationTypeModel",
     "ReplicaModel",
     "RepoFileModel",
     "RepoImportModel",
