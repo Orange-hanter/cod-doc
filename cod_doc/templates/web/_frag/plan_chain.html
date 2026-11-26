@@ -38,11 +38,11 @@
   </header>
 
   {# Critical path strip: visualises the longest sequential chain. #}
-  {% if chain.critical_path | length > 1 %}
+  {% if chain.critical_strip | length > 1 %}
     <div class="chain-cp-strip" aria-label="Critical path">
       <span class="chain-cp-label">🔥 Critical path</span>
       <div class="chain-cp-flow">
-        {% for tid in chain.critical_path %}
+        {% for tid in chain.critical_strip %}
           <a class="chain-cp-node" href="#card-{{ tid }}">{{ tid }}</a>
           {% if not loop.last %}<span class="chain-cp-arrow">→</span>{% endif %}
         {% endfor %}
@@ -71,8 +71,8 @@
 
   {# Topological lanes: one column per dependency depth. #}
   <div class="chain-grid"
-       style="grid-template-columns: repeat({{ (chain.max_level + 1) }}, minmax(220px, 1fr));">
-    {% for level in chain.levels %}
+       style="grid-template-columns: repeat({{ chain.lanes | length }}, minmax(220px, 1fr));">
+    {% for level in chain.lanes %}
       <div class="chain-lane" data-level="{{ level.level }}">
         <div class="chain-lane-head">
           <span class="chain-lane-num">L{{ level.level }}</span>

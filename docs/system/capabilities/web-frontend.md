@@ -125,7 +125,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `GET /p/{slug}/roadmap` | Дорожная карта: очередь всего проекта по планам (ранг) и прогноз p50/p85 по пропускной способности — не сроки; тумблеры `history` (факт) и `backlog` | `roadmap_service.build/history` | ✅ | ROAD-007 |
 | `POST /p/{slug}/roadmap/plans/{scope}/move` | HTMX: план выше/ниже соседа на дорожной карте, ответ — перерисованное тело экрана | `plan_service.move_plan` | ✅ | ROAD-008 |
 | **Задачи — список и detail**  | | | |
-| `GET /p/{slug}/tasks` | Список задач (kanban board / chains, фильтр plan/status) | `task_service.list_for_project` + `plan_service` | ✅ | WEB-010 |
+| `GET /p/{slug}/tasks` | Список задач (kanban board / chains, фильтр plan/status, `?hide_closed=1` — без закрытых) | `task_service.list_for_project` + `plan_service` | ✅ | WEB-010 |
 | `GET /p/{slug}/tasks/rows` | htmx-догрузка строк группы доски (`group`, `offset`, `plan`, `?sort=`): страница несёт 25 строк группы, «Показать ещё» тянет следующие 100 | `task_service.list_for_project` | ✅ | WUI-013 |
 | `GET /p/{slug}/tasks/{task_id}` | Деталь задачи (header + chains + history + trace) | `task_service.get` + `plan_service.forward/reverse_chain` + `revision_service` + `trace_service` | ✅ | WEB-070 |
 | `POST /p/{slug}/tasks/audit` | AI-аудит consistency всех задач проекта | `ai_text._call_lite_raw` + `task_service.list_for_project` | ✅ | OBI-tasks |

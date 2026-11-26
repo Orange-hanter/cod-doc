@@ -27,7 +27,7 @@
 
     {# ── Шапка на ките Ledger. Метрики — чипы со счётчиками: три ссылаются на
        `?status=`, «no AC» и «critical» — метки без ссылки. ─────────────────── #}
-    {%- set _q = (("&plan=" ~ (selected_plan | urlencode)) if selected_plan else "") ~ (("&" ~ sort.query) if sort.query else "") %}
+    {%- set _q = (("&plan=" ~ (selected_plan | urlencode)) if selected_plan else "") ~ (("&" ~ sort.query) if sort.query else "") ~ ("&hide_closed=1" if hide_closed else "") %}
     <div id="tasks-stats" data-peek-refresh>
       {% call ui.page_header("Задачи", eyebrow="tasks · " ~ project.name, lead=stats.total ~ " задач · " ~ stats.pct_done ~ "% готово") %}
         <form hx-post="/p/{{ project.name }}/tasks/audit"
@@ -46,13 +46,14 @@
     </div>
 
     {# ── View toggle: Board (kanban) | Chains (dependency graph) ────────── #}
-    {# Смена вида и плана сохраняет сортировку (WUI-006). Адрес собирается
-       из списка параметров: без плана и вида ссылка не начинается с `?&`. #}
+    {# Смена вида и плана сохраняет сортировку (WUI-006) и «Скрыть закрытые».
+       Адрес собирается из списка параметров: без плана и вида ссылка не начинается с `?&`. #}
     {% macro tasks_url(chains=False, plan='') -%}
       {%- set parts = [] -%}
       {%- if chains %}{% set _ = parts.append('view=chains') %}{% endif -%}
       {%- if plan %}{% set _ = parts.append('plan=' ~ (plan | urlencode)) %}{% endif -%}
       {%- if sort.query %}{% set _ = parts.append(sort.query) %}{% endif -%}
+      {%- if hide_closed %}{% set _ = parts.append('hide_closed=1') %}{% endif -%}
       /p/{{ project.name }}/tasks{% if parts %}?{{ parts | join('&') }}{% endif %}
     {%- endmacro %}
     <div class="tasks-view-row">
@@ -82,6 +83,16 @@
     <div class="list-controls">
       {{ sorting.toggle(sort) }}
       {% if view == 'board' %}{{ sorting.filter("#tasks-body", "Фильтр по загруженным задачам… (/)") }}{% endif %}
+      {# Остальные параметры запроса (план, вид, сортировка, status) форма несёт
+         скрытыми полями; снятый чекбокс не отправляется — параметр исчезает. #}
+      <form method="get" action="/p/{{ project.name }}/tasks">
+        {% for k, v in sort.params.items() if k != 'hide_closed' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <label class="list-check">
+          <input type="checkbox" name="hide_closed" value="1"{% if hide_closed %} checked{% endif %}
+                 autocomplete="off" onchange="this.form.submit()">
+          Скрыть закрытые ({{ stats.closed }})
+        </label>
+      </form>
     </div>
 
     {% if status_invalid %}
@@ -91,7 +102,7 @@
     {% if status_filter %}
       <p class="muted-tiny" style="margin-bottom:var(--space-2);">
         Highlighting column: <code>{{ status_filter }}</code>
-        <a href="/p/{{ project.name }}/tasks{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">clear</a>
+        <a href="{{ tasks_url(plan=selected_plan) }}">clear</a>
       </p>
     {% endif %}
 
@@ -108,11 +119,15 @@
         <p class="muted">
           {% if selected_plan %}
             В плане <code>{{ selected_plan }}</code> ещё нет задач.
-            <a href="/p/{{ project.name }}/tasks">Показать все планы</a>.
+            <a href="{{ tasks_url() }}">Показать все планы</a>.
           {% else %}
             Задач ещё нет. Создай план или запусти агента.
           {% endif %}
         </p>
+      </div>
+    {% elif hide_closed and stats.closed == stats.total %}
+      <div class="tasks-empty">
+        <p class="muted">Открытых задач нет, закрытые скрыты: {{ stats.closed }}.</p>
       </div>
     {% elif view == 'chains' %}
       {% if not chains %}
@@ -139,7 +154,8 @@
         {% endcall %}
       {% endfor %}
       <p class="muted" style="margin-top:var(--space-2); font-size:calc(12px * var(--text-scale, 1));">
-        Показано {{ shown }} из {{ stats.total }}
+        Показано {{ shown }} из {{ stats.total - (stats.closed if hide_closed else 0) }}
+        {%- if hide_closed and stats.closed %} · скрыто закрытых: {{ stats.closed }}{% endif %}
       </p>
     {% endif %}
     </div>

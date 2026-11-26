@@ -58,6 +58,10 @@ _BOARD_ORDER: tuple[str, ...] = (
     "cancelled",
 )
 
+# Бакеты закрытых задач: свёрнуты по умолчанию, чекбокс «Скрыть закрытые»
+# (`?hide_closed=1`) убирает их со страницы совсем.
+_CLOSED_COLS: frozenset[str] = frozenset({"done", "cancelled"})
+
 # WUI-013: сколько строк группы сервер кладёт в страницу (в orakul одна группа
 # `done` — сотни задач, и рендерить их все ради свёрнутого списка незачем), и
 # сколько отдаёт одной догрузкой `/tasks/rows`. Остальное — кнопка «ещё».
@@ -96,6 +100,14 @@ def _column_for(status: str) -> str | None:
         if status in members:
             return key
     return None
+
+
+def _is_closed(status: str) -> bool:
+    return _column_for(status) in _CLOSED_COLS
+
+
+def _board_keys(hide_closed: bool) -> list[str]:
+    return [k for k in _BOARD_ORDER if not (hide_closed and k in _CLOSED_COLS)]
 
 
 def _task_rows(
@@ -156,6 +168,29 @@ def _bucket_rows(
     )
 
 
+def _visible_lanes(levels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Уровни цепочки без закрытых задач и без опустевших колонок.
+
+    Чипы ↑/↓ ведут на якоря карточек, поэтому ссылки на скрытые карточки
+    убираются вместе с ними.
+    """
+    closed = {t["task_id"] for lvl in levels for t in lvl["tasks"] if _is_closed(t["status"])}
+    lanes: list[dict[str, Any]] = []
+    for lvl in levels:
+        open_tasks = [
+            {
+                **t,
+                "prereq_ids": [i for i in t["prereq_ids"] if i not in closed],
+                "dep_ids": [i for i in t["dep_ids"] if i not in closed],
+            }
+            for t in lvl["tasks"]
+            if t["task_id"] not in closed
+        ]
+        if open_tasks:
+            lanes.append({"level": lvl["level"], "tasks": open_tasks})
+    return lanes
+
+
 def _enrich_chain(
     session: Session,
     plan_id: int,
@@ -163,11 +198,15 @@ def _enrich_chain(
     project_id: int,
     sort: SortState,
     dates: dict[str, dict[str, Any]],
+    *,
+    hide_closed: bool,
 ) -> dict[str, Any]:
     """Wrap ``plan_service.chain_layout`` with display-only fields (scope label,
     type glyphs, dates for ``?sort=``) so the template stays free of computation.
 
     ``dates`` — ``task_id → {created, last_updated}`` из строк доски.
+    ``lanes``/``critical_strip`` — то, что рисуется; ``levels`` и
+    ``critical_path`` остаются полными, по ним считает шапка.
     """
     raw = plans.chain_layout(session, plan_id, project_id=project_id)
     levels: list[dict[str, Any]] = []
@@ -182,14 +221,17 @@ def _enrich_chain(
         ]
         levels.append({"level": lvl_bucket["level"], "tasks": sort.apply(tasks_with_glyph)})
 
+    lanes = _visible_lanes(levels) if hide_closed else levels
+    drawn = {t["task_id"] for lane in lanes for t in lane["tasks"]}
     return {
         "scope": scope,
         "levels": levels,
+        "lanes": lanes,
         "critical_path": raw["critical_path"],
+        "critical_strip": [i for i in raw["critical_path"] if not hide_closed or i in drawn],
         "ready_ids": raw["ready_ids"],
         "edge_count": raw["edge_count"],
         "task_count": raw["task_count"],
-        "max_level": raw["max_level"],
     }
 
 
@@ -200,6 +242,7 @@ def tasks_list(
     plan: str | None = None,
     status: str | None = None,
     view: str = "board",
+    hide_closed: str = "",
 ) -> HTMLResponse:
     """Task list with two layout modes:
 
@@ -208,8 +251,10 @@ def tasks_list(
       levels per plan, critical path highlighted, ready set marked.
 
     ``?plan=<scope>`` restricts the rendering to one plan. ``?status=<value>``
-    in board mode highlights the matching column.
+    in board mode highlights the matching column. ``?hide_closed=1`` drops
+    done/cancelled tasks from both layouts; header stats still count them.
     """
+    hide = hide_closed == "1"
     proj = get_project(slug)
     if view not in ("board", "chains"):
         view = "board"
@@ -258,8 +303,16 @@ def tasks_list(
                         continue
                     if plan and p.scope != plan:
                         continue
-                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id, sort, dates)
-                    if chain["task_count"] > 0:
+                    chain = _enrich_chain(
+                        session,
+                        p.row_id,
+                        p.scope,
+                        project_db_id,
+                        sort,
+                        dates,
+                        hide_closed=hide,
+                    )
+                    if chain["lanes"]:
                         chains.append(chain)
 
     # Apply plan filter (if any).  Plan filter is by scope string.
@@ -274,6 +327,7 @@ def tasks_list(
         "total": total,
         "done": sum(1 for r in rows if r["status"] == "done"),
         "in_progress": sum(1 for r in rows if r["status"] in ("in_progress", "in-progress")),
+        "closed": sum(1 for r in rows if _is_closed(r["status"])),
         "blocked": sum(1 for r in rows if r["status"] == "blocked"),
         "in_review": sum(1 for r in rows if r["status"] == "in_review"),
         "missing_ac": sum(1 for r in rows if not r["has_acceptance"] and r["status"] != "done"),
@@ -288,7 +342,7 @@ def tasks_list(
     meta = {key: (label, icon, members) for key, label, icon, members in _KANBAN_COLS}
     columns: list[dict[str, Any]] = []
     shown = 0
-    for key in _BOARD_ORDER:
+    for key in _board_keys(hide):
         label, icon, members = meta[key]
         col_tasks = _bucket_rows(rows, key, None, sort)
         if not col_tasks:
@@ -306,7 +360,7 @@ def tasks_list(
                 "remaining": len(col_tasks) - len(visible),
                 # Done/Cancelled свёрнуты — их меньше всего сканируют; группа
                 # из `?status=` открыта всегда.
-                "open": highlighted or key not in ("done", "cancelled"),
+                "open": highlighted or key not in _CLOSED_COLS,
                 "highlighted": highlighted,
             }
         )
@@ -324,6 +378,7 @@ def tasks_list(
             "stats": stats,
             "plans": sorted(plan_list, key=lambda p: p["scope"]),
             "selected_plan": plan or "",
+            "hide_closed": hide,
             "db_available": db_available,
             "status_filter": status_filter.value if status_filter else "",
             "status_invalid": status_invalid,
