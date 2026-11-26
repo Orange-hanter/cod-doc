@@ -58,10 +58,8 @@ def test_add_ls_rm_roundtrip_json(runner: CliRunner) -> None:
     assert [(r["label"], r["other"], r["source"]) for r in rows] == [
         ("relates_to", "story:US-064", "relation")
     ]
-    both = json.loads(_run(runner, "ls", "story:US-007", "-p", "p", "--in", "--json")) + json.loads(
-        _run(runner, "ls", "story:US-007", "-p", "p", "--out", "--json")
-    )
-    assert both == rows
+    assert json.loads(_run(runner, "ls", "story:US-007", "-p", "p", "--out", "--json")) == rows
+    assert json.loads(_run(runner, "ls", "story:US-007", "-p", "p", "--in", "--json")) == []
     assert (
         json.loads(_run(runner, "ls", "story:US-007", "-p", "p", "-t", "verifies", "--json")) == []
     )

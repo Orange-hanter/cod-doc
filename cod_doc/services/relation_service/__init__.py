@@ -15,7 +15,8 @@ from ._types import (
     RelationView,
     VerifyReport,
 )
-from .edges import relate, relations, unrelate
+from .edges import relate, unrelate
+from .read import relations
 from .serialize import edge_to_dict, report_to_dict, type_info_to_dict, view_to_dict
 from .types import define_type, deprecate_type, relation_types
 from .verify import verify

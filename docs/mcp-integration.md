@@ -44,7 +44,7 @@ MCP (Model Context Protocol) — стандартный протокол для 
 | `ctx_drift(project, limit?)` | Дрейф markdown ↔ БД по всему проекту: `edited_in_place` / `stale_export` / `missing` / `conflict` (ACU-001: правили и БД, и файл — `doc export` откажет по guard'у) (`= doc_drift_all`). Сканируется весь корпус; `limit` режет только `issues`, `truncated: true` — строк больше, чем показано; `problem_count`/`counts` — по всему корпусу (AFT-003). |
 | `context_get(project, target_kind, target_id, depth?)` | Snowball-пакет (L0/L1/L2) под token budget. |
 | `agent_report(project, task_id, kind, message, agent_id?, payload?)` | Dispatcher. `kind ∈ {progress, blocker, approval_request, needs_context}` — эскалация человеку. |
-| `relations(project, ref, direction?, types?)` / `relation_types(project, from_kind?, to_kind?)` | Навигация по графу связей (RFC 39): все связи сущности `kind:key` одной лентой и словарь допустимых отношений. Только чтение; запись связей — `relate` на профиле standard/full. |
+| `relations(project, ref, direction?, types?, include_derived?)` / `relation_types(project, from_kind?, to_kind?)` | Навигация по графу связей (RFC 39): все связи сущности `kind:key` одной лентой и словарь допустимых отношений. Лента единая: записанные связи, бэкенды (`dependency`, ADR), прежние таблицы связей и (при `include_derived`) ссылки из прозы и коммиты задачи; `source` у каждой записи. Только чтение; запись связей — `relate` на профиле standard/full. |
 
 ### Жизненный цикл куратора (canonical)
 

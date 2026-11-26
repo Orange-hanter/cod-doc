@@ -28,14 +28,12 @@ from cod_doc.domain.relations import (
 from cod_doc.infra import sync_registry
 from cod_doc.infra.models import ProjectModel, RelationModel
 from cod_doc.services import activity_service
-from cod_doc.services.entity_ref import ResolvedRef, describe, resolve_many
+from cod_doc.services.entity_ref import ResolvedRef, resolve_many
 
-from ._types import RelationEdge, RelationError, RelationView
+from ._types import RelationEdge, RelationError
 from ._vocab import Loaded, check_backend, load, unknown_type_error
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from sqlalchemy.orm import Session
 
     from cod_doc.domain.relation_types import RelationType
@@ -398,83 +396,3 @@ def unrelate(
         note=note,
     )
     return True
-
-
-def relations(
-    session: Session,
-    *,
-    project_id: int,
-    ref: str,
-    direction: str = "both",
-    types: Sequence[str] | None = None,
-) -> list[RelationView]:
-    """Рёбра сущности из `relation`; бэкенды, проза и коммиты — REL-011."""
-    try:
-        parsed = parse_ref(ref)
-    except RefSyntaxError as exc:
-        raise RelationError([f"ref: {exc}"]) from None
-    if direction not in {"out", "in", "both"}:
-        raise RelationError([f"direction: {direction!r}, допустимо out | in | both"])
-    if parsed.kind not in ENTITY_KINDS:
-        raise RelationError([f"ref: {parsed} — у code/url нет собственных связей"])
-    me = resolve_many(session, project_id, [parsed]).get(parsed)
-    if me is None:
-        raise RelationError([f"ref: {parsed} не найден"])
-    loaded = load(session, project_id)
-    wanted: set[str] | None = None
-    if types:
-        wanted = {e.type.name for (tok, _, _), e in loaded.vocab.entries.items() if tok in types}
-    by_name = {t.name: t for t in loaded.types}
-    rows: list[tuple[RelationModel, str]] = []
-    base = RelationModel.project_id == project_id
-    if direction in {"out", "both"}:
-        rows += [
-            (r, "out")
-            for r in session.scalars(
-                select(RelationModel).where(base, RelationModel.from_uid == me.uid)
-            )
-        ]
-    if direction in {"in", "both"}:
-        rows += [
-            (r, "in")
-            for r in session.scalars(
-                select(RelationModel).where(base, RelationModel.to_uid == me.uid)
-            )
-        ]
-    rows = [(r, d) for r, d in rows if wanted is None or r.type in wanted]
-    others = describe(
-        session,
-        project_id,
-        {
-            (
-                RefKind(r.to_kind if d == "out" else r.from_kind),
-                (r.to_uid if d == "out" else r.from_uid) or "",
-            )
-            for r, d in rows
-            if (r.to_uid if d == "out" else r.from_uid) is not None
-        },
-    )
-    out: list[RelationView] = []
-    for row, d in sorted(rows, key=lambda x: (x[0].row_id, x[1])):
-        rt = by_name.get(row.type)
-        label = row.type if d == "out" or rt is None or rt.symmetric else rt.inverse
-        uid = row.to_uid if d == "out" else row.from_uid
-        kind = RefKind(row.to_kind if d == "out" else row.from_kind)
-        hit = others.get(uid) if uid else None
-        if hit is not None:
-            other, title = EntityRef(kind, hit.key), hit.title
-        else:  # литерал, ссылка вперёд или конец, который уже удалён
-            other, title = EntityRef(kind, row.to_key or uid or "?"), None
-        out.append(
-            RelationView(
-                label=label,
-                type=row.type,
-                other=other,
-                other_title=title,
-                direction="out" if d == "out" else "in",
-                source="relation",
-                resolved=row.resolved and (hit is not None or uid is None),
-                note=row.note,
-            )
-        )
-    return out

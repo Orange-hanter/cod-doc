@@ -45,9 +45,12 @@ class RelationEdge:
 class RelationView:
     label: str  # name со стороны источника, inverse со стороны цели
     type: str
-    other: EntityRef
+    other: EntityRef | None  # None — конец не вида RefKind (коммит)
+    other_ref: str  # `kind:key` или `commit:<sha>`
     other_title: str | None
     direction: Literal["out", "in"]
+    #: relation | dependency | adr_relation | adr_supersedes | adr_task | story_link |
+    #: scenario_link | question_link | prose | commit
     source: str
     resolved: bool
     note: str | None

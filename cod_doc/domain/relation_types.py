@@ -14,12 +14,22 @@ from cod_doc.domain.relations import ENTITY_KINDS, RefKind
 _ALL_KINDS: frozenset[RefKind] = frozenset(RefKind)
 _MAX_SUGGEST_DISTANCE = 2
 
-#: Потребители, которых словарь признаёт. Пока это планируемые читатели;
-#: REL-011/012 сузят список до реальных мест вызова (гейт
-#: `test_relation_types_have_consumers` сверяет `consumers` с ним).
-KNOWN_CONSUMERS: frozenset[str] = frozenset(
+#: Потребители, которые существуют сейчас: dotted-путь к реальному вызываемому.
+#: `relation_service.relations` читает каждый тип (обратное имя, симметричность)
+#: и отдаёт ленту MCP `relations` и CLI `rel ls`. Гейт
+#: `test_relation_types_have_consumers` требует у каждого встроенного типа хотя бы
+#: одного потребителя отсюда и проверяет, что путь разрешается.
+KNOWN_CONSUMERS: frozenset[str] = frozenset({"relation_service.relations"})
+
+#: Потребители, которых ещё нет: веб-панель и контекст (REL-012), `plan_ready` и
+#: `adr_graph` на едином чтении (REL-016). Тип может их перечислять, но одних
+#: планируемых мало — иначе гейт перестал бы отличать метку от типа. Перенеси имя
+#: в `KNOWN_CONSUMERS`, когда читатель появится.
+PLANNED_CONSUMERS: frozenset[str] = frozenset(
     {"context_service.L1", "web.relations_panel", "plan_ready", "adr_graph"}
 )
+
+_READER = "relation_service.relations"
 
 
 @dataclass(frozen=True)
@@ -61,7 +71,7 @@ def _t(
         inverse=inverse,
         from_kinds=frozenset(from_kinds),
         to_kinds=frozenset(to_kinds),
-        consumers=frozenset(consumers),
+        consumers=frozenset(consumers) | {_READER},
         description=description,
         **flags,  # type: ignore[arg-type]
     )

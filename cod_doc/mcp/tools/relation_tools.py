@@ -97,11 +97,15 @@ def register(mcp: FastMCP) -> None:
         ref: str,
         direction: str = "both",
         types: list[str] | None = None,
+        include_derived: bool = True,
     ) -> list[dict[str, Any]]:
         """Все связи сущности одной лентой: ``label``, ``other`` (``kind:key``), ``direction``.
 
         direction: out | in | both. types: фильтр по именам типов.
-        ``source`` каждой записи показывает, откуда связь.
+        ``source`` каждой записи показывает, откуда связь: relation | dependency |
+        adr_relation | adr_supersedes | adr_task | story_link | scenario_link |
+        question_link | prose | commit. ``include_derived=false`` убирает ссылки из
+        прозы и коммиты задачи.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import relation_service
@@ -110,7 +114,12 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             views = relation_service.relations(
-                session, project_id=project_id, ref=ref, direction=direction, types=types
+                session,
+                project_id=project_id,
+                ref=ref,
+                direction=direction,
+                types=types,
+                include_derived=include_derived,
             )
             return [relation_service.view_to_dict(v) for v in views]
 

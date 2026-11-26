@@ -29,7 +29,7 @@ def view_to_dict(view: RelationView) -> dict[str, Any]:
         "label": view.label,
         "type": view.type,
         "direction": view.direction,
-        "other": str(view.other),
+        "other": view.other_ref,
         "other_title": view.other_title,
         "source": view.source,
         "resolved": view.resolved,

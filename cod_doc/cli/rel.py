@@ -145,6 +145,7 @@ def rel_rm(
 @click.option("--in", "direction", flag_value="in", help="Только входящие")
 @click.option("--out", "direction", flag_value="out", help="Только исходящие")
 @click.option("--type", "-t", "types", multiple=True, help="Фильтр по типу (можно несколько)")
+@click.option("--no-derived", is_flag=True, help="Без ссылок из прозы и коммитов")
 @_JSON
 @click.pass_context
 def rel_ls(
@@ -153,6 +154,7 @@ def rel_ls(
     project: str,
     direction: str | None,
     types: tuple[str, ...],
+    no_derived: bool,
     as_json: bool,
 ) -> None:
     """Все связи сущности REF одной лентой."""
@@ -168,6 +170,7 @@ def rel_ls(
             ref=ref,
             direction=direction or "both",
             types=list(types) or None,
+            include_derived=not no_derived,
         )
         rows = [relation_service.view_to_dict(v) for v in views]
     if as_json:

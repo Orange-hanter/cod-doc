@@ -3497,6 +3497,7 @@ _cod-doc() {
     '(--in)--in[Только входящие]' \
     '(--out)--out[Только исходящие]' \
     '*'{-t+,--type=}'[Фильтр по типу (можно несколько)]:types' \
+    '(--no-derived)--no-derived[Без ссылок из прозы и коммитов]' \
     '(--json)--json[Machine-readable output]' \
     '(- *)--help[Show this message and exit.]' \
     '1:ref' && ret=0
