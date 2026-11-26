@@ -378,6 +378,9 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_adr_mutation_surface_parity.py` | то же для `adr_service` (ARG-001): `relate`/`unrelate` на обеих поверхностях; долг CLI — `update`, `add_diagram`, `link_task`, каждый с обоснованием |
 | `services/test_approval_mutation_surface_parity.py` | то же для `approval_service` (ACU-010): `resolve`/`cancel` на MCP и CLI; `request_doc_patch` — внутренний (собирает куратор), `request` — долг CLI с обоснованием |
 | `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
+| `domain/test_relation_vocabulary_unambiguous.py` | встроенный словарь отношений без неоднозначных троек `(токен, from, to)`; `blocked_by` у задач и у вопросов разведён (RFC 39 §3.2, REL-004) |
+| `domain/test_relation_types_have_consumers.py` | у каждого встроенного типа отношения есть потребитель из `KNOWN_CONSUMERS`: тип без читателя — метка (REL-004) |
+| `infra/test_no_new_link_tables.py` | новая таблица-связь (`to_kind`+`to_ref`, `*_kind`+`*_uid`, два FK на сущности, `*_link`/`*_relation`/`*_edge`) вне `ALLOWLIST` роняет CI; список только сокращается, цель — `relation*` (RFC 39 §3.8, REL-008) |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 | `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |
