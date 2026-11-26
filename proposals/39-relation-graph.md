@@ -128,18 +128,25 @@ key       := task_id | story_id | doc_key | doc_key "#" anchor | adr_id | Q-NNN
 Примеры: `story:US-007`, `doc:docs/system/MASTER.md#registry`,
 `criterion:US-064#2`, `code:cod_doc/services/task_service.py::complete`.
 
-Ключ — публичный id, а не `row_id`. Причины:
+`kind:ref` — это **формат ввода и вывода**. В хранилище конец ребра
+адресуется `uid` строки-цели (`SyncUidMixin`, `infra/models/base.py:15`).
+Он есть у всех authored-сущностей, включая `section`
+(`documents.py:173`) и критерий истории (`stories.py:81`). Публичный ключ
+для хранения не годится, потому что он меняется:
 
-- он стабилен между репликами, и sync уже умеет его переписывать
-  (`human_id_refs`);
-- он совпадает с синтаксисом прозы, так что ребро и `[[story:US-007]]` в
-  тексте адресуют одно и то же;
-- `row_id` не переживает экспорт и импорт.
+- `doc_key` при `doc_rename`, якорь при переименовании заголовка;
+- `task_id`/`story_id`/`adr_id` при закреплении провизорных ID на push
+  (`sync_service/leases.py:20`, `pin_provisional`). На провизорную задачу
+  ссылаться можно уже сейчас, а через минуту у неё другой ключ.
 
-Цена — переименования. `doc_key` и якорь меняются, а `task_id`, `story_id`
-и `adr_id` нет. Поэтому подписчик на `DocumentRenamed` и
-`SectionAnchorChanged` переписывает ссылки в `relation` так же, как
-`rename_cascade` делает это для `link` (§3.5).
+`uid` не меняется ни при одном из этих событий. Значит, не нужны ни
+каскад переименований, ни переписывание `human_id_refs` при sync: `uid`
+глобален по построению (RFC 29 §3.3). Ключ для вывода вычисляется при
+чтении пачкой (`resolve_many`, один запрос на kind), как это уже делает
+`entity_ref_service` для журналов.
+
+У концов, которые не являются строками БД (`code:`, `url:`), `uid` нет.
+Они хранятся литералом в `*_key` и проверяются отложенно (§3.5).
 
 Модуль `services/entity_ref.py` (лист, без импортов сервисов):
 
@@ -156,8 +163,10 @@ def resolve_many(session, project_id, refs) -> dict[EntityRef, ResolvedRef]: ...
 ```
 
 `resolve` расширяет существующий `entity_ref_service` в обратную сторону:
-он отдаёт `row_id` и заголовок, а для `code`/`url` возвращает `None` без
-ошибки (их проверяет отдельный верификатор).
+по ключу он отдаёт `uid`, `row_id` и заголовок, а для `code`/`url`
+возвращает `None` без ошибки (их проверяет отдельный верификатор).
+Обратная функция `display_refs(uids)` переводит `uid` в текущий `kind:ref`
+для вывода.
 
 ### 3.2. Словарь отношений
 
@@ -172,16 +181,34 @@ class RelationType:
     to_kinds: frozenset[RefKind]
     symmetric: bool = False        # relates_to: A→B ≡ B→A, хранится одна строка
     acyclic: bool = False          # проверка пути до записи
-    target_check: Literal["strict", "deferred"] = "strict"
+    allow_forward: bool = False    # можно сослаться на ещё не созданную сущность
     backend: str = "relation"      # "relation" | "dependency" | "adr_relation" | "adr_supersedes"
     aliases: frozenset[str] = frozenset()   # старые имена: "see_also" → "relates_to"
+    consumers: frozenset[str] = frozenset() # кто читает тип; пусто — тип не встроенный
     description: str = ""
 ```
 
-`strict` означает, что цель обязана существовать на момент записи.
-`deferred` разрешает запись, а `relation_verify` потом ставит `resolved` и
-`broken_reason`, как это сейчас делает `question_verify`. `deferred` нужен
-для `code`/`url` и для ссылок вперёд на ещё не созданный документ.
+Строгость проверки цели зависит от **вида цели**, а не от типа:
+
+- цель-сущность должна существовать на момент записи, и в ребро ложится
+  её `uid`;
+- `code:`/`url:` записываются всегда, а `relation_verify` потом ставит
+  `resolved` и `broken_reason`, как сейчас `question_verify`;
+- тип с `allow_forward=True` (например `about` у вопроса) принимает
+  ссылку на несуществующую сущность. Она хранится ключом с
+  `to_uid IS NULL`, `resolved=0`, а `relation_verify` дописывает `uid`,
+  когда сущность появится.
+
+Флаг на типе не годится. `relates_to` допускает и `story:`, и `url:`, и
+ему пришлось бы быть одновременно строгим и отложенным.
+
+`consumers` — обязательное поле встроенного типа: экран, тул или правило,
+которое читает этот тип и по-разному ведёт себя в зависимости от него
+(`context_service` L1, веб-панель, проверка куратора, `plan_ready`). Тип,
+который никто не читает, — это метка. Для метки есть `relates_to` с
+`note`, а встроенный словарь пополняется только типами с потребителем.
+Гейт `test_relation_types_have_consumers` сверяет `consumers` с
+регистрацией потребителей.
 
 **Встроенный словарь** живёт в `domain/relation_types.py`. Его стартовый
 состав покрывает весь §2 и пробел из триггера:
@@ -214,6 +241,25 @@ class RelationType:
 `relate(task:X, story:Y, "implements")` ≡
 `relate(story:Y, task:X, "implemented_by")`.
 
+**Неоднозначность разрешается до записи, а не во время вызова.** Словарь
+выше уже содержит столкновения. `blocks`/`blocked_by` есть и у вопроса
+(«вопрос → любой»), и у `dependency` (task → task). Запрос
+`relate(task:A, "blocked_by", task:B)` должен попасть в `dependency`.
+Запрос `relate(task:A, "blocked_by", question:Q)` должен попасть в
+обратную сторону вопросного `blocks`. Правила:
+
+1. «Любой» в `from_kinds`/`to_kinds` раскрывается в явный список kinds при
+   загрузке словаря. Словарь — конечная таблица троек
+   `(токен, from_kind, to_kind) → (тип, направление)`.
+2. Тип с конкретной парой kinds побеждает тип с раскрытым «любой».
+3. Две записи одной специфичности на одну тройку — ошибка загрузки
+   словаря. Встроенный словарь проверяет гейт
+   `test_relation_vocabulary_unambiguous`, проектный тип — `define_type`
+   при регистрации.
+
+Ответ `relate` всегда содержит канонический тип и направление, в котором
+ребро записано. Агент видит, что `blocked_by` у задач стал `dependency`.
+
 **Проектные типы** — это «гибкость» RFC. Таблица `relation_type`
 (project-scoped, authored, синхронизируется) имеет те же поля, кроме
 `backend`: проектный тип всегда хранится в `relation`. Встроенный тип
@@ -230,20 +276,23 @@ CREATE TABLE relation (
   uid           VARCHAR(26) NOT NULL UNIQUE,   -- deterministic: hash(project, from, type, to)
   project_id    INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
   from_kind     VARCHAR(16) NOT NULL,
-  from_ref      VARCHAR(512) NOT NULL,
+  from_uid      TEXT NOT NULL,                 -- источник всегда сущность
   type          VARCHAR(48) NOT NULL,          -- каноническое name, не алиас и не inverse
   to_kind       VARCHAR(16) NOT NULL,
-  to_ref        VARCHAR(512) NOT NULL,
+  to_uid        TEXT,                          -- NULL: code/url или ссылка вперёд
+  to_key        VARCHAR(512),                  -- литерал для code/url/вперёд; иначе NULL
   note          TEXT,
-  resolved      BOOLEAN NOT NULL DEFAULT 1,
-  broken_reason VARCHAR(32),
-  last_checked  DATETIME,
+  resolved      BOOLEAN NOT NULL DEFAULT 1,    -- local: пересчитывает relation_verify
+  broken_reason VARCHAR(32),                   -- local
+  last_checked  DATETIME,                      -- local
   author        VARCHAR(128) NOT NULL,
   created_at    DATETIME NOT NULL,
-  UNIQUE (project_id, from_kind, from_ref, type, to_kind, to_ref)
+  CHECK (to_uid IS NOT NULL OR to_key IS NOT NULL),
+  UNIQUE (project_id, from_uid, type, to_kind, to_uid, to_key)
 );
-CREATE INDEX ix_relation_to   ON relation (project_id, to_kind, to_ref);
-CREATE INDEX ix_relation_from ON relation (project_id, from_kind, from_ref);
+CREATE INDEX ix_relation_to   ON relation (project_id, to_uid);
+CREATE INDEX ix_relation_key  ON relation (project_id, to_kind, to_key);
+CREATE INDEX ix_relation_from ON relation (project_id, from_uid);
 
 CREATE TABLE relation_type (
   row_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -255,23 +304,34 @@ CREATE TABLE relation_type (
   to_kinds    JSON NOT NULL,
   symmetric   BOOLEAN NOT NULL DEFAULT 0,
   acyclic     BOOLEAN NOT NULL DEFAULT 0,
-  target_check VARCHAR(8) NOT NULL DEFAULT 'strict',
+  allow_forward BOOLEAN NOT NULL DEFAULT 0,
   description TEXT,
   deprecated  BOOLEAN NOT NULL DEFAULT 0,
   UNIQUE (project_id, name)
 );
 ```
 
-- У симметричного типа концы нормализуются, `(min, max)` по строке `ref`.
-  Так `A relates_to B` и `B relates_to A` попадают в одну строку UNIQUE.
-- FK на концах нет. Поэтому удаление сущности обрабатывает сервис (§3.5), а
-  не CASCADE.
-- `uid` детерминированный, как у `dependency`: одно и то же ребро,
-  созданное на двух репликах, совпадает при sync и не дублируется.
-- В `sync_registry`: authored, `human_id_refs={"from_ref": "from_kind",
-  "to_ref": "to_kind"}`. Механизм дискриминатора тот же, что у трёх таблиц
-  из §2.1. Строку синхронизируют, только если синхронизированы оба конца
-  (gated, как сейчас).
+- У симметричного типа концы нормализуются, `(min, max)` по `uid`. Так
+  `A relates_to B` и `B relates_to A` попадают в одну строку UNIQUE.
+  Симметричное ребро к `code:`/`url:` запрещено: у такого конца нет `uid`,
+  и он не может быть источником.
+- В SQLite `NULL` в UNIQUE не равен `NULL`, поэтому дубли с `to_uid IS NULL`
+  ловит сервис, а частичный индекс `UNIQUE (project_id, from_uid, type,
+  to_kind, to_key) WHERE to_uid IS NULL` страхует его.
+- FK на концах нет. Удаление сущности обрабатывается событием (§3.5), а не
+  CASCADE.
+- `uid` ребра детерминированный, как у `dependency`: одно и то же ребро,
+  созданное на двух репликах, совпадает при sync и не дублируется. `uid`
+  проектного типа — `hash(project, name)`. Два разных определения одного
+  имени на двух репликах дают конфликт sync, и он идёт в существующую
+  очередь `sync_conflicts`, а не перезаписывается молча.
+- В `sync_registry`: authored; `from_uid`/`to_uid` — полиморфные логические
+  FK с дискриминатором `*_kind` (механизм `POLYMORPHIC_FKS`,
+  `sync_registry.py:42`). `human_id_refs` не нужен. `resolved`,
+  `broken_reason`, `last_checked` — local-колонки: это результат проверки
+  на конкретной реплике, а не авторское решение. Gating: строка уходит,
+  когда синхронизированы оба конца; конец без `uid` считается
+  присутствующим.
 
 ### 3.4. Сервис и контракт ошибок
 
@@ -296,17 +356,27 @@ def verify(session, *, project_id, refs: Sequence[str] | None = None) -> VerifyR
 
 1. `parse_ref` обоих концов.
 2. Поиск типа по паре kinds с учётом алиасов и `inverse`.
-3. Проверка `target_check`.
+3. Проверка цели по её виду (§3.2): сущность резолвится в `uid`, `code:`/`url:` записываются как есть, ссылка вперёд — только при `allow_forward`.
 4. Для `acyclic` — проверка пути: обход по `relation`, а для бэкендов —
    существующие `_has_path`.
 5. Диспетчер `backend`: `relation` пишет строку, `dependency` вызывает
    `task_service.add_dependency` (с его `note` и проверкой циклов),
    `adr_*` вызывает `adr_service.relate` / `supersede`.
 6. Revision и activity через
-   `activity_service.write_revision_and_emit_event` (ADO-040). Событие
-   `relation.added` / `relation.removed` с `entity_kind=RELATION` (новый
-   член `EntityKind`). В payload лежат оба `ref`, чтобы журнал можно было
-   фильтровать по любому концу.
+   `activity_service.write_revision_and_emit_event` (ADO-040). Ревизия
+   пишется на **сущность-источник**, как сейчас у `story.linked`: история
+   истории продолжает показывать, когда к ней привязали задачу. Событие
+   `relation.added` / `relation.removed` с `entity_kind` источника. В
+   payload лежат `uid` и `kind:ref` обоих концов, поэтому журнал цели
+   находит событие по `to_uid`. `revision_revert` такой ревизии вызывает
+   `unrelate`/`relate`, а не правит строку напрямую.
+
+Зависимости модулей идут в одну сторону: `relation_service` импортирует
+`task_service` и `adr_service` (диспетчер бэкендов), но ни один сервис не
+импортирует `relation_service`. Удаления приходят к нему событием (§3.5).
+Иначе каждый удаляющий сервис стал бы зависеть от `relation_service`, а
+`relation_service` от него, и кольцо SVC-006 выросло бы сверх
+`MAX_SCC_SIZE`.
 
 Бэкенды сохраняют собственную семантику: ready-множество, смену статуса
 ADR, обязательную `note`. Единым становится вход, а не хранение.
@@ -334,10 +404,21 @@ kinds не допускает ни одного типа, кроме `relates_to
 
 | Событие | Реакция |
 |---|---|
-| `DocumentRenamed`, `SectionAnchorChanged` | подписчик `relation_service.doc_event_handlers` переписывает `from_ref`/`to_ref` в той же транзакции; ставится в `event_wiring.install()` рядом с `link_service` (ADR-018) |
-| удаление сущности (task, story, document, …) | рёбра `strict`-типов удаляются тем же сервисом с событием `relation.removed`; у `deferred` ставится `resolved=0`, `broken_reason='target_deleted'` |
-| переименование `task_id` при sync (provisional → final) | уже покрыто `human_id_refs` |
-| `relation_verify` (рутина, как `question_verify`) | пересчитывает `resolved` для `deferred`; `code:` проверяется через `link_service.resolve_code_ref` |
+| переименование документа, якоря; закрепление провизорного ID | ничего: ребро держит `uid` |
+| удаление сущности | новое событие `entity_events.EntityDeleted(session, kind, uid)` (по образцу `doc_events`, ADR-018); подписчик удаляет рёбра обоих направлений и пишет `relation.removed` с причиной `endpoint_deleted` |
+| tombstone из sync (`sync_service/tombstone.py`) | тот же `EntityDeleted` |
+| `relation_verify` (рутина, как `question_verify`) | для `code:` зовёт `link_service.resolve_code_ref`, для `url:` проверяет форму, ссылкам вперёд дописывает `to_uid`; событий не пишет |
+
+Сейчас удаление не публикует ничего: `doc_service.delete`
+(`doc_service.py:1287`) сам вычищает `link` своего документа, а
+`question_service.delete`, `doc_tree_service.delete_node` и
+`plan_service.delete_section` про чужие ссылки не знают. Задача ядра —
+публиковать `EntityDeleted` из каждого удаляющего пути. Гейт
+`test_entity_deleted_published` находит удаляющие функции сервисов тем же
+AST-сканером, что и паритет поверхностей (`tests/services/_surface_parity.py`),
+и требует публикации. Задачи и истории не удаляются вовсе (`delete` в
+`task_service`/`story_service` нет), поэтому для них путь только один —
+tombstone.
 
 ### 3.6. Единое чтение
 
@@ -387,9 +468,8 @@ class RelationView:
   проверяет `emit`. `relation_type_define` требует writer+.
 - Тулы видны на профилях `standard`/`full`. На `agent` видны `relations` и
   `relation_types`: куратору связи нужны для навигации.
-- Параметры, которые остаются enum-ами в узких тулах (§4), получают
-  `Literal[...]` в сигнатуре. Тогда FastMCP отдаёт `enum` в JSON-схеме, и
-  агент видит значения до вызова. В `relate` тип — `str`: словарь проектный
+- Параметры, которые остаются enum-ами в узких тулах, получают
+  `Literal[...]` уже в фазе 0 (§4). В `relate` тип — `str`: словарь проектный
   и динамический, а его разведка — `relation_types`.
 - Веб: один фрагмент `_frag/relations.html` («Связи», группировка по
   `label`, бейдж источника) на страницах задачи, истории, документа, ADR,
@@ -400,10 +480,39 @@ class RelationView:
   когда какое отношение брать. Поведение агента меняется скиллом, а не
   промптом.
 
+### 3.8. Запрет на новые таблицы связей
+
+Без запрета RFC добавит четырнадцатый механизм, а не заменит тринадцать:
+следующая фича опять заведёт `*_link` «потому что так быстрее». Гейт
+`test_no_new_link_tables` проходит по метаданным `Base` и находит модели,
+похожие на связь:
+
+- колонки `to_kind`+`to_ref` или `*_kind`+`*_uid`;
+- два FK на сущности и ничего, кроме метаданных ребра;
+- имя `*_link`, `*_relation`, `*_edge`.
+
+Найденная модель вне allowlist роняет тест. Allowlist — ratchet, как
+`per-file-ignores`: может только уменьшаться. Стартовый состав — всё из
+§2, с обоснованием каждой строки. Выход фазы C измеряется длиной этого
+списка.
+
 ## 4. Миграция и обратная совместимость
 
 Порядок выбран так, чтобы новое заработало раньше, чем трогаются старые
 данные.
+
+0. **Фаза 0, независимо от решения по RFC.** Чинит то, что сломалось в
+   триггере, за один-два дня:
+   - `Literal[...]` вместо `str` для `to_kind`/`relation` в `story_link`,
+     `scenario_link`, `question_link`, `adr_link_task`, `adr_relate`.
+     FastMCP отдаёт `enum` в JSON-схеме, и агент видит допустимые значения
+     до вызова;
+   - валидация всех параметров за один проход и ошибка со списком
+     допустимых значений вместо голого `'story' is not a valid
+     StoryLinkKind`.
+
+   Связи история ↔ история фаза 0 не даёт. Она только сокращает агенту
+   путь до вывода «так связать нельзя» с нескольких вызовов до одного.
 
 1. **Фаза A, ядро.** Миграция `0058_relation` (номер по факту) создаёт
    `relation` и `relation_type`. Существующие таблицы не трогаются,
@@ -415,8 +524,13 @@ class RelationView:
    (`scripts/regen.sh`).
 3. **Фаза C, поглощение таблиц одной формы.** Миграция переносит
    `story_link`, `scenario_link`, `open_question_link`, `adr_task`,
-   `approval_task_link` в `relation`. Отображение типов — таблица §3.2,
-   `criterion` переходит как `criterion:<story_id>#<pos>`. Старые таблицы
+   `approval_task_link` в `relation`. Отображение типов — таблица §3.2.
+   Строковый `to_ref` старых таблиц переводится в `uid` резолвом на месте.
+   Не найденная цель (`question_link` к удалённому документу, `adr_task` к
+   несуществующей задаче: там существование не проверялось) переходит
+   ссылкой вперёд с `resolved=0`, а не теряется. Число таких строк
+   миграция печатает. `criterion:<story_id>#<pos>` резолвится в `uid`
+   критерия. Старые таблицы
    остаются и не пишутся один релиз. Затем их удаляет отдельная миграция с
    тестом сохранности по образцу
    `tests/services/test_migration_0035_preserves_data.py`: налить данные на
@@ -484,29 +598,58 @@ RFC 30 и RFC 31 при реализации заводят типы `decided_in
   Ребро с типом, которого реплика не знает, при применении sync не
   отвергается, а получает `resolved=0`, `broken_reason='unknown_type'`;
   видно его через `relation_verify`.
-- **Риск: строковые ссылки без FK.** Висячие ссылки возможны, если сущность
-  удалить мимо сервиса. От этого страхуют гейт
-  `test_presentation_no_orm_writes.py` (presentation не пишет в ORM) и
-  рутина `relation_verify`.
+- **Риск: ссылки без FK.** Висячие ссылки возможны, если сущность удалить
+  мимо сервиса. От этого страхуют гейты `test_entity_deleted_published`
+  (§3.5) и `test_presentation_no_orm_writes.py` (presentation не пишет в
+  ORM), а также рутина `relation_verify`.
+- **Риск: гибкость без спроса.** Сейчас спрос виден на трёх связях: история
+  ↔ история (триггер), ADR → RFC (RFC 30), идея → результат (RFC 31).
+  Проектные типы — ставка на то, что их станет больше. Критерии в §8
+  проверяют эту ставку до фазы C.
+- **Риск: полиморфная таблица медленнее узкой.** `relations(ref)` — это
+  union до шести источников и резолв `uid` → ключ. На масштабе Restate
+  (289 историй, ~1100 задач) это сотни рёбер на проект. Индексы по
+  `from_uid`/`to_uid` держат чтение одной сущности в пределах одного
+  index lookup на источник. Горячий путь `plan_ready` таблицу `relation`
+  не читает.
 
 ## 6. Открытые вопросы
 
 | # | Вопрос | Предлагаемый ответ |
 |---|---|---|
 | R39-Q1 | Кто вправе заводить проектный тип: любой writer или через approval? | writer, но агентский `author` идёт через approval `relation_type` (как `doc_patch` у куратора); человек — напрямую |
-| R39-Q2 | Ключ конца — публичный id или `row_id` + kind? | публичный id (§3.1); цена — подписчик переименований |
+| R39-Q2 | Чем адресовать конец ребра? | решено: `uid` строки (§3.1). Публичный ключ меняется при rename и `pin_provisional` |
 | R39-Q3 | Удалять ли старые тулы после фазы C? | нет, пока `tools_diff` по журналу Гермеса показывает их вызовы |
-| R39-Q4 | `relates_to` разрешён для любой пары — не станет ли он свалкой? | в веб-форме он последний в списке, и рутина `doc_node_health`-стиля сообщает, если его доля выше 50% по проекту |
+| R39-Q4 | `relates_to` разрешён для любой пары — не станет ли он свалкой? | `relation_types` отдаёт число рёбер на тип; доля `relates_to` — метрика §8, а не рутина |
 
 ## 7. Оценка
 
 | Секция | Задачи | Объём |
 |---|---|---|
-| A. Ядро | грамматика и резолвер `entity_ref`; встроенный словарь; миграция `relation` + `relation_type`; `relate`/`unrelate`/`define_type` с контрактом ошибок; подписчик переименований и удалений | 5 задач |
+| 0. Сейчас | `Literal` в пяти link-тулах; ошибка со всеми невалидными параметрами и допустимыми значениями | 2 задачи |
+| A. Ядро | `entity_ref` (ключ ↔ `uid`); словарь + гейты однозначности и потребителей; миграция `relation` + `relation_type` + `sync_registry`; `relate`/`unrelate`/`define_type` с контрактом ошибок; `EntityDeleted` во всех удаляющих путях + гейт; `test_no_new_link_tables` | 6 задач |
 | B. Поверхности | MCP-тулы + профили + `READER_TOOLS`; CLI `rel` + completion; `relations()` с прозой и бэкендами; веб-фрагмент «Связи»; скилл | 5 задач |
-| C. Поглощение | миграция данных + тест сохранности; обёртки старых тулов; `context_service` на `relations()`; `sync_registry` | 4 задачи |
-| D. Бэкенды | диспетчер на `dependency`/`adr_*`; `Literal` в оставшихся узких тулах | 2 задачи |
+| C. Поглощение | миграция данных с резолвом в `uid` + тест сохранности; обёртки старых тулов; `context_service` на `relations()` | 3 задачи |
+| D. Бэкенды | диспетчер на `dependency`/`adr_*` | 1 задача |
 
-Итого 16 задач, 3–4 недели. A и B дают ценность сами по себе: история ↔
-история и проектные типы без поглощения. C и D можно отложить.
-План — `relation-graph-2026-12` (префикс REL).
+Итого 17 задач, 3–4 недели. Фаза 0 не зависит от решения по RFC. A и B
+дают историю ↔ история и проектные типы без поглощения. C и D начинаются
+только после проверки по §8. План — `relation-graph-2026-12` (префикс
+REL).
+
+## 8. Критерии успеха и точка остановки
+
+Проверка через четыре недели после выкатки фазы B на Гермес, по orakul и
+Restate:
+
+| Метрика | Порог продолжения | Источник |
+|---|---|---|
+| рёбра типов, которых не было до RFC (story ↔ story, проектные) | ≥ 30 на два проекта | `relation_types` со счётчиками |
+| доля `relates_to` среди новых рёбер | < 50% | то же |
+| неудачные `relate` без последующего успешного вызова того же агента | < 10% | `activity_event` + журнал ошибок MCP |
+| новые таблицы связей в коде | 0 | `test_no_new_link_tables` |
+
+Если первые два порога не взяты, проектные типы никому не нужны. Тогда
+фазы C и D не делаются, `relation` остаётся таблицей для нескольких
+встроенных типов, а RFC 30/31 всё равно получают свои типы вместо таблиц.
+Это решение фиксируется в README строкой «остановлен после B» с цифрами.
