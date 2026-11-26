@@ -3,3 +3,6 @@
 # ревью это шум, а не изменение. Схлопываем его в diff'ах и не даём linguist
 # считать его написанным руками.
 cod_doc/cli/completion/_cod-doc -diff linguist-generated
+
+# Pen-дизайн: pen.dev пересериализует весь файл — git не должен сливать его построчно.
+design/*.pen merge=binary -diff
