@@ -62,6 +62,7 @@ cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
 cod-doc ctx structure     — pinned SHA structure_context
 cod-doc scenario new|list|show|update|retire|steps|link|unlink|export|coverage
 cod-doc question new|list|show|edit|resolve|drop|reopen|option|link|unlink|verify|import
+cod-doc rel add|rm|ls|types|type define|type deprecate|verify — граф связей (RFC 39)
 cod-doc approval list|show|approve|deny|cancel
 cod-doc remote add|list|remove — remotes проекта (RFC 29 §10.8)
 cod-doc fetch|pull|push  — синхронизация с remote
@@ -127,6 +128,7 @@ from cod_doc.cli.link import link
 from cod_doc.cli.obligation import obligation
 from cod_doc.cli.plan import plan
 from cod_doc.cli.question import question
+from cod_doc.cli.rel import rel
 from cod_doc.cli.revision import revision
 from cod_doc.cli.routine import routine
 from cod_doc.cli.scenario import scenario
@@ -194,6 +196,7 @@ main.add_command(flow)
 main.add_command(story)
 main.add_command(scenario)
 main.add_command(question)
+main.add_command(rel)
 main.add_command(approval)
 main.add_command(doc)
 main.add_command(link)
