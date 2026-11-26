@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import StoryLinkKind, StoryRelation
 from cod_doc.mcp.tools._db import require_project_id, session_factory, story_to_dict
+
+# Рантайм-импорт: FastMCP строит JSON-схему тула из аннотаций, enum'ы дают
+# в ней `enum` со значениями (RFC 39, фаза 0). В TYPE_CHECKING схема бы сломалась.
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -180,9 +184,9 @@ def register(mcp: FastMCP) -> None:
     def story_link(
         project: str,
         story_id: str,
-        to_kind: str,
+        to_kind: StoryLinkKind,
         to_ref: str,
-        relation: str,
+        relation: StoryRelation,
         author: str = "mcp",
     ) -> dict[str, Any]:
         """Link a story to a task, document, or module.
@@ -190,7 +194,6 @@ def register(mcp: FastMCP) -> None:
         relation: implemented_by | specified_in | owned_by.
         to_ref: task_id / doc_key / module_id depending on to_kind.
         """
-        from cod_doc.domain.entities import StoryLinkKind, StoryRelation
         from cod_doc.infra.db import transactional
         from cod_doc.services import story_service
         from cod_doc.services.story_service import BrokenLinkError, StoryNotFoundError

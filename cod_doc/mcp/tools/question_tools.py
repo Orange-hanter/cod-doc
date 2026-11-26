@@ -15,7 +15,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import QuestionLinkKind, QuestionRelation
 from cod_doc.mcp.tools._db import require_project_id, session_factory
+
+# Рантайм-импорт: FastMCP строит JSON-схему тула из аннотаций, enum'ы дают
+# в ней `enum` со значениями (RFC 39, фаза 0). В TYPE_CHECKING схема бы сломалась.
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -363,9 +367,9 @@ def register(mcp: FastMCP) -> None:  # noqa: C901 — один register на с�
     def question_link(
         project: str,
         question_id: str,
-        to_kind: str,
+        to_kind: QuestionLinkKind,
         to_ref: str,
-        relation: str = "about",
+        relation: QuestionRelation = QuestionRelation.ABOUT,
         note: str | None = None,
         detach: bool = False,
         author: str = "mcp",
@@ -381,7 +385,6 @@ def register(mcp: FastMCP) -> None:  # noqa: C901 — один register на с�
         The ref is checked for shape here; existence is checked by
         ``question_verify`` (a question often predates the task that answers it).
         """
-        from cod_doc.domain.entities import QuestionLinkKind, QuestionRelation
         from cod_doc.infra.db import transactional
         from cod_doc.services import question_service
 
