@@ -172,16 +172,26 @@ def resolve(session: Session, project_id: int, ref: EntityRef) -> ResolvedRef | 
     return resolve_many(session, project_id, [ref]).get(ref)
 
 
-def display_refs(
+def describe(
     session: Session, project_id: int, items: Iterable[tuple[RefKind, str]]
-) -> dict[str, EntityRef]:
-    """`uid` → текущий `kind:key` для вывода. Удалённых и чужого проекта в ответе нет."""
+) -> dict[str, ResolvedRef]:
+    """`uid` → строка с текущим ключом и заголовком. Удалённых и чужого проекта нет."""
     by_kind: dict[RefKind, set[str]] = defaultdict(set)
     for kind, uid in items:
         _check_entity(kind)
         by_kind[kind].add(uid)
     return {
-        hit.uid: EntityRef(kind, hit.key)
+        hit.uid: hit
         for kind, uids in by_kind.items()
         for hit in _fetch(session, project_id, kind, uids=uids)
+    }
+
+
+def display_refs(
+    session: Session, project_id: int, items: Iterable[tuple[RefKind, str]]
+) -> dict[str, EntityRef]:
+    """`uid` → текущий `kind:key` для вывода. Удалённых и чужого проекта в ответе нет."""
+    return {
+        uid: EntityRef(hit.kind, hit.key)
+        for uid, hit in describe(session, project_id, items).items()
     }

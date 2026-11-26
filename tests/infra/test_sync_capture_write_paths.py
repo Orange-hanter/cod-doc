@@ -119,6 +119,7 @@ from cod_doc.services import (
     finding_service,
     plan_service,
     question_service,
+    relation_service,
     routine_service,
     scenario_service,
     story_service,
@@ -1805,8 +1806,6 @@ NO_WRITE_PATH: dict[str, str] = {
     "module_dependency": "модули только читаются",
     "module_code": "модули только читаются",
     "external_ref": "внешних ссылок в сервисах нет",
-    "relation": "relation_service появится в REL-006: пока таблицу пишет только ORM",
-    "relation_type": "relation_service появится в REL-006: пока таблицу пишет только ORM",
     "commit_link": "пишет только commit_link_service.import_from_git_log (нужен git-репозиторий); "
     "случай — прямая запись",
 }
@@ -1894,40 +1893,26 @@ def _(w: World) -> Expect:
     return [("commit_link", w.later(CommitLinkModel, sha="abc1234"))]
 
 
-@case("orm.relation")
+@case("relation_service.relate")
 def _(w: World) -> Expect:
     cap.set_author(w.session, AUTHOR)
-    project_uid = w.session.get_one(ProjectModel, w.pid).uid
-    w.session.add_all(
-        [
-            RelationModel(
-                project_id=w.pid,
-                from_kind="scenario",
-                from_uid="u-from",
-                type="exercised_by",
-                to_kind="code",
-                to_key="a.py::f",
-                author=AUTHOR,
-            ),
-            RelationTypeModel(
-                project_id=w.pid,
-                name="risk_of",
-                inverse="risked_by",
-                from_kinds=["story"],
-                to_kinds=["adr"],
-            ),
-        ]
+    story = w.session.scalars(select(UserStoryModel)).one()
+    relation_service.relate(
+        w.session,
+        project_id=w.pid,
+        from_ref=f"story:{story.story_id}",
+        type="implemented_by",
+        to_ref="task:PLN-001",
+        author=AUTHOR,
     )
-    key = {
-        "project_id": project_uid,
-        "from_uid": "u-from",
-        "type": "exercised_by",
-        "to_kind": "code",
-        "to_uid": None,
-        "to_key": "a.py::f",
-    }
+    relation_service.define_type(
+        w.session,
+        project_id=w.pid,
+        spec=relation_service.RelationTypeSpec("risk_of", "risked_by", ["story"], ["adr"]),
+        author=AUTHOR,
+    )
     return [
-        ("relation", lambda: reg.edge_uid("relation", key)),
+        ("relation", w.later(RelationModel, type="implemented_by")),
         ("relation_type", w.later(RelationTypeModel, name="risk_of")),
     ]
 
@@ -2045,8 +2030,6 @@ def test_no_write_path_list_is_current() -> None:
         "module_dependency": "ModuleDependencyModel(",
         "module_code": "ModuleCodeModel(",
         "external_ref": "ExternalRefModel(",
-        "relation": "RelationModel(",
-        "relation_type": "RelationTypeModel(",
     }
     for table, ctor in models.items():
         assert table in NO_WRITE_PATH
