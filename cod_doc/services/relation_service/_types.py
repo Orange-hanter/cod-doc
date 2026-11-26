@@ -28,6 +28,7 @@ class RelationEdge:
     """Ребро в том виде, в каком оно записано: канонический тип и направление."""
 
     type: str
+    uid: str | None  # uid самого ребра
     from_ref: EntityRef
     to_ref: EntityRef
     from_uid: str

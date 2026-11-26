@@ -67,6 +67,8 @@ READER_TOOLS: Final = frozenset(
         "roadmap_get",
         "question_get",
         "question_list",
+        "relation_types",
+        "relations",
         "revision_get",
         "revision_list",
         "revision_summary",

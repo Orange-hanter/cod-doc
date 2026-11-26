@@ -16,6 +16,7 @@ from ._types import (
     VerifyReport,
 )
 from .edges import relate, relations, unrelate
+from .serialize import edge_to_dict, report_to_dict, type_info_to_dict, view_to_dict
 from .types import define_type, deprecate_type, relation_types
 from .verify import verify
 
@@ -28,9 +29,13 @@ __all__ = [
     "VerifyReport",
     "define_type",
     "deprecate_type",
+    "edge_to_dict",
     "relate",
     "relation_types",
     "relations",
+    "report_to_dict",
+    "type_info_to_dict",
     "unrelate",
     "verify",
+    "view_to_dict",
 ]

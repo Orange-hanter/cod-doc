@@ -279,6 +279,7 @@ def record(
 def _edge_view(plan: _Plan, row: RelationModel, *, created: bool) -> RelationEdge:
     return RelationEdge(
         type=plan.type.name,
+        uid=row.uid,
         from_ref=plan.from_ref,
         to_ref=plan.to_ref,
         from_uid=row.from_uid,

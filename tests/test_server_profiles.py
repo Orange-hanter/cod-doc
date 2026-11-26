@@ -169,6 +169,26 @@ def test_sym006d_keep_tool_logic() -> None:
         assert keep_tool(name, "agent") is False
 
 
+# RFC 39 §3.7: the graph readers are part of the curator surface, the writers are not.
+RFC39_READ_TOOLS = {"relations", "relation_types"}
+RFC39_WRITE_TOOLS = {
+    "relate",
+    "unrelate",
+    "relation_type_define",
+    "relation_type_deprecate",
+    "relation_verify",
+}
+
+
+def test_rfc39_relation_tools_per_profile() -> None:
+    for name in RFC39_READ_TOOLS | RFC39_WRITE_TOOLS:
+        assert keep_tool(name, "full") is True
+        assert keep_tool(name, "standard") is True
+        assert keep_tool(name, "minimal") is False
+    assert all(keep_tool(name, "agent") for name in RFC39_READ_TOOLS)
+    assert not any(keep_tool(name, "agent") for name in RFC39_WRITE_TOOLS)
+
+
 def test_sym006d_minimal_profile_excludes_new_tools() -> None:
     mcp_server.apply_profile("minimal")
     names = _registered_names()
