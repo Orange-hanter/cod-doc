@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.relations import ENTITY_KINDS
+
 if TYPE_CHECKING:
+    from cod_doc.domain.relations import RefKind
+
     from ._types import RelationEdge, RelationTypeInfo, RelationView, VerifyReport
 
 
@@ -37,13 +41,18 @@ def view_to_dict(view: RelationView) -> dict[str, Any]:
     }
 
 
+def _kinds(kinds: frozenset[RefKind]) -> list[str]:
+    """Полный набор видов сущностей — `["*"]`: двенадцать имён в каждой строке — шум."""
+    return ["*"] if kinds == ENTITY_KINDS else sorted(k.value for k in kinds)
+
+
 def type_info_to_dict(info: RelationTypeInfo) -> dict[str, Any]:
     t = info.type
     return {
         "name": t.name,
         "inverse": t.inverse,
-        "from_kinds": sorted(k.value for k in t.from_kinds),
-        "to_kinds": sorted(k.value for k in t.to_kinds),
+        "from_kinds": _kinds(t.from_kinds),
+        "to_kinds": _kinds(t.to_kinds),
         "symmetric": t.symmetric,
         "acyclic": t.acyclic,
         "allow_forward": t.allow_forward,
