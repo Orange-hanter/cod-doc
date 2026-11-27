@@ -150,10 +150,11 @@
     хранят ``uid``, а не ``row_id``: ``POLYMORPHIC_FKS`` (``row_id`` ↔ ``uid``)
     для них неверен, они объявлены в ``UID_REFS`` и едут как есть.
     ``resolved``/``broken_reason``/``last_checked`` — local (итог проверки на
-    реплике). Ребро с концом ``document``/``section`` пока local целиком:
-    метку документа по ``uid`` захват не разрешает, и ``note`` ребра к
-    restricted-документу ушёл бы наружу. Снять ограничение — завести цель
-    метки по ``uid`` в ``DOC_REF_TARGETS`` и правках ``sync_withdraw``.
+    реплике). Ребро с концом ``document``/``section`` уезжает по метке этого
+    документа, как остальные ссылки ``DOC_REFS`` (REL-018): цель ``uid`` в
+    ``DOC_REF_TARGETS`` и ``sync_withdraw``; ребро к restricted-документу
+    (и ссылка вперёд на документ без ``to_uid``) local целиком, ``note`` и
+    ``to_key`` наружу не идут.
     Детерминированный uid ребра зависит от ``to_uid``: ссылка вперёд после
     ``relation_verify`` меняет ключ, а uid остаётся прежним.
 19. **Журнал в changeset'е** (CLO-024, Q-010). ``revision`` уезжает
@@ -225,6 +226,7 @@ from types import MappingProxyType
 from typing import Final
 
 from cod_doc.domain.entities import EntityKind, Sensitivity
+from cod_doc.domain.relations import RefKind
 
 
 class SyncClass(StrEnum):
@@ -496,15 +498,16 @@ def _local_event(row: Mapping[str, object]) -> bool:
 
 _DOC_ENTITY_KINDS = frozenset({EntityKind.DOCUMENT.value, EntityKind.SECTION.value})
 _DOC_LINK_KINDS = frozenset({"document", "section"})
+#: Виды ``RefKind`` (граф связей, REL-018) без документа и секции.
+_NON_DOC_REF_KINDS = frozenset(k.value for k in RefKind) - _DOC_LINK_KINDS
 #: Значения дискриминатора, о которых известно, что это НЕ документ. Всё вне
 #: ``kinds`` и вне этого перечня считается ссылкой на документ (fail-closed).
 _NON_DOC_KINDS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "entity_kind": frozenset(k.value for k in EntityKind) - _DOC_ENTITY_KINDS,
         "scope_kind": _PLAIN_EVENT_SCOPES,
-        "to_kind": frozenset(
-            {"task", "story", "module", "criterion", "adr", "scenario", "finding", "code", "url"}
-        ),
+        "to_kind": _NON_DOC_REF_KINDS,
+        "from_kind": _NON_DOC_REF_KINDS,
     }
 )
 
@@ -557,6 +560,18 @@ DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
                 whole_row=True,
                 kind_column="entity_kind",
                 kinds=_DOC_ENTITY_KINDS,
+            ),
+        ),
+        # Концы адресованы uid, вид — в from_kind/to_kind; документный конец без
+        # uid (ссылка вперёд) метки не имеет и остаётся local (решение 21).
+        "relation": (
+            DocRef("from_uid", whole_row=True, kind_column="from_kind", kinds=_DOC_LINK_KINDS),
+            DocRef(
+                "to_uid",
+                whole_row=True,
+                kind_column="to_kind",
+                kinds=_DOC_LINK_KINDS,
+                nullable=True,
             ),
         ),
         "approval_doc_revision_link": (_whole("revision_id"),),
@@ -629,19 +644,6 @@ def _leased(column: str) -> NaturalKey:
 
 
 _TO_REF: Mapping[str, str] = MappingProxyType({"to_ref": "to_kind"})
-
-
-def _relation_touches_document(row: Mapping[str, object]) -> bool:
-    """Ребро с концом-документом или секцией не уезжает (fail-closed, решение 21).
-
-    Метку документа по ``uid`` захват пока не разрешает (``DOC_REF_TARGETS``
-    знает ``row_id``, ``doc_key``, ``to_ref``), а ребро к restricted-документу
-    несло бы его ``uid`` и ``note``. Незнакомый или пустой вид — тоже local.
-    """
-    return any(
-        not isinstance(row.get(col), str) or row[col] in _DOC_LINK_KINDS
-        for col in ("from_kind", "to_kind")
-    )
 
 
 _SPECS: tuple[TableSpec, ...] = (
@@ -775,7 +777,7 @@ _SPECS: tuple[TableSpec, ...] = (
         "relation",
         _A,
         local_columns=frozenset({"resolved", "broken_reason", "last_checked"}),
-        row_is_local=_relation_touches_document,
+        row_is_local=_gated("relation"),
         deterministic_uid=("project_id", "from_uid", "type", "to_kind", "to_uid", "to_key"),
     ),
     TableSpec("relation_type", _A, natural_keys=(_name("project_id", "name"),)),
