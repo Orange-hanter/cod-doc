@@ -23,9 +23,10 @@ from cod_doc.domain.entities import (
     QuestionRelation,
     QuestionStatus,
 )
+from cod_doc.domain.relations import RefKind
 from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel, QuestionOptionModel
 from cod_doc.infra.repositories import OpenQuestionRepository
-from cod_doc.services import activity_service, request_identity, search_service
+from cod_doc.services import activity_service, entity_events, request_identity, search_service
 from cod_doc.services.sync_service import leases
 
 from ._internals import (
@@ -437,6 +438,9 @@ def delete(
         ),
     )
     search_service.delete_entity(session, kind="question", ref=qid, project_id=project_id)
+    entity_events.publish_deleted(
+        session, project_id, RefKind.QUESTION, model.uid, key=qid, author=author
+    )
     session.delete(model)
     session.flush()
     return snapshot

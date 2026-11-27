@@ -38,14 +38,14 @@ def test_agent_profile_in_valid_set() -> None:
     assert "agent" in VALID_PROFILES
 
 
-def test_agent_tools_frozenset_has_six_names() -> None:
-    """RFC 25 §3.2/§3.5 (CUR-008 + CUR-016): still 6 names, curator ones.
+def test_agent_tools_frozenset_has_eight_names() -> None:
+    """RFC 25 §3.2/§3.5 (CUR-008 + CUR-016) plus RFC 39: 6 curator names and 2 graph readers.
 
     CUR-016 swapped ``ctx_docs`` for ``curator_next``: the doc card carries
     the same corpus slice in its drift half and adds the work queue, so the
     raw listing no longer earns one of the six slots.
     """
-    assert len(AGENT_TOOLS) == 6
+    assert len(AGENT_TOOLS) == 8
     expected = {
         "agent_capabilities",
         "curator_next",
@@ -53,6 +53,9 @@ def test_agent_tools_frozenset_has_six_names() -> None:
         "ctx_drift",
         "context_get",
         "agent_report",
+        # RFC 39 §3.7: read-only graph navigation for the curator
+        "relations",
+        "relation_types",
     }
     assert expected == AGENT_TOOLS
 

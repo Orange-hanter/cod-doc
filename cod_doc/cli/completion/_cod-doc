@@ -404,6 +404,7 @@ _cod-doc() {
         (push)       _cod_doc_push && ret=0 ;;
         (question)   _cod_doc_question && ret=0 ;;
         (reindex)    _cod_doc_reindex && ret=0 ;;
+        (rel)        _cod_doc_rel && ret=0 ;;
         (remote)     _cod_doc_remote && ret=0 ;;
         (revision)   _cod_doc_revision && ret=0 ;;
         (roadmap)    _cod_doc_roadmap && ret=0 ;;
@@ -462,6 +463,7 @@ _cod-doc() {
     'push:Упаковать неотправленные операции и сдвинуть refs/main remote.'
     'question:Open questions — DB entity with options and links; never projected…'
     'reindex:Rebuild repo-level indexes (files / symbols / imports).'
+    'rel:Граф связей; relate/unrelate между сущностями, словарь отношений.'
     'remote:Remotes проекта в ~/.cod-doc/config.yaml (RFC 29 §10.12).'
     'revision:Inspect and revert revision history.'
     'roadmap:Дорожная карта; порядок работ проекта и прогноз «когда очередь дойд…'
@@ -3428,6 +3430,178 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--max-files)--max-files=:max-files' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel] )) || _cod_doc_rel() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_rel_commands' \
+    '*:: :->cod_doc_rel_cmd' && ret=0
+
+  case $state in
+    (cod_doc_rel_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-rel-$words[1]:"
+      case $words[1] in
+        (add)    _cod_doc_rel_add && ret=0 ;;
+        (ls)     _cod_doc_rel_ls && ret=0 ;;
+        (rm)     _cod_doc_rel_rm && ret=0 ;;
+        (type)   _cod_doc_rel_type && ret=0 ;;
+        (types)  _cod_doc_rel_types && ret=0 ;;
+        (verify) _cod_doc_rel_verify && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_commands] )) || _cod_doc_rel_commands() {
+  local -a cmds
+  cmds=(
+    'add:Связать FROM и TO отношением TYPE (имя, алиас или обратное имя).'
+    'ls:Все связи сущности REF одной лентой.'
+    'rm:Снять связь; код 0 и пометка, если её не было.'
+    'type:Проектные типы отношений; define, deprecate.'
+    'types:Словарь отношений; встроенные и проектные типы с числом рёбер.'
+    'verify:Проверить code;/url; и ссылки вперёд; код 1, если есть битые.'
+  )
+  _describe -t cod-doc-rel-commands 'cod-doc rel command' cmds
+}
+
+(( $+functions[_cod_doc_rel_add] )) || _cod_doc_rel_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--note)--note=:note' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:from-ref' \
+    '2:type' \
+    '3:to-ref' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_ls] )) || _cod_doc_rel_ls() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--in)--in[Только входящие]' \
+    '(--out)--out[Только исходящие]' \
+    '*'{-t+,--type=}'[Фильтр по типу (можно несколько)]:types' \
+    '(--no-derived)--no-derived[Без ссылок из прозы и коммитов]' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:ref' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_rm] )) || _cod_doc_rel_rm() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:from-ref' \
+    '2:type' \
+    '3:to-ref' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_type] )) || _cod_doc_rel_type() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_rel_type_commands' \
+    '*:: :->cod_doc_rel_type_cmd' && ret=0
+
+  case $state in
+    (cod_doc_rel_type_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-rel-type-$words[1]:"
+      case $words[1] in
+        (define)    _cod_doc_rel_type_define && ret=0 ;;
+        (deprecate) _cod_doc_rel_type_deprecate && ret=0 ;;
+        (*)         _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_type_commands] )) || _cod_doc_rel_type_commands() {
+  local -a cmds
+  cmds=(
+    'define:Завести проектный тип NAME без миграции.'
+    'deprecate:Запретить новые рёбра типа NAME; существующие остаются.'
+  )
+  _describe -t cod-doc-rel-type-commands 'cod-doc rel type command' cmds
+}
+
+(( $+functions[_cod_doc_rel_type_define] )) || _cod_doc_rel_type_define() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--inverse)--inverse=[Имя со стороны цели (у --symmetric совпадает с NAME)]:inverse' \
+    '*--from=[Вид источника]:from-kinds' \
+    '*--to=[Вид цели]:to-kinds' \
+    '(--symmetric)--symmetric' \
+    '(--acyclic)--acyclic' \
+    '(--allow-forward)--allow-forward[Цель может ещё не существовать]' \
+    '(--description)--description=:description' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_type_deprecate] )) || _cod_doc_rel_type_deprecate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_types] )) || _cod_doc_rel_types() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--from)--from=[Вид источника (story, task, …)]:from-kind' \
+    '(--to)--to=[Вид цели]:to-kind' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_rel_verify] )) || _cod_doc_rel_verify() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '*--ref=[Только рёбра этого источника (kind;key)]:refs' \
+    '(--json)--json[Machine-readable output]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }

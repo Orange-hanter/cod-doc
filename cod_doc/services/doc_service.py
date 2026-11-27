@@ -43,10 +43,11 @@ from cod_doc.domain.entities import (
     Section,
     Sensitivity,
 )
+from cod_doc.domain.relations import RefKind
 from cod_doc.infra import ordering, sync_capture, sync_registry, sync_withdraw
 from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
-from cod_doc.services import activity_service, doc_events, search_service, validation
+from cod_doc.services import activity_service, doc_events, entity_events, search_service, validation
 from cod_doc.services import revision_service as rev
 
 # SVC-004: классы живут в листовом `doc_errors`; здесь реэкспорт под прежними именами.
@@ -687,6 +688,14 @@ def delete_section(
 
     # link rows cascade with the section (ORM `delete-orphan` on
     # `outgoing_links`), doc_comment rows via the DB-level FK CASCADE.
+    entity_events.publish_deleted(
+        session,
+        project_id,
+        RefKind.SECTION,
+        sec_model.uid,
+        key=f"{doc.doc_key}#{anchor}",
+        author=author,
+    )
     session.delete(sec_model)
     session.flush()
     _renumber_positions(session, document_id)
@@ -1335,6 +1344,20 @@ def delete(
         summary=f"Document {doc_key} deleted ({section_count} section(s))",
     )
 
+    for sec_uid, sec_anchor in session.execute(
+        select(SectionModel.uid, SectionModel.anchor).where(SectionModel.document_id == doc.row_id)
+    ).all():
+        entity_events.publish_deleted(
+            session,
+            project_id,
+            RefKind.SECTION,
+            sec_uid,
+            key=f"{doc_key}#{sec_anchor}",
+            author=author,
+        )
+    entity_events.publish_deleted(
+        session, project_id, RefKind.DOCUMENT, doc.uid, key=doc_key, author=author
+    )
     session.delete(doc)
     session.flush()
 

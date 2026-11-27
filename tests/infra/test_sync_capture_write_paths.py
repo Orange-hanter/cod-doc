@@ -85,6 +85,8 @@ from cod_doc.infra.models import (
     ProjectModel,
     QuestionLinkModel,
     QuestionOptionModel,
+    RelationModel,
+    RelationTypeModel,
     RevisionModel,
     RoutineModel,
     ScenarioLinkModel,
@@ -117,6 +119,7 @@ from cod_doc.services import (
     finding_service,
     plan_service,
     question_service,
+    relation_service,
     routine_service,
     scenario_service,
     story_service,
@@ -1888,6 +1891,71 @@ def _(w: World) -> Expect:
         )
     )
     return [("commit_link", w.later(CommitLinkModel, sha="abc1234"))]
+
+
+def _relate_story_to_task(w: World) -> None:
+    cap.set_author(w.session, AUTHOR)
+    story = w.session.scalars(select(UserStoryModel)).one()
+    relation_service.relate(
+        w.session,
+        project_id=w.pid,
+        from_ref=f"story:{story.story_id}",
+        type="implemented_by",
+        to_ref="task:PLN-001",
+        author=AUTHOR,
+    )
+
+
+def _define_risk_type(w: World) -> None:
+    cap.set_author(w.session, AUTHOR)
+    relation_service.define_type(
+        w.session,
+        project_id=w.pid,
+        spec=relation_service.RelationTypeSpec("risk_of", "risked_by", ["story"], ["adr"]),
+        author=AUTHOR,
+    )
+
+
+@case("relation_service.relate")
+def _(w: World) -> Expect:
+    _relate_story_to_task(w)
+    return [("relation", w.later(RelationModel, type="implemented_by"))]
+
+
+@case("relation_service.record")
+def _(w: World) -> Expect:
+    # `record` — шаг audit-trail внутри relate: ревизия источника и событие
+    _relate_story_to_task(w)
+    return [("relation", w.later(RelationModel, type="implemented_by"))]
+
+
+@case("relation_service.unrelate")
+def _(w: World) -> Expect:
+    _relate_story_to_task(w)
+    uid = w.uid(RelationModel, type="implemented_by")
+    story = w.session.scalars(select(UserStoryModel)).one()
+    relation_service.unrelate(
+        w.session,
+        project_id=w.pid,
+        from_ref=f"story:{story.story_id}",
+        type="implemented_by",
+        to_ref="task:PLN-001",
+        author=AUTHOR,
+    )
+    return [("relation", lambda: uid)]
+
+
+@case("relation_service.define_type")
+def _(w: World) -> Expect:
+    _define_risk_type(w)
+    return [("relation_type", w.later(RelationTypeModel, name="risk_of"))]
+
+
+@case("relation_service.deprecate_type")
+def _(w: World) -> Expect:
+    _define_risk_type(w)
+    relation_service.deprecate_type(w.session, project_id=w.pid, name="risk_of", author=AUTHOR)
+    return [("relation_type", w.later(RelationTypeModel, name="risk_of"))]
 
 
 # --- тесты -------------------------------------------------------------------------------

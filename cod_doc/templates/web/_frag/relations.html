@@ -1,0 +1,52 @@
+{# REL-012 (RFC 39 §3.7): единая панель «Связи» — relation_service.relations(ref).
+   Variables: rel_panel (dict: ref, back, groups[{label, rows[]}], total, types), project.name,
+   peek (шторка: без формы). Нет rel_panel — блок не рендерится.
+   Группа на label; строка — другой конец (ссылка на всю строку), заголовок,
+   бейдж источника, метка «не разрешена». Для code/url страницы нет — текст. #}
+{% import "_ui/ledger.html" as ui %}
+{% if rel_panel and (rel_panel.total or (rel_panel.types and not peek)) %}
+<div class="l-list t-full"{% if not peek %} id="relations"{% endif %}>
+  {% call ui.group("Связи", count=rel_panel.total, filter=False) %}
+    {% for g in rel_panel.groups %}
+      <div class="l-row-meta"><code>{{ g.label }}</code></div>
+      {% for r in g.rows %}
+        {% call ui.row(href=r.href or None, filter=False) %}
+          <div class="l-row-body">
+            <span class="l-row-text l-clamp-2">{{ r.title }}</span>
+            <div class="l-row-meta"><code>{{ r.ref }}</code>{% if r.note %} · {{ r.note }}{% endif %}</div>
+          </div>
+          <div class="l-row-aside">
+            {% if not r.resolved %}{{ ui.tag("не разрешена", "warn") }}{% endif %}
+            {{ ui.tag(r.source) }}
+          </div>
+        {% endcall %}
+      {% endfor %}
+    {% else %}
+      {{ ui.empty("Связей пока нет.", glyph="–") }}
+    {% endfor %}
+    {% if rel_panel.types and rel_panel.back and not peek %}
+      {% set qp = request.query_params if request is defined else {} %}
+      {% if qp.get("rel_error") %}<div class="alert alert-error"><span class="alert-msg">{{ qp.get("rel_error") }}</span></div>{% endif %}
+      <details class="q-add"{% if qp.get("rel_error") %} open{% endif %}>
+        <summary>Добавить связь</summary>
+        <form method="post" action="/p/{{ project.name }}/relations" class="settings-form">
+          <input type="hidden" name="from_ref" value="{{ rel_panel.ref }}">
+          <input type="hidden" name="back" value="{{ rel_panel.back }}#relations">
+          <label class="field">
+            <span class="label">Тип</span>
+            <select name="type">
+              {% for t in rel_panel.types %}<option value="{{ t }}"{% if qp.get("rel_type") == t %} selected{% endif %}>{{ t }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">Цель (kind:key)</span>
+            <input name="to_ref" required value="{{ qp.get('rel_to', '') }}" placeholder="task:ADO-042 · story:US-007 · url:https://…">
+          </label>
+          <label class="field"><span class="label">Заметка (необязательно)</span><input name="note" value="{{ qp.get('rel_note', '') }}"></label>
+          <div class="form-actions"><button type="submit" class="btn btn-sm btn-primary">Добавить</button></div>
+        </form>
+      </details>
+    {% endif %}
+  {% endcall %}
+</div>
+{% endif %}

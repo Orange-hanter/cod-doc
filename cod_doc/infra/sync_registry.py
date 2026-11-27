@@ -145,6 +145,18 @@
     таблиц синхронизации (``replica``, ``sync_op``, ``changeset``,
     ``sync_ref``, ``sync_lease``, ``entity_alias``) — ``local``: это состояние
     реплики, а не проекта.
+21. **Граф связей** (RFC 39, REL-005). ``relation`` и ``relation_type`` —
+    authored, открывают эпоху (``0058``). Концы ``relation.from_uid``/``to_uid``
+    хранят ``uid``, а не ``row_id``: ``POLYMORPHIC_FKS`` (``row_id`` ↔ ``uid``)
+    для них неверен, они объявлены в ``UID_REFS`` и едут как есть.
+    ``resolved``/``broken_reason``/``last_checked`` — local (итог проверки на
+    реплике). Ребро с концом ``document``/``section`` уезжает по метке этого
+    документа, как остальные ссылки ``DOC_REFS`` (REL-018): цель ``uid`` в
+    ``DOC_REF_TARGETS`` и ``sync_withdraw``; ребро к restricted-документу
+    (и ссылка вперёд на документ без ``to_uid``) local целиком, ``note`` и
+    ``to_key`` наружу не идут.
+    Детерминированный uid ребра зависит от ``to_uid``: ссылка вперёд после
+    ``relation_verify`` меняет ключ, а uid остаётся прежним.
 19. **Журнал в changeset'е** (CLO-024, Q-010). ``revision`` уезжает
     операцией ``upsert`` на вставку строки; адрес операции —
     ``revision_id`` (``JOURNAL_IDS``), колонки ``uid`` у журнала нет.
@@ -214,6 +226,7 @@ from types import MappingProxyType
 from typing import Final
 
 from cod_doc.domain.entities import EntityKind, Sensitivity
+from cod_doc.domain.relations import RefKind
 
 
 class SyncClass(StrEnum):
@@ -485,15 +498,16 @@ def _local_event(row: Mapping[str, object]) -> bool:
 
 _DOC_ENTITY_KINDS = frozenset({EntityKind.DOCUMENT.value, EntityKind.SECTION.value})
 _DOC_LINK_KINDS = frozenset({"document", "section"})
+#: Виды ``RefKind`` (граф связей, REL-018) без документа и секции.
+_NON_DOC_REF_KINDS = frozenset(k.value for k in RefKind) - _DOC_LINK_KINDS
 #: Значения дискриминатора, о которых известно, что это НЕ документ. Всё вне
 #: ``kinds`` и вне этого перечня считается ссылкой на документ (fail-closed).
 _NON_DOC_KINDS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "entity_kind": frozenset(k.value for k in EntityKind) - _DOC_ENTITY_KINDS,
         "scope_kind": _PLAIN_EVENT_SCOPES,
-        "to_kind": frozenset(
-            {"task", "story", "module", "criterion", "adr", "scenario", "finding", "code", "url"}
-        ),
+        "to_kind": _NON_DOC_REF_KINDS,
+        "from_kind": _NON_DOC_REF_KINDS,
     }
 )
 
@@ -546,6 +560,18 @@ DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
                 whole_row=True,
                 kind_column="entity_kind",
                 kinds=_DOC_ENTITY_KINDS,
+            ),
+        ),
+        # Концы адресованы uid, вид — в from_kind/to_kind; документный конец без
+        # uid (ссылка вперёд) метки не имеет и остаётся local (решение 21).
+        "relation": (
+            DocRef("from_uid", whole_row=True, kind_column="from_kind", kinds=_DOC_LINK_KINDS),
+            DocRef(
+                "to_uid",
+                whole_row=True,
+                kind_column="to_kind",
+                kinds=_DOC_LINK_KINDS,
+                nullable=True,
             ),
         ),
         "approval_doc_revision_link": (_whole("revision_id"),),
@@ -618,6 +644,7 @@ def _leased(column: str) -> NaturalKey:
 
 
 _TO_REF: Mapping[str, str] = MappingProxyType({"to_ref": "to_kind"})
+
 
 _SPECS: tuple[TableSpec, ...] = (
     # --- authored: проект, документы, дерево ---------------------------------
@@ -745,6 +772,15 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec("module", _A, natural_keys=(_name("project_id", "module_id"),)),
     TableSpec("module_dependency", _A, deterministic_uid=("from_module", "to_module")),
     TableSpec("module_code", _A, row_is_local=_machine_path),
+    # --- authored: граф связей (RFC 39, REL-005) ---------------------------
+    TableSpec(
+        "relation",
+        _A,
+        local_columns=frozenset({"resolved", "broken_reason", "last_checked"}),
+        row_is_local=_gated("relation"),
+        deterministic_uid=("project_id", "from_uid", "type", "to_kind", "to_uid", "to_key"),
+    ),
+    TableSpec("relation_type", _A, natural_keys=(_name("project_id", "name"),)),
     # --- authored: теги (составной PK, uid вычисляется при захвате) ---------
     TableSpec("tag", _A, natural_keys=(_name("project_id", "name"),)),
     TableSpec(
@@ -907,6 +943,36 @@ ENTITY_KIND_TABLES: Mapping[EntityKind, str] = MappingProxyType(
         EntityKind.ADR_TOPIC: "adr_topic",
         EntityKind.SCENARIO: "scenario",
         EntityKind.QUESTION: "open_question",
+    }
+)
+
+#: Полиморфные ссылки, значение которых — ``uid`` (а не ``row_id``): колонка →
+#: колонка-дискриминатор со значением ``RefKind`` (решение 21). В отличие от
+#: ``POLYMORPHIC_FKS`` захват и применение их не переводят: ``uid`` глобален
+#: и уезжает как есть; перевод ``row_id`` ↔ ``uid`` по ним сломал бы значение.
+UID_REFS: Mapping[tuple[str, str], str] = MappingProxyType(
+    {
+        ("relation", "from_uid"): "from_kind",
+        ("relation", "to_uid"): "to_kind",
+    }
+)
+
+#: Значение дискриминатора ``UID_REFS`` (``RefKind``) → таблица со строкой-целью.
+#: ``code``/``url`` — литералы без таблицы.
+UID_REF_KIND_TABLES: Mapping[str, str] = MappingProxyType(
+    {
+        "task": "task",
+        "story": "user_story",
+        "criterion": "story_acceptance",
+        "document": "document",
+        "section": "section",
+        "adr": "adr",
+        "question": "open_question",
+        "scenario": "scenario",
+        "plan": "plan",
+        "plan_section": "plan_section",
+        "finding": "finding",
+        "module": "module",
     }
 )
 
@@ -1154,6 +1220,34 @@ _SHIPPED_BEFORE_UID: Mapping[str, frozenset[str]] = MappingProxyType(
                 "author",
                 "created",
                 "last_updated",
+            }
+        ),
+        "relation": frozenset(
+            {
+                "project_id",
+                "from_kind",
+                "from_uid",
+                "type",
+                "to_kind",
+                "to_uid",
+                "to_key",
+                "note",
+                "author",
+                "created_at",
+            }
+        ),
+        "relation_type": frozenset(
+            {
+                "project_id",
+                "name",
+                "inverse",
+                "from_kinds",
+                "to_kinds",
+                "symmetric",
+                "acyclic",
+                "allow_forward",
+                "description",
+                "deprecated",
             }
         ),
         "scenario_link": frozenset({"scenario_row_id", "to_kind", "to_ref", "relation"}),

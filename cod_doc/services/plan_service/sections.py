@@ -24,11 +24,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import EntityKind, Plan
+from cod_doc.domain.relations import RefKind
 from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel, PlanModel, PlanSectionModel, TaskModel
 from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
 from cod_doc.infra.sql_helpers import is_unique_violation
-from cod_doc.services import activity_service
+from cod_doc.services import activity_service, entity_events
 from cod_doc.services import revision_service as rev
 from cod_doc.services.validation import (
     validate_id_prefix,
@@ -624,6 +625,14 @@ def delete_section(
             "moved": len(moved_task_ids),
         },
         summary=f"Plan {plan_scope}: section {model.letter} deleted",
+    )
+    entity_events.publish_deleted(
+        session,
+        project_id,
+        RefKind.PLAN_SECTION,
+        model.uid,
+        key=f"{plan_scope}#{model.letter}",
+        author=author,
     )
     session.delete(model)
     session.flush()

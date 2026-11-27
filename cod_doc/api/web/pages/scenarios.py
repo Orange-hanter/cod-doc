@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
+from cod_doc.api.web.relations import relations_panel
 from cod_doc.api.web.sorting import SortKey, SortSpec, natural_key, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ScenarioKind, ScenarioStatus
@@ -329,6 +330,7 @@ def scenario_show(
             "created": found.created,
             "last_updated": found.last_updated,
             "row_id": found.row_id,
+            "rel_panel": relations_panel(session, project_id, slug, f"scenario:{scenario_id}"),
             "steps": steps,
             "links": links,
             "projection_doc_key": scenario_service.doc_key_for(found.group_key),

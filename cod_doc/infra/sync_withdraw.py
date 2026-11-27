@@ -544,9 +544,18 @@ def reship_ops(
         if op is not None:
             affected.append((table, row))
             out.append(op)
+            if table == "relation":  # ревизия ``relation.*`` лежит у источника ребра
+                affected += _edge_source(lookup, row)
     out += _unshipped_revisions(session, lookup, project_id, affected, seen)
     seen.update((op.entity_kind, op.entity_uid) for op in out)
     return out
+
+
+def _edge_source(lookup: cap._Lookup, edge: Mapping[str, object]) -> list[tuple[str, Row]]:
+    """Строка-источник ребра ``relation`` (``from_uid``) — чьи ревизии несут его ``diff``."""
+    table = reg.UID_REF_KIND_TABLES.get(str(edge.get("from_kind")))
+    source = lookup.row_by_uid(table, edge.get("from_uid")) if table is not None else None
+    return [(table, dict(source))] if table is not None and source is not None else []
 
 
 def _first_upsert(
@@ -634,6 +643,7 @@ def _ref_condition(
     doc: Mapping[str, object],
     sections: list[object],
     revisions: list[int],
+    sections_uids: list[object],
 ) -> ColumnElement[bool] | None:
     col = tbl.c[column]
     doc_key = str(doc.get("doc_key"))
@@ -641,6 +651,13 @@ def _ref_condition(
         return col == doc.get(_ROW_ID)
     if target == _SECTION:
         return col.in_(sections) if sections else None
+    if target == "uid":
+        kind = tbl.c[reg.UID_REFS[(tbl.name, column)]]
+        on_doc = and_(kind == _DOCUMENT, col == doc.get(_UID))
+        section_uids = [u for u in sections_uids if isinstance(u, str)]
+        if not section_uids:
+            return on_doc
+        return or_(on_doc, and_(kind == _SECTION, col.in_(section_uids)))
     if target == "doc_key":
         return col == doc_key
     if target == "to_ref":
@@ -671,12 +688,13 @@ def _referrers(
     и то, что реестр придерживал вместе с ней.
     """
     sections = [r[_ROW_ID] for r in body.get(_SECTION, ())]
+    section_uids = [r[_UID] for r in body.get(_SECTION, ())]
     found: dict[tuple[str, object], tuple[Row, set[str]]] = {}
     for (table, column), target in cap.DOC_REF_TARGETS.items():
         if table in reg.DOCUMENT_BODY or table in reg.JOURNAL_IDS:
             continue
         tbl = Base.metadata.tables[table]
-        where = _ref_condition(tbl, column, target, doc, sections, revisions)
+        where = _ref_condition(tbl, column, target, doc, sections, revisions, section_uids)
         if where is None:
             continue
         ref = next(r for r in reg.DOC_REFS[table] if r.column == column)
@@ -748,6 +766,17 @@ def _entity_document(lookup: cap._Lookup, kind: object, row_id: object) -> Row |
     return dict(found) if found is not None else None
 
 
+def _uid_document(lookup: cap._Lookup, kind: object, uid: object) -> Row | None:
+    """Документ конца-``uid`` (``UID_REFS``): сам документ или документ секции."""
+    table = reg.UID_REF_KIND_TABLES.get(str(kind))
+    if table not in {_DOCUMENT, _SECTION}:
+        return None
+    found = lookup.row_by_uid(table, uid)
+    if found is None:
+        return None
+    return _entity_document(lookup, table, found[_ROW_ID])
+
+
 def _ref_document(
     lookup: cap._Lookup, project_id: int, table: str, column: str, row: Mapping[str, object]
 ) -> Row | None:
@@ -760,6 +789,8 @@ def _ref_document(
         return _entity_document(lookup, EntityKind.DOCUMENT.value, value)
     if target == _SECTION:
         return _entity_document(lookup, EntityKind.SECTION.value, value)
+    if target == "uid":
+        return _uid_document(lookup, row.get(reg.UID_REFS[(table, column)]), value)
     if target == "doc_key":
         return _doc_by_key(lookup, project_id, value)
     if target == "to_ref":

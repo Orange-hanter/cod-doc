@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.prose_links import ProseLinks
+from cod_doc.api.web.relations import relations_panel
 from cod_doc.api.web.repo_links import commit_url, file_url, pr_url
 from cod_doc.domain.entities import EntityKind, QuestionLinkKind, Task, TaskStatus
 from cod_doc.services import plan_service as plans
@@ -173,6 +174,9 @@ def task_detail_context(
             {"path": path, "url": file_url(repo_url, task.completed_commit, path)}
             for path in tasks.affected_files(session, task.row_id)
         ],
+        "rel_panel": (
+            relations_panel(session, project_db_id, slug, f"task:{task.task_id}") if slug else None
+        ),
         "linked_questions": question_service.linked_questions(
             session, project_db_id, target_kind=QuestionLinkKind.TASK, target_ref=task.task_id
         ),

@@ -4,7 +4,7 @@ Four profiles. The tool counts below are derived, not hand-kept (DEBT-001):
 ``python -m cod_doc.mcp.profile_counts --write`` rewrites them, and the
 pre-commit hook runs it through ``scripts/regen.sh``:
 
-- ``agent`` (RFC 25 §3.2/§3.5, **default**) — 6 curator tools for the
+- ``agent`` (RFC 25 §3.2/§3.5, **default**) — 8 curator tools for the
   default AI agent, whose role is documentation availability and search,
   not task execution: ``agent_capabilities`` announces the role,
   ``curator_next`` hands over the doc card (what is broken and what to do
@@ -25,11 +25,11 @@ pre-commit hook runs it through ``scripts/regen.sh``:
   rewrites whatever it happens to find.
 - ``minimal`` — 21-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
-- ``standard`` — 191-tool DB-backed surface; drops only the remaining
+- ``standard`` — 198-tool DB-backed surface; drops only the remaining
   legacy YAML-backed agent tools (run_agent_once, get_agent_context, …).
   The legacy YAML CRUD tools were removed in STB-002 (2026-06-08) once
   the DB became the source of truth.
-- ``full`` — all 195 tools the server registers, including the remaining
+- ``full`` — all 202 tools the server registers, including the remaining
   legacy agent tools. For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env
@@ -39,7 +39,7 @@ Active profile is chosen at server start via CLI ``--profile`` or env
 from __future__ import annotations
 
 # --------------------------------------------------------------------------- #
-# Agent — 6 curator tools for the default AI agent (RFC 25 §3.2/§3.5,        #
+# Agent — 8 curator tools for the default AI agent (RFC 25 §3.2/§3.5,        #
 # CUR-008 + CUR-016).                                                        #
 # The role is documentation availability and search, not task execution:     #
 # read drift, search the corpus, assemble Snowball context, escalate.        #
@@ -67,6 +67,10 @@ AGENT_TOOLS: frozenset[str] = frozenset(
         "context_get",
         # Unified dispatcher: progress | blocker | approval_request.
         "agent_report",
+        # RFC 39 §3.7: graph navigation for the curator — read-only; writing
+        # relations (relate/unrelate/relation_type_*) stays standard/full.
+        "relations",
+        "relation_types",
     }
 )
 

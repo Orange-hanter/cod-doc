@@ -15,9 +15,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType
+from cod_doc.domain.relations import RefKind
 from cod_doc.infra import ordering
 from cod_doc.infra.models import SectionModel
-from cod_doc.services import activity_service, doc_service, projection_service
+from cod_doc.services import activity_service, doc_service, entity_events, projection_service
 
 from .crud import group_keys, list_for_group
 from .links import list_links
@@ -100,6 +101,14 @@ def _sync_sections(
 
     for anchor, model in existing.items():
         if anchor not in wanted:
+            entity_events.publish_deleted(
+                session,
+                project_id,
+                RefKind.SECTION,
+                model.uid,
+                key=f"{doc_key_for(group_key)}#{anchor}",
+                author=author,
+            )
             session.delete(model)
     session.flush()
     # CLO-004: порядок выдачи — ранг; переписываются только ранги секций,

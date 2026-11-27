@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.markdown import autolink_adr_refs, render_markdown
+from cod_doc.api.web.relations import relations_panel
 from cod_doc.api.web.sorting import (
     PRIORITY_RANK,
     SortKey,
@@ -399,6 +400,7 @@ def question_show(
             "status_label": STATUS_LABEL.get(card["status"], card["status"]),
             "broken_links": sum(1 for e in card["links"] if e["resolved"] is False),
             "row_id": found.row_id,
+            "rel_panel": relations_panel(session, project_id, slug, f"question:{qid}"),
             "error": error,
             "edit": bool(edit),
             "priority_options": PRIORITY_OPTIONS,

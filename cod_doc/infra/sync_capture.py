@@ -127,7 +127,8 @@ _SHIPPED_CLASSES = frozenset({reg.SyncClass.AUTHORED, reg.SyncClass.JOURNAL})
 
 #: Как разрешить метку документа для каждой ссылки ``DOC_REFS`` захватываемых
 #: таблиц: ``document``/``section`` — FK, ``doc_key`` — ключ документа в проекте,
-#: ``to_ref`` — ``doc_key#anchor`` при ``to_kind`` документа, ``entity_kind`` —
+#: ``to_ref`` — ``doc_key#anchor`` при ``to_kind`` документа, ``uid`` — ``uid``
+#: документа/секции по виду из ``UID_REFS``, ``entity_kind`` —
 #: полиморфный ``row_id``, ``revision`` — ревизия → её сущность. Полноту
 #: относительно ``DOC_REFS`` сверяет ``tests/infra/test_sync_capture.py``.
 DOC_REF_TARGETS: Mapping[tuple[str, str], str] = MappingProxyType(
@@ -146,6 +147,8 @@ DOC_REF_TARGETS: Mapping[tuple[str, str], str] = MappingProxyType(
         ("open_question_link", "to_ref"): "to_ref",
         ("story_link", "to_ref"): "to_ref",
         ("scenario_link", "to_ref"): "to_ref",
+        ("relation", "from_uid"): "uid",
+        ("relation", "to_uid"): "uid",
         ("external_ref", "entity_row_id"): "entity_kind",
         ("approval_doc_revision_link", "revision_id"): "revision",
         ("link_suggestion", "from_section_id"): "section",
@@ -320,6 +323,15 @@ class _Lookup:
         self._rows[key] = found
         return found
 
+    def row_by_uid(self, table: str, uid: object) -> Mapping[str, object] | None:
+        """Строка по ``uid`` (``UID_REFS``): ``row_id`` — из БД, значения — как у ``row``."""
+        mapper = _mapper_for(table)
+        if mapper is None or not isinstance(uid, str):
+            return None
+        tbl = _table(mapper)
+        row_id = self.conn.execute(select(tbl.c.row_id).where(tbl.c.uid == uid)).scalar()
+        return self.row(table, row_id) if row_id is not None else None
+
     def _from_identity_map(self, table: str, row_id: object) -> Mapping[str, object] | None:
         mapper = _mapper_for(table)
         if mapper is None:
@@ -405,8 +417,25 @@ def _entity_label(lookup: _Lookup, kind: object, row_id: object) -> object:
     return None
 
 
+def _uid_label(lookup: _Lookup, kind: object, uid: object) -> object:
+    """Метка документа конца-``uid`` (``UID_REFS``): документ или секция по ``uid``."""
+    table = reg.UID_REF_KIND_TABLES.get(str(kind))
+    if table not in {"document", "section"}:
+        return None
+    found = lookup.row_by_uid(table, uid)
+    if found is None:
+        return None
+    label = _doc_label if table == "document" else _section_label
+    return label(lookup, found[_ROW_ID])
+
+
 def _label(
-    lookup: _Lookup, target: str, row: Mapping[str, object], column: str, project_id: object
+    lookup: _Lookup,
+    target: str,
+    row: Mapping[str, object],
+    column: str,
+    project_id: object,
+    table: str,
 ) -> object:
     value = row.get(column)
     if value is None:
@@ -415,6 +444,8 @@ def _label(
         return _doc_label(lookup, value)
     if target == "section":
         return _section_label(lookup, value)
+    if target == "uid":
+        return _uid_label(lookup, row.get(reg.UID_REFS[(table, column)]), value)
     if target == "doc_key":
         return lookup.doc_sensitivity_by_key(project_id, value)
     if target == "to_ref":
@@ -444,7 +475,9 @@ def gating_row(
     """
     out = dict(row)
     for ref in reg.DOC_REFS.get(table, ()):
-        label = _label(lookup, DOC_REF_TARGETS[(table, ref.column)], row, ref.column, project_id)
+        label = _label(
+            lookup, DOC_REF_TARGETS[(table, ref.column)], row, ref.column, project_id, table
+        )
         if label is not None:
             out[reg.sensitivity_key(ref.column)] = label
     if table in reg.JOURNAL_IDS:
@@ -472,7 +505,41 @@ def _entity_ships(lookup: _Lookup, row: Mapping[str, object]) -> bool:
     if table is None or entity is None:
         return False
     gate = gating_row(lookup, table, entity, lookup.project_id(table, entity))
-    return _ships(table, gate) and not reg.withheld_columns(table, gate)
+    return (
+        _ships(table, gate)
+        and not reg.withheld_columns(table, gate)
+        and _relation_ends_ship(lookup, row, lookup.project_id(table, entity))
+    )
+
+
+def _relation_ends_ship(lookup: _Lookup, row: Mapping[str, object], project_id: object) -> bool:
+    """Ревизия ``relation.*`` не несёт restricted-документ на конце ребра (REL-018).
+
+    Её ``diff`` повторяет ребро с ``note`` и ссылкой на конец; ревизия
+    источника-не-документа иначе унесла бы то, что ребро придерживает. Конец —
+    документ или секция с неразрешённой меткой (в том числе не найденный) —
+    ревизия local; нечитаемый ``diff`` ``relation.*`` — тоже.
+    """
+    diff = row.get("diff")
+    if not isinstance(diff, str) or '"relation.' not in diff:
+        return True
+    try:
+        payload = json.loads(diff)
+        ends = [payload[side] for side in ("from", "to")]
+        kinds = [str(end["ref"]).partition(":")[0] for end in ends]
+    except ValueError, KeyError, TypeError:
+        return False
+    for end, kind in zip(ends, kinds, strict=True):
+        if kind not in _DOC_KINDS:
+            continue
+        if end.get("uid") is not None:
+            label = _uid_label(lookup, kind, end["uid"])
+        else:  # ссылка вперёд: у конца только ключ
+            key = str(end["ref"]).partition(":")[2].partition("#")[0]
+            label = lookup.doc_sensitivity_by_key(project_id, key)
+        if not reg.is_cleared(label):
+            return False
+    return True
 
 
 #: Ключи значений поля в diff вида ``{"field": f, "old": …, "new": …}``.

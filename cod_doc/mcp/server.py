@@ -38,6 +38,7 @@ from cod_doc.mcp.tools import (
     link_tools,
     plan_tools,
     question_tools,
+    relation_tools,
     repair_tools,
     revision_tools,
     roadmap_tools,
@@ -106,6 +107,8 @@ for _module in (
     scenario_tools,
     # OQM-003 question.* (open questions — DB entity, never projected to markdown)
     question_tools,
+    # RFC 39 §3.7 relate / relations / relation_* (граф связей)
+    relation_tools,
     structure_tools,
     # RFC 25 §3.5 / CUR-016 curator.* (doc card: drift + links + hashes)
     curator_tools,

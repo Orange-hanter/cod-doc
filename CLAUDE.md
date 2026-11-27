@@ -370,6 +370,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_project_lookup_single_source.py` | `cod_doc/{cli,api,mcp}` не ищут проект по слагу сами: только `services.project_lookup` (в CLI — `cli/_common.require_project_id[_click]`) (SVC-008) |
 | `services/test_presentation_no_orm_writes.py` | `cod_doc/{mcp,cli,api}` не пишут в ORM мимо сервисов: ни `session.add/delete/merge`, ни `*Repository(...).add/update/delete` (включая форму через локальную переменную); allowlist пуст (ADO-208, RFC 26 §5.1) |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
+| `services/test_entity_deleted_published.py` | каждая функция services, что удаляет строку сущности (`RefKind`), публикует `entity_events.EntityDeleted`; прочие удаления — в `NOT_ENTITY` с обоснованием, список только сокращается (RFC 39 §3.5, REL-007) |
 | `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
 | `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); долга нет — `update_status` и `delete` выставлены в DEBT-005/006 |
@@ -377,6 +378,9 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_adr_mutation_surface_parity.py` | то же для `adr_service` (ARG-001): `relate`/`unrelate` на обеих поверхностях; долг CLI — `update`, `add_diagram`, `link_task`, каждый с обоснованием |
 | `services/test_approval_mutation_surface_parity.py` | то же для `approval_service` (ACU-010): `resolve`/`cancel` на MCP и CLI; `request_doc_patch` — внутренний (собирает куратор), `request` — долг CLI с обоснованием |
 | `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
+| `domain/test_relation_vocabulary_unambiguous.py` | встроенный словарь отношений без неоднозначных троек `(токен, from, to)`; `blocked_by` у задач и у вопросов разведён (RFC 39 §3.2, REL-004) |
+| `domain/test_relation_types_have_consumers.py` | у каждого встроенного типа отношения есть потребитель из `KNOWN_CONSUMERS`: тип без читателя — метка (REL-004) |
+| `infra/test_no_new_link_tables.py` | новая таблица-связь (`to_kind`+`to_ref`, `*_kind`+`*_uid`, два FK на сущности, `*_link`/`*_relation`/`*_edge`) вне `ALLOWLIST` роняет CI; список только сокращается, цель — `relation*` (RFC 39 §3.8, REL-008) |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 | `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |

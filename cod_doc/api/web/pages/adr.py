@@ -30,6 +30,7 @@ from cod_doc.api.web.markdown import (
     outline,
     render_markdown,
 )
+from cod_doc.api.web.relations import relations_panel
 from cod_doc.api.web.sorting import SortKey, SortSpec, SortState, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ActorKind, ADRStatus, EntityKind, actor_kind_for_author
@@ -943,6 +944,7 @@ def adr_show(
             "candidates": candidates,
             "status_options": STATUS_OPTIONS,
             "relations": rels,
+            "rel_panel": relations_panel(session, project_id, slug, f"adr:{adr_id}"),
             "proposed_amendments": proposed_amendments,
             "record": record,
             "record_gaps": [f["name"] for f in record if not f["ok"]],

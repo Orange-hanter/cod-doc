@@ -20,6 +20,7 @@ from cod_doc.api.web.back_nav import back_nav, entity_labels
 from cod_doc.api.web.errors import ValidationWebError, set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.peek import is_peek, peek_not_found
+from cod_doc.api.web.relations import relations_panel
 from cod_doc.api.web.sorting import SortKey, SortSpec, SortState, natural_key, sort_state
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
 from cod_doc.domain.entities import (
@@ -1358,6 +1359,9 @@ def doc_show(
         "_frag/peek_doc.html" if peek else "project/doc_show.html",
         {
             "project": {"name": proj.entry.name},
+            "rel_panel": relations_panel(
+                session, project_db_id, proj.entry.name, f"document:{doc.doc_key}"
+            ),
             "linked_questions": question_service.linked_questions(
                 session,
                 project_db_id,

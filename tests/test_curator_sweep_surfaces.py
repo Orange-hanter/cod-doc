@@ -109,7 +109,7 @@ def test_mcp_ignores_sync_without_apply(tmp_path: Path, isolated_cod_doc_home: P
 def test_agent_profile_stays_without_the_new_tools() -> None:
     assert "curator_sweep" not in AGENT_TOOLS
     assert "curator_sync" not in AGENT_TOOLS
-    assert len(AGENT_TOOLS) == 6
+    assert len(AGENT_TOOLS) == 8
 
 
 def test_cli_refuses_propose_without_apply(tmp_path: Path, isolated_cod_doc_home: Path) -> None:

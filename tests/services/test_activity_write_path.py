@@ -758,3 +758,32 @@ def test_master_hash_update_without_changes_emits_nothing(  # type: ignore[no-un
             .all()
         )
         assert len(events) == 1
+
+
+def test_relation_writes_emit_events_atomically(engine_with_schema, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """REL-006: relate/unrelate/define_type/deprecate_type оставляют след в той же транзакции."""
+    from cod_doc.services import relation_service as rs
+    from tests.services.test_relation_service import W
+
+    with make_session_factory(engine_with_schema)() as session:
+        w = W(session, tmp_path)
+        w.relate("story:US-064", "see_also", "story:US-007")
+        rs.unrelate(
+            session,
+            project_id=w.pid,
+            from_ref="story:US-064",
+            type="relates_to",
+            to_ref="story:US-007",
+            author="t",
+        )
+        spec = rs.RelationTypeSpec("mitigates", "mitigated_by", ["story"], ["adr"])
+        rs.define_type(session, project_id=w.pid, spec=spec, author="t")
+        rs.deprecate_type(session, project_id=w.pid, name="mitigates", author="t")
+        session.flush()
+        kinds = set(session.scalars(select(ActivityEventModel.kind)))
+    assert {
+        "relation.added",
+        "relation.removed",
+        "relation_type.defined",
+        "relation_type.deprecated",
+    } <= kinds
