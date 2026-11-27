@@ -19,6 +19,7 @@ from cod_doc.api.deps import get_config, get_project, get_project_db
 from cod_doc.api.web.back_nav import back_nav, entity_labels, natural_key
 from cod_doc.api.web.markdown import render_inline
 from cod_doc.api.web.prose_links import ProseLinks
+from cod_doc.api.web.relations import relations_panel
 from cod_doc.api.web.sorting import PRIORITY_RANK, SortKey, SortSpec, rank_of, sort_state
 from cod_doc.api.web.templates_env import templates
 from cod_doc.config import Config
@@ -724,6 +725,9 @@ def story_show(
                 }
                 for t in linked_tasks
             ],
+            "rel_panel": relations_panel(
+                session, project_db_id, proj.entry.name, f"story:{story.story_id}"
+            ),
             "linked_done": sum(1 for t in linked_tasks if t.status.value == "done"),
             "linked_total": len(linked_tasks),
             "nav": back_nav(

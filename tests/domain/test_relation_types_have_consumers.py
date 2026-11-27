@@ -25,5 +25,7 @@ def test_known_consumers_resolve_to_real_callables() -> None:
     """«Реальный» — значит, путь указывает на существующую функцию сервиса."""
     for dotted in KNOWN_CONSUMERS:
         module, _, attr = dotted.rpartition(".")
-        mod = importlib.import_module(f"cod_doc.services.{module}")
+        # `web.*` — не сервис: читатель живёт в api/web (панель «Связи»).
+        home = "cod_doc.api.web.relations" if module == "web" else f"cod_doc.services.{module}"
+        mod = importlib.import_module(home)
         assert callable(getattr(mod, attr)), dotted

@@ -16,18 +16,16 @@ _MAX_SUGGEST_DISTANCE = 2
 
 #: Потребители, которые существуют сейчас: dotted-путь к реальному вызываемому.
 #: `relation_service.relations` читает каждый тип (обратное имя, симметричность)
-#: и отдаёт ленту MCP `relations` и CLI `rel ls`. Гейт
+#: и отдаёт ленту MCP `relations`, CLI `rel ls` и веб-панель «Связи». Гейт
 #: `test_relation_types_have_consumers` требует у каждого встроенного типа хотя бы
 #: одного потребителя отсюда и проверяет, что путь разрешается.
-KNOWN_CONSUMERS: frozenset[str] = frozenset({"relation_service.relations"})
+KNOWN_CONSUMERS: frozenset[str] = frozenset({"relation_service.relations", "web.relations_panel"})
 
-#: Потребители, которых ещё нет: веб-панель и контекст (REL-012), `plan_ready` и
-#: `adr_graph` на едином чтении (REL-016). Тип может их перечислять, но одних
+#: Потребители, которых ещё нет: контекст L1, `plan_ready` и `adr_graph` на
+#: едином чтении (REL-016). Веб-панель (`_frag/relations.html`) уже читает ленту. Тип может их перечислять, но одних
 #: планируемых мало — иначе гейт перестал бы отличать метку от типа. Перенеси имя
 #: в `KNOWN_CONSUMERS`, когда читатель появится.
-PLANNED_CONSUMERS: frozenset[str] = frozenset(
-    {"context_service.L1", "web.relations_panel", "plan_ready", "adr_graph"}
-)
+PLANNED_CONSUMERS: frozenset[str] = frozenset({"context_service.L1", "plan_ready", "adr_graph"})
 
 _READER = "relation_service.relations"
 

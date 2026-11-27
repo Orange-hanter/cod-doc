@@ -183,6 +183,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/questions/{qid}/options/{position}` | Правка (`op=update`) или удаление (`op=delete`) варианта | `question_service.update_option` / `remove_option` | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/{qid}/links` | Добавить ссылку с немедленной проверкой (`op=attach`) или убрать (`op=detach`) | `question_service.link` + `verify_links` / `unlink` | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/{qid}/verify` | Перепроверить ссылки вопроса | `question_service.verify_links` | ✅ | OQM-004 |
+| `POST /p/{slug}/relations` | Добавить связь из панели «Связи» (`from_ref`, `type`, `to_ref`, `note`, `back`) → редирект на страницу сущности; ошибка → 422 с подсказкой | `relation_service.relate` | ✅ | REL-012 |
 | **Ревизии, рутины, запуски агента**  | | | |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
 | `GET /p/{slug}/activity` | Лента activity_event за 7 дней: люди и агенты строками, рутины сводкой дня (`?who=people\|routines\|all`) | `activity_service.summarize` + `list_events` | ✅ | WUI-012 |
