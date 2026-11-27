@@ -5,7 +5,7 @@ description: |
   commit-sha → release, создание задач и секций плана, grooming. Порядок
   инструментов: MCP-тулы → CLI. Триггеры: задача, task, checkout, complete,
   закрой задачу, возьми задачу, plan ready, секция плана, plan section,
-  очередь задач, blocked_by.
+  очередь задач, blocked_by, связать задачу, relate, relations.
 ---
 
 # Task flow — статус задачи живёт в БД
@@ -72,6 +72,26 @@ activity events.
 
 MCP недоступен → CLI (`cod-doc task …`); ad-hoc скрипты по `state.db`
 запрещены.
+
+## Связи задачи
+
+Задача ↔ история, вопрос, ADR, документ, сценарий, код — граф связей
+(RFC 39): один тул на все пары, адрес сущности — `kind:key`
+(`task:ADO-012`, `story:US-007`, `document:<doc_key>`). Подробно — скилл
+cod-doc `relations` (`skill_get`).
+
+| Нужда | MCP | CLI |
+|---|---|---|
+| что уже связано | `relations(project, ref="task:X-1")` | `cod-doc rel ls task:X-1 -p <slug>` |
+| допустимые типы пары | `relation_types(project, from_kind, to_kind)` | `cod-doc rel types --from story --to task -p <slug>` |
+| связать / развязать | `relate` / `unrelate(project, from_ref, type, to_ref, note=…)` | `cod-doc rel add story:US-7 implemented_by task:X-1 -p <slug>` / `rel rm …` |
+| задача блокирует задачу | `task_add_dependency` — **не** `relate` | `cod-doc task add-dep` |
+
+Тип не угадывай: на неверный `relate` отвечает списком допустимых типов и
+готовым вызовом. `relates_to` (алиас `see_also`) — запасной, с `note`.
+`blocked_by` между задачами `relate` отвергает и называет
+`task_add_dependency`: только она держит ready-множество и запрет циклов.
+`task_create(story_id=…)` по-прежнему сам пишет `implemented_by`.
 
 ## Разбор бэклога
 
