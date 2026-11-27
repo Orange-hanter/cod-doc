@@ -137,8 +137,13 @@ def test_add_relation_reports_hint_and_rejects_foreign_back(client) -> None:  # 
             "back": f"/p/{SLUG}/stories/US-100",
         },
     )
-    assert bad.status_code == 422
+    # Ошибка возвращает на страницу сущности: сообщение у формы, ввод сохранён.
+    assert bad.status_code == 200
+    assert bad.url.path == f"/p/{SLUG}/stories/US-100"
+    assert "alert-error" in bad.text
     assert "Похоже: depends_on" in bad.text
+    assert 'value="story:US-064"' in bad.text
+    assert '<details class="q-add" open>' in bad.text
     evil = client.post(
         f"/p/{SLUG}/relations",
         data={

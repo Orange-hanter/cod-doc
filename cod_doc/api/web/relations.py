@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from cod_doc.services import relation_service
 
@@ -33,7 +34,11 @@ def href(slug: str, ref: str) -> str:
     if kind == "criterion":
         story, _, position = key.partition("#")
         return f"/p/{slug}/stories/{story}" + (f"#crit-{position}" if position else "")
-    return key if kind == "url" else ""
+    # `relate` пишет только http(s), но строка может прийти синком или из старых
+    # таблиц: в href идёт лишь http(s), иначе `javascript:` стал бы XSS.
+    if kind == "url" and urlsplit(key).scheme.lower() in {"http", "https"}:
+        return key
+    return ""
 
 
 def relations_panel(session: Session, project_id: int, slug: str, ref: str) -> dict[str, Any]:

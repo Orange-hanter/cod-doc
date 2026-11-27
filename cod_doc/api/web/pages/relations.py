@@ -1,6 +1,8 @@
 """REL-012: запись связи из панели «Связи».
 
 - ``POST /p/{slug}/relations`` — ``relate``; назад на страницу сущности (``back``).
+  Ошибка ``relate`` — тоже назад, с ``?rel_error=…`` и введёнными полями: панель
+  показывает сообщение у формы и не теряет ввод (как ``?error=`` у вопросов).
 
 Роль writer+ проверяет ``web_access`` по методу и пути до маршрута, автор —
 владелец OIDC-сессии, иначе ``human:web`` (как у вопросов).
@@ -9,6 +11,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -49,5 +52,8 @@ def relation_add(
         session.commit()
     except relation_service.RelationError as exc:
         session.rollback()
-        raise HTTPException(422, str(exc)) from exc
+        query = urlencode(
+            {"rel_error": str(exc), "rel_type": type, "rel_to": to_ref, "rel_note": note}
+        )
+        return RedirectResponse(url=f"{urlsplit(back).path}?{query}#relations", status_code=303)
     return RedirectResponse(url=back, status_code=303)

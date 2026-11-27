@@ -25,7 +25,9 @@
       {{ ui.empty("Связей пока нет.", glyph="–") }}
     {% endfor %}
     {% if rel_panel.types and rel_panel.back and not peek %}
-      <details class="q-add">
+      {% set qp = request.query_params if request is defined else {} %}
+      {% if qp.get("rel_error") %}<div class="alert alert-error"><span class="alert-msg">{{ qp.get("rel_error") }}</span></div>{% endif %}
+      <details class="q-add"{% if qp.get("rel_error") %} open{% endif %}>
         <summary>Добавить связь</summary>
         <form method="post" action="/p/{{ project.name }}/relations" class="settings-form">
           <input type="hidden" name="from_ref" value="{{ rel_panel.ref }}">
@@ -33,14 +35,14 @@
           <label class="field">
             <span class="label">Тип</span>
             <select name="type">
-              {% for t in rel_panel.types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+              {% for t in rel_panel.types %}<option value="{{ t }}"{% if qp.get("rel_type") == t %} selected{% endif %}>{{ t }}</option>{% endfor %}
             </select>
           </label>
           <label class="field">
             <span class="label">Цель (kind:key)</span>
-            <input name="to_ref" required placeholder="task:ADO-042 · story:US-007 · url:https://…">
+            <input name="to_ref" required value="{{ qp.get('rel_to', '') }}" placeholder="task:ADO-042 · story:US-007 · url:https://…">
           </label>
-          <label class="field"><span class="label">Заметка (необязательно)</span><input name="note"></label>
+          <label class="field"><span class="label">Заметка (необязательно)</span><input name="note" value="{{ qp.get('rel_note', '') }}"></label>
           <div class="form-actions"><button type="submit" class="btn btn-sm btn-primary">Добавить</button></div>
         </form>
       </details>
