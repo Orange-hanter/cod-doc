@@ -107,7 +107,8 @@ def _find_type(
     try:
         check_backend(res.type, token)
     except RelationError as exc:
-        return None, False, exc.problems, exc.hint
+        # Тип известен: дальше проверяются и концы, чтобы ответ назвал всё сразу.
+        return res.type, res.reversed, exc.problems, exc.hint
     return res.type, res.reversed, [], ""
 
 
@@ -129,7 +130,7 @@ def _prepare(
         loaded = load(session, project_id)
         rt, rev, found, hint = _find_type(loaded, token, refs, (from_raw, to_raw), writing=writing)
         problems += found
-    if rt is None or problems:
+    if rt is None:
         if problems:
             raise RelationError(problems, hint)
         return None
@@ -139,13 +140,18 @@ def _prepare(
     dst_res = hits.get(dst) if dst.kind in ENTITY_KINDS else None
     if src_res is None:
         if not writing:
+            if problems:
+                raise RelationError(problems, hint)
             return None
         problems.append(f"{'to_ref' if rev else 'from_ref'}: {src} не найден")
     forward = dst.kind in ENTITY_KINDS and dst_res is None
-    if forward and writing and not rt.allow_forward:
+    # Бэкенд пишет только по существующей цели: ссылка вперёд ему недоступна.
+    if forward and writing and (not rt.allow_forward or rt.backend != "relation"):
         problems.append(
             f"{'from_ref' if rev else 'to_ref'}: {dst} не найден; ссылка вперёд допустима "
             "только для типов с allow_forward (about, blocks)"
+            if rt.backend == "relation"
+            else f"{'from_ref' if rev else 'to_ref'}: {dst} не найден"
         )
     if writing and (lit := _literal_problem(dst)):
         problems.append(lit)

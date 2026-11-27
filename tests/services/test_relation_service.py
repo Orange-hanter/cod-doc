@@ -410,3 +410,13 @@ def test_deleting_an_endpoint_removes_edges_in_both_directions(w: W) -> None:
             RevisionModel.entity_id == q2.row_id, RevisionModel.reason == "endpoint_deleted"
         )
     ).all()
+
+
+def test_backend_redirect_also_reports_missing_targets(w: W) -> None:
+    with pytest.raises(RelationError) as exc:
+        w.relate("task:X-1", "blocked_by", "task:X-2")
+    assert "task_add_dependency" in exc.value.hint
+    text = "\n".join(exc.value.problems)
+    assert "backend" in text
+    assert "task:X-1 не найден" in text
+    assert "task:X-2 не найден" in text
