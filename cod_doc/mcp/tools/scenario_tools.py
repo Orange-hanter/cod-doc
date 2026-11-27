@@ -24,7 +24,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import ScenarioLinkKind, ScenarioRelation
 from cod_doc.mcp.tools._db import require_project_id, session_factory
+
+# Рантайм-импорт: FastMCP строит JSON-схему тула из аннотаций, enum'ы дают
+# в ней `enum` со значениями (RFC 39, фаза 0). В TYPE_CHECKING схема бы сломалась.
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -247,9 +251,9 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(name="scenario_link")
     def scenario_link(
         scenario_id: str,
-        to_kind: str,
+        to_kind: ScenarioLinkKind,
         to_ref: str,
-        relation: str,
+        relation: ScenarioRelation,
         project: str | None = None,
         author: str = "mcp",
         detach: bool = False,
@@ -263,7 +267,6 @@ def register(mcp: FastMCP) -> None:
         Targets are checked for shape, not existence: a scenario is usually
         written before the task that implements it.
         """
-        from cod_doc.domain.entities import ScenarioLinkKind, ScenarioRelation
         from cod_doc.infra.db import transactional
         from cod_doc.services import scenario_service
 

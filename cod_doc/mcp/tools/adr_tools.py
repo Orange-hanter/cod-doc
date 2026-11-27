@@ -22,12 +22,18 @@ Standard/full-profile surface. Agent profile reaches ADRs through
 from __future__ import annotations
 
 from datetime import date as _date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from cod_doc.mcp.tools._db import require_project_id, session_factory
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
+
+# Значения дают `enum` в JSON-схеме тулов (RFC 39, фаза 0). Enum'ов в домене у
+# ADR нет: источник — CHECK-ограничения таблиц, равенство стережёт
+# tests/test_link_tool_schemas.py.
+ADRRelationKind = Literal["amends", "depends_on"]
+ADRTaskRelation = Literal["implements", "invalidates", "discovers", "relates"]
 
 
 def _parse_date(s: str | None) -> _date | None:
@@ -313,7 +319,7 @@ def register(mcp: FastMCP) -> None:
         project: str,
         from_adr_id: str,
         to_adr_id: str,
-        kind: str,
+        kind: ADRRelationKind,
         reason: str | None = None,
         author: str = "agent",
     ) -> dict[str, Any]:
@@ -363,7 +369,7 @@ def register(mcp: FastMCP) -> None:
         project: str,
         from_adr_id: str,
         to_adr_id: str,
-        kind: str,
+        kind: ADRRelationKind,
         reason: str | None = None,
         author: str = "agent",
     ) -> dict[str, Any]:
@@ -570,7 +576,11 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_link_task")
     def adr_link_task(
-        project: str, adr_id: str, task_id: str, relation: str = "implements", author: str = "agent"
+        project: str,
+        adr_id: str,
+        task_id: str,
+        relation: ADRTaskRelation = "implements",
+        author: str = "agent",
     ) -> dict[str, Any]:
         """Link a task to an ADR. relation: implements | invalidates | discovers | relates."""
         from cod_doc.infra.db import transactional
