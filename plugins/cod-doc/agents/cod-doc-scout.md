@@ -30,7 +30,8 @@ disallowedTools: Edit, Write, NotebookEdit
    только по имени (отложенные), сначала загрузи нужные одним вызовом
    `ToolSearch` с `select:mcp__cod-doc__ctx_search,mcp__cod-doc__task_get,…`.
    Из MCP — только читающие тулы (`*_get`, `*_list`, `ctx_search`,
-   `plan_progress`, `context_get`, `doc_section_get`).
+   `plan_progress`, `context_get`, `doc_section_get`, `relations`,
+   `relation_types`).
    - «какая задача покрывает X» → `mcp__cod-doc__ctx_search(project, query=X)`,
      затем `mcp__cod-doc__task_get(project, task_id)` по найденному ID или
      `mcp__cod-doc__task_list(project, plan_scope=…, status=…)` для выборки
@@ -42,6 +43,11 @@ disallowedTools: Edit, Write, NotebookEdit
      только нужные якоря, без тела всего документа;
    - документ → `mcp__cod-doc__doc_get(project, doc_key)`;
    - ADR → `mcp__cod-doc__adr_get(project, adr_id)`;
+   - «что связано с X» (задачи истории, документы задачи, вопросы к ADR) →
+     `mcp__cod-doc__relations(project, ref="story:US-7")` — одна лента из
+     всех источников (граф связей, зависимости задач, связи ADR, ссылки в
+     тексте, коммиты); адрес `kind:key`, допустимые типы пары —
+     `mcp__cod-doc__relation_types`;
    - снежный ком контекста вокруг документа → `mcp__cod-doc__context_get`.
 2. **CLI** — если MCP-тулов в сессии нет: `cod-doc ctx search <query> -p <slug> --json`,
    `cod-doc task list -p <slug> --plan <scope> -s <status> --json`,
